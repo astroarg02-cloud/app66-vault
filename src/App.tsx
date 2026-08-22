@@ -146,7 +146,7 @@ function AppContent() {
   // If checking initial session
   if (isCheckingSession) {
     return (
-      <div className={`min-h-screen flex flex-col items-center justify-center gap-4 transition-colors duration-300 ${
+      <div className={`h-[100dvh] w-full flex flex-col items-center justify-center gap-4 transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
       }`}>
         <div className="w-12 h-12 rounded-2xl bg-[#0066FF] flex items-center justify-center text-white shadow-xl shadow-[#0066FF]/40 animate-pulse">
@@ -163,10 +163,10 @@ function AppContent() {
   // Unauthenticated view -> Mandatory AuthScreen
   if (!currentUser) {
     return (
-      <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-300 ${
+      <div className={`h-[100dvh] w-full flex items-center justify-center p-3 sm:p-4 overflow-y-auto transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
       }`}>
-        <div className={`w-full max-w-md rounded-3xl border shadow-2xl overflow-hidden ${
+        <div className={`w-full max-w-md max-h-[94dvh] rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
         }`}>
           <AuthScreen onLogin={handleLogin} />
@@ -177,7 +177,7 @@ function AppContent() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${
+      className={`h-[100dvh] max-h-[100dvh] w-full flex flex-col font-sans overflow-hidden transition-colors duration-300 ${
         isDark
           ? 'bg-black text-white selection:bg-[#0066FF] selection:text-white'
           : 'bg-[#F1F4F9] text-[#0F172A] selection:bg-[#0066FF] selection:text-white'
@@ -185,24 +185,24 @@ function AppContent() {
     >
       {/* Top Header Bar for Private Server */}
       <header
-        className={`sticky top-0 z-40 px-4 sm:px-8 py-3.5 border-b backdrop-blur-xl transition-colors duration-300 ${
+        className={`shrink-0 z-40 px-3 sm:px-6 py-2.5 sm:py-3 border-b backdrop-blur-xl transition-colors duration-300 ${
           isDark
-            ? 'border-[#1E1E24] bg-black/85 shadow-black/80'
-            : 'border-[#E2E8F0] bg-white/90 shadow-sm'
+            ? 'border-[#1E1E24] bg-black/90 shadow-black/80'
+            : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand & Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#0066FF] flex items-center justify-center shadow-lg shadow-[#0066FF]/30 text-white">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-[#0066FF] flex items-center justify-center shadow-lg shadow-[#0066FF]/30 text-white shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black tracking-tight leading-none">
+                <h1 className="text-sm sm:text-lg font-black tracking-tight leading-none">
                   App 66
                 </h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                <span className="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
                   SERVIDOR PRIVADO
                 </span>
                 {isSupabaseConfigured && (
@@ -211,18 +211,18 @@ function AppContent() {
                   </span>
                 )}
               </div>
-              <p className={`text-xs mt-0.5 hidden sm:block ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+              <p className={`text-[11px] sm:text-xs mt-0.5 hidden sm:block ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
                 Bóveda de contenido exclusivo & acceso restringido
               </p>
             </div>
           </div>
 
           {/* Center Navigation Tabs */}
-          <nav className="flex items-center gap-1.5 p-1 rounded-2xl border bg-black/10 dark:bg-white/5 border-slate-200 dark:border-white/10">
+          <nav className="flex items-center gap-1 sm:gap-1.5 p-1 rounded-2xl border bg-black/10 dark:bg-white/5 border-slate-200 dark:border-white/10">
             <button
               id="nav-tab-vault"
               onClick={() => setCurrentTab('vault')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 currentTab === 'vault'
                   ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
                   : isDark
@@ -230,14 +230,14 @@ function AppContent() {
                   : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
-              <FolderClosed className="w-4 h-4" />
+              <FolderClosed className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">Bóveda</span>
             </button>
 
             <button
               id="nav-tab-membership"
               onClick={() => setCurrentTab('membership')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 currentTab === 'membership'
                   ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
                   : isDark
@@ -245,14 +245,14 @@ function AppContent() {
                   : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
-              <Crown className="w-4 h-4" />
+              <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">Membresía VIP</span>
             </button>
 
             <button
               id="nav-tab-profile"
               onClick={() => setCurrentTab('profile')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 currentTab === 'profile'
                   ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
                   : isDark
@@ -260,19 +260,19 @@ function AppContent() {
                   : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
-              <User className="w-4 h-4" />
+              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">Mi Perfil</span>
             </button>
           </nav>
 
           {/* Right Controls: User info, Theme & Logout */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
             {/* User badge */}
-            <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
+            <div className={`hidden md:flex items-center gap-2 px-2.5 py-1 rounded-xl border text-xs font-semibold ${
               isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
             }`}>
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{currentUser.displayName}</span>
+              <span className="max-w-[100px] truncate">{currentUser.displayName}</span>
               {currentUser.role === 'admin' ? (
                 <VerifiedBadge className="w-3.5 h-3.5 text-[#0066FF]" />
               ) : (
@@ -284,7 +284,7 @@ function AppContent() {
             <button
               id="theme-toggle-btn"
               onClick={toggleTheme}
-              className={`p-2 rounded-xl border transition-colors ${
+              className={`p-1.5 sm:p-2 rounded-xl border transition-colors ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-[#1A1A22] text-[#8E8E93] hover:text-white'
                   : 'border-[#E2E8F0] hover:bg-slate-100 text-[#64748B] hover:text-black'
@@ -298,7 +298,7 @@ function AppContent() {
             <button
               id="logout-btn"
               onClick={handleLogout}
-              className={`p-2 rounded-xl border transition-colors ${
+              className={`p-1.5 sm:p-2 rounded-xl border transition-colors ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-red-500/15 hover:border-red-500/30 text-[#8E8E93] hover:text-red-400'
                   : 'border-[#E2E8F0] hover:bg-red-50 text-[#64748B] hover:text-red-600'
@@ -312,8 +312,8 @@ function AppContent() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 overflow-y-auto">
-        <div className={`w-full min-h-[calc(100vh-140px)] rounded-3xl border shadow-xl overflow-hidden transition-colors ${
+      <main className="flex-1 w-full max-w-5xl mx-auto p-2 sm:p-4 md:p-5 overflow-hidden flex flex-col min-h-0">
+        <div className={`w-full h-full flex-1 rounded-2xl sm:rounded-3xl border shadow-xl overflow-hidden flex flex-col min-h-0 relative transition-colors ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
         }`}>
           {currentTab === 'vault' && (
@@ -328,9 +328,6 @@ function AppContent() {
           {currentTab === 'membership' && (
             <MembershipScreen
               currentUser={currentUser}
-              onUpgradeSuccess={(newTier) => {
-                setCurrentUser((prev) => (prev ? { ...prev, tier: newTier, role: 'vip_member' } : null));
-              }}
             />
           )}
 
@@ -338,7 +335,6 @@ function AppContent() {
             <ProfileScreen
               currentUser={currentUser}
               onLogout={handleLogout}
-              onSwitchUser={handleSwitchUser}
             />
           )}
         </div>

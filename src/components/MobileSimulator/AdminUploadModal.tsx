@@ -177,10 +177,10 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   };
 
   return (
-    <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
       <div 
         id="admin-upload-modal-container"
-        className={`w-full max-w-lg rounded-3xl max-h-[92vh] flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border transition-colors ${
+        className={`w-full max-w-lg rounded-3xl max-h-[92dvh] flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border transition-colors ${
           isDark
             ? 'bg-[#0A0A0C] border-[#1E1E24] text-white'
             : 'bg-white border-[#CBD5E1] text-[#0F172A]'
