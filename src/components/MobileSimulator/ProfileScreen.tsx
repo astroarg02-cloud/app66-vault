@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UserProfile } from '../../types';
 import { 
   ShieldCheck, LogOut, Key, User, Calendar, Database, 
-  CheckCircle2, XCircle, ArrowLeftRight, Moon, Sun, Palette
+  CheckCircle2, XCircle, ArrowLeftRight, Moon, Sun, Palette, Shield, AlertCircle
 } from 'lucide-react';
-import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER } from '../../data/initialVaultData';
+import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, isAuthorizedAdminKey, ADMIN_SECURITY_KEY } from '../../data/initialVaultData';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -16,6 +16,32 @@ interface ProfileScreenProps {
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLogout, onSwitchUser }) => {
   const { theme, toggleTheme, setTheme, isDark } = useTheme();
+  const [unlockKey, setUnlockKey] = useState('');
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [keySuccess, setKeySuccess] = useState<string | null>(null);
+
+  const handleUnlockAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setKeyError(null);
+    setKeySuccess(null);
+
+    if (isAuthorizedAdminKey(unlockKey)) {
+      if (onSwitchUser) {
+        onSwitchUser({
+          ...currentUser,
+          role: 'admin',
+          tier: 'Bóveda Diamante',
+          displayName: currentUser.displayName.includes('(VIP)') 
+            ? currentUser.displayName.replace('(VIP)', '').trim() + ' (Admin)'
+            : currentUser.displayName,
+        });
+      }
+      setKeySuccess('¡Modo Administrador activado con éxito!');
+      setUnlockKey('');
+    } else {
+      setKeyError('Key de seguridad incorrecta.');
+    }
+  };
 
   return (
     <div
@@ -93,13 +119,80 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-[#0066FF]" />
           <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-            Política de Administración Única
+            Seguridad del Modo Administrador
           </span>
         </div>
         <p className={`text-[11px] leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-          El servidor restringe los permisos de Administrador exclusivamente al correo <strong className="text-[#0066FF]">astroarg02@gmail.com</strong>. Cualquier otra cuenta posee privilegios de lectura, descarga y debate privado (Miembro VIP).
+          Para obtener privilegios de Administrador (publicar contenido y gestionar la Bóveda), se requiere una <strong className="text-[#0066FF]">Key de seguridad privada</strong>. Los miembros regulares disfrutan de acceso a todas las descargas y discusiones.
         </p>
       </div>
+
+      {/* Admin Key Unlock Section (If current user is VIP member) */}
+      {currentUser.role !== 'admin' && onSwitchUser && (
+        <form
+          onSubmit={handleUnlockAdmin}
+          className={`p-4 rounded-2xl border space-y-3 transition-colors ${
+            isDark
+              ? 'bg-[#0066FF]/5 border-[#0066FF]/30'
+              : 'bg-blue-50/60 border-blue-200 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-[#0066FF]" />
+            <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+              Desbloquear Modo Administrador con Key
+            </span>
+          </div>
+
+          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+            Ingresa la clave de seguridad para activar permisos Root y habilitar el botón de subida:
+          </p>
+
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Key className="w-4 h-4 absolute left-3 top-2.5 text-[#0066FF]" />
+              <input
+                id="unlock-admin-key-input"
+                type="password"
+                value={unlockKey}
+                onChange={(e) => {
+                  setUnlockKey(e.target.value);
+                  setKeyError(null);
+                }}
+                placeholder="Ingresa la Key de seguridad"
+                className={`w-full rounded-xl pl-9 pr-3 py-2 text-xs font-mono tracking-widest focus:outline-none transition-colors border ${
+                  isDark
+                    ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-[#5A5A62]'
+                    : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder-[#94A3B8]'
+                }`}
+              />
+            </div>
+
+            <button
+              id="unlock-admin-btn"
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold uppercase tracking-wider shadow-md shadow-[#0066FF]/30 transition-all shrink-0 flex items-center gap-1.5"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>Validar</span>
+            </button>
+          </div>
+
+          {keyError && (
+            <div className="text-[11px] text-red-400 font-semibold flex items-center gap-1.5 pt-1">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{keyError}</span>
+            </div>
+          )}
+
+          {keySuccess && (
+            <div className="text-[11px] text-emerald-500 font-semibold flex items-center gap-1.5 pt-1">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>{keySuccess}</span>
+            </div>
+          )}
+        </form>
+      )}
 
       {/* App Theme Switcher Section (Dark / Light) */}
       <div

@@ -1,6 +1,12 @@
 import { VaultItem, UserProfile } from '../types';
 
 export const ADMIN_AUTHORIZED_EMAIL = 'astroarg02@gmail.com';
+export const ADMIN_SECURITY_KEY = '360';
+
+export const isAuthorizedAdminKey = (key?: string | null): boolean => {
+  if (!key) return false;
+  return key.trim() === ADMIN_SECURITY_KEY;
+};
 
 export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;

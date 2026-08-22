@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS } from './data/initialVaultData';
 import { VaultItem, UserProfile, VaultComment } from './types';
 import { AuthScreen } from './components/MobileSimulator/AuthScreen';
@@ -9,6 +9,7 @@ import { ProfileScreen } from './components/MobileSimulator/ProfileScreen';
 import { AdminUploadModal } from './components/MobileSimulator/AdminUploadModal';
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { supabaseService, isSupabaseConfigured } from './services/supabaseClient';
 import { 
   FolderClosed, 
   Crown, 
@@ -17,20 +18,43 @@ import {
   Sun, 
   LogOut, 
   ShieldCheck, 
-  Plus, 
-  Lock 
+  Database
 } from 'lucide-react';
 
 function AppContent() {
   const [items, setItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
-  // Default to Admin logged in for instant access, or can logout to see login
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(INITIAL_ADMIN_USER);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'profile'>('vault');
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
-  // Toggle Like (optimistic state)
+  // Check existing session from Supabase on mount
+  useEffect(() => {
+    supabaseService.getCurrentUser()
+      .then((user) => {
+        if (user) {
+          setCurrentUser(user);
+        }
+      })
+      .finally(() => {
+        setIsCheckingSession(false);
+      });
+
+    supabaseService.fetchVaultItems().then((fetchedItems) => {
+      if (fetchedItems && fetchedItems.length > 0) {
+        setItems(fetchedItems);
+      }
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    await supabaseService.signOut();
+    setCurrentUser(null);
+  };
+
+  // Toggle Like (optimistic state + sync to Supabase)
   const handleToggleLike = (itemId: string) => {
     if (!currentUser) return;
     setItems((prevItems) =>
@@ -44,6 +68,9 @@ function AppContent() {
           ? Math.max(0, item.likesCount - 1)
           : item.likesCount + 1;
 
+        // Sync with Supabase in background
+        supabaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
+
         return {
           ...item,
           likedBy: newLikedBy,
@@ -53,7 +80,7 @@ function AppContent() {
     );
   };
 
-  // Add Comment
+  // Add Comment (optimistic state + sync to Supabase)
   const handleAddComment = (itemId: string, text: string) => {
     if (!currentUser) return;
     const newComment: VaultComment = {
@@ -69,16 +96,21 @@ function AppContent() {
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.id !== itemId) return item;
+        const updatedComments = [newComment, ...item.comments];
+        
+        // Sync with Supabase in background
+        supabaseService.updateItemComments(itemId, updatedComments);
+
         return {
           ...item,
-          comments: [newComment, ...item.comments],
+          comments: updatedComments,
         };
       })
     );
   };
 
   // Upload new vault item (Admin exclusively)
-  const handleUploadItem = (
+  const handleUploadItem = async (
     newItemData: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>
   ) => {
     const newItem: VaultItem = {
@@ -91,6 +123,9 @@ function AppContent() {
     };
 
     setItems((prev) => [newItem, ...prev]);
+
+    // Persist to Supabase if configured
+    await supabaseService.insertVaultItem(newItem);
   };
 
   // Sync selectedItem if item list updates
@@ -98,7 +133,24 @@ function AppContent() {
     ? items.find((i) => i.id === selectedItem.id) || selectedItem
     : null;
 
-  // Unauthenticated view -> AuthScreen
+  // If checking initial session
+  if (isCheckingSession) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center gap-4 transition-colors duration-300 ${
+        isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
+      }`}>
+        <div className="w-12 h-12 rounded-2xl bg-[#0066FF] flex items-center justify-center text-white shadow-xl shadow-[#0066FF]/40 animate-pulse">
+          <ShieldCheck className="w-6 h-6" />
+        </div>
+        <div className="flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-[#0066FF]">
+          <div className="w-3.5 h-3.5 border-2 border-[#0066FF] border-t-transparent rounded-full animate-spin" />
+          <span>Verificando Acceso a la Bóveda...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Unauthenticated view -> Mandatory AuthScreen
   if (!currentUser) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-300 ${
@@ -143,6 +195,11 @@ function AppContent() {
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
                   SERVIDOR PRIVADO
                 </span>
+                {isSupabaseConfigured && (
+                  <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <Database className="w-2.5 h-2.5" /> SUPABASE CONECTADO
+                  </span>
+                )}
               </div>
               <p className={`text-xs mt-0.5 hidden sm:block ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
                 Bóveda de contenido exclusivo & acceso restringido
@@ -230,7 +287,7 @@ function AppContent() {
             {/* Logout Button */}
             <button
               id="logout-btn"
-              onClick={() => setCurrentUser(null)}
+              onClick={handleLogout}
               className={`p-2 rounded-xl border transition-colors ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-red-500/15 hover:border-red-500/30 text-[#8E8E93] hover:text-red-400'
@@ -270,7 +327,7 @@ function AppContent() {
           {currentTab === 'profile' && (
             <ProfileScreen
               currentUser={currentUser}
-              onLogout={() => setCurrentUser(null)}
+              onLogout={handleLogout}
             />
           )}
         </div>
