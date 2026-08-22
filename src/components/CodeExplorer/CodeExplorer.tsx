@@ -1,19 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import { 
   FileCode, Copy, Check, Download, 
-  Search
+  Search, Github, Sparkles
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { DART_CODEBASE } from '../../data/dartCodebase';
 import { DartCodeFile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { GitHubUploaderModal } from '../GitHubUploader/GitHubUploaderModal';
 
 export const CodeExplorer: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<DartCodeFile>(DART_CODEBASE[2]); // lib/main.dart default
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const { isDark } = useTheme();
 
@@ -134,8 +136,20 @@ Aplicación móvil multiplataforma (Android & iOS) de Bóveda y Servidor Privado
           </div>
         </div>
 
-        {/* Action Buttons: ZIP Download & Copy */}
+        {/* Action Buttons: GitHub 1-Click Upload & ZIP Download */}
         <div className="flex items-center gap-2.5">
+          <button
+            id="open-github-upload-modal-btn"
+            onClick={() => setIsGitHubModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black hover:bg-[#141418] border border-white/20 active:scale-[0.99] text-white text-xs font-bold transition-all shadow-lg shadow-black/40"
+          >
+            <Github className="w-4 h-4 text-white" />
+            <span>Subir a GitHub (1-Clic)</span>
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-[#0066FF] text-white uppercase tracking-wider">
+              Auto APK
+            </span>
+          </button>
+
           <button
             id="download-full-flutter-project-btn"
             onClick={downloadCompleteProjectZip}
@@ -147,7 +161,7 @@ Aplicación móvil multiplataforma (Android & iOS) de Bóveda y Servidor Privado
             ) : (
               <Download className="w-4 h-4" />
             )}
-            <span>Descargar Proyecto Flutter (.ZIP)</span>
+            <span>Descargar (.ZIP)</span>
           </button>
         </div>
       </div>
@@ -295,6 +309,12 @@ Aplicación móvil multiplataforma (Android & iOS) de Bóveda y Servidor Privado
           </div>
         </div>
       </div>
+
+      {/* 1-Click Direct GitHub Sync Modal */}
+      <GitHubUploaderModal
+        isOpen={isGitHubModalOpen}
+        onClose={() => setIsGitHubModalOpen(false)}
+      />
     </div>
   );
 };

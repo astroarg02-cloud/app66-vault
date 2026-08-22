@@ -6,13 +6,17 @@ import { MobileFrame } from './components/MobileSimulator/MobileFrame';
 import { CodeExplorer } from './components/CodeExplorer/CodeExplorer';
 import { ArchitectureGuide } from './components/ArchitectureGuide/ArchitectureGuide';
 import { SupabaseManager } from './components/SupabaseManager/SupabaseManager';
+import { GitHubUploaderModal } from './components/GitHubUploader/GitHubUploaderModal';
+import { AndroidBuildGuideModal } from './components/AndroidBuildGuide/AndroidBuildGuideModal';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { AppView } from './types';
 
 function AppContent() {
   const [items, setItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(INITIAL_ADMIN_USER);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [activeView, setActiveView] = useState<AppView>('simulator');
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
+  const [isAndroidModalOpen, setIsAndroidModalOpen] = useState(false);
   const { isDark } = useTheme();
 
   // Toggle Like (optimistic Riverpod / Firestore simulation)
@@ -92,6 +96,20 @@ function AppContent() {
         onSelectView={setActiveView}
         currentUser={currentUser}
         onLogout={() => setCurrentUser(null)}
+        onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
+        onOpenAndroidGuideModal={() => setIsAndroidModalOpen(true)}
+      />
+
+      {/* 1-Click Global GitHub Uploader Modal */}
+      <GitHubUploaderModal
+        isOpen={isGitHubModalOpen}
+        onClose={() => setIsGitHubModalOpen(false)}
+      />
+
+      {/* Direct Android APK Builder Guide Modal */}
+      <AndroidBuildGuideModal
+        isOpen={isAndroidModalOpen}
+        onClose={() => setIsAndroidModalOpen(false)}
       />
 
       {/* Main Workspace Area */}

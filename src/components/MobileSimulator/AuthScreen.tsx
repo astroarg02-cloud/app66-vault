@@ -81,7 +81,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 isDark ? 'text-white' : 'text-[#0F172A]'
               }`}
             >
-              Bóveda de Contenido
+              App 66
             </h1>
             <p className={`text-xs max-w-xs mt-1.5 leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
               Acceso restringido. Solo <strong className="text-[#0066FF]">{ADMIN_AUTHORIZED_EMAIL}</strong> tiene privilegios de Administrador.
@@ -136,6 +136,42 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               <span>Miembro VIP</span>
             </button>
           </div>
+        </div>
+
+        {/* Auth Mode Tabs (Login vs Register) */}
+        <div
+          className={`p-1 rounded-2xl border flex gap-1 ${
+            isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-[#E2E8F0]'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setIsRegister(false)}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              !isRegister
+                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
+                : isDark
+                ? 'text-[#8E8E93] hover:text-white'
+                : 'text-[#64748B] hover:text-[#0F172A]'
+            }`}
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>Iniciar Sesión</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsRegister(true)}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              isRegister
+                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
+                : isDark
+                ? 'text-[#8E8E93] hover:text-white'
+                : 'text-[#64748B] hover:text-[#0F172A]'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>Crear Cuenta</span>
+          </button>
         </div>
 
         {/* Dynamic RBAC Security Banner */}

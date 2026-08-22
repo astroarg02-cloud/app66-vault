@@ -204,9 +204,25 @@ export const ArchitectureGuide: React.FC = () => {
                 : 'bg-slate-900 border-slate-800 text-slate-300'
             }`}
           >
-            <span className="text-[#0066FF]"># 3. Desplegar reglas de Firestore</span>
+            <span className="text-[#0066FF]"># 3. Compilar para Android (APK Universal)</span>
             <div className="text-white mt-1">
-              firebase deploy --only firestore:rules
+              flutter build apk --release --no-tree-shake-icons
+            </div>
+          </div>
+
+          <div
+            className={`p-3 rounded-xl border transition-colors ${
+              isDark
+                ? 'bg-[#000000] border-[#1E1E24] text-[#8E8E93]'
+                : 'bg-slate-900 border-slate-800 text-slate-300'
+            }`}
+          >
+            <span className="text-emerald-400"># 4. Compilar para iPhone (iOS Release / Sideloading)</span>
+            <div className="text-white mt-1">
+              flutter build ios --release --no-codesign
+            </div>
+            <div className="text-xs text-slate-400 mt-1 font-sans">
+              * Puedes abrir el proyecto en Xcode (<code className="text-blue-400 font-mono">open ios/Runner.xcworkspace</code>) para instalar directo en tu iPhone con tu Apple ID personal, o usar AltStore / Sideloadly con el paquete zip generado.
             </div>
           </div>
         </div>

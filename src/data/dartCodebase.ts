@@ -20,13 +20,12 @@ dependencies:
 
   # State Management
   flutter_riverpod: ^2.5.1
-  riverpod_annotation: ^2.3.5
 
   # Firebase Suite
-  firebase_core: ^2.30.1
-  firebase_auth: ^4.19.4
-  cloud_firestore: ^4.17.3
-  firebase_storage: ^11.7.5
+  firebase_core: ^2.32.0
+  firebase_auth: ^4.20.0
+  cloud_firestore: ^4.17.5
+  firebase_storage: ^11.7.7
 
   # Supabase Suite (PostgreSQL + Auth + Storage + RLS)
   supabase_flutter: ^2.8.0
@@ -36,8 +35,6 @@ dependencies:
   path_provider: ^2.1.3
   permission_handler: ^11.3.1
   share_plus: ^9.0.0
-  flutter_downloader: ^1.11.7
-  open_file: ^3.3.2
 
   # UI, Icons, Animations & Fonts
   lucide_icons: ^0.257.0
@@ -50,8 +47,6 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-  build_runner: ^2.4.9
-  riverpod_generator: ^2.4.0
 
 flutter:
   uses-material-design: true
@@ -740,7 +735,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Bóveda de Contenido',
+                  'App 66',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 26),
                 ),
@@ -1102,6 +1097,7 @@ final itemCommentsProvider = StreamProvider.family<List<VaultComment>, String>((
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../core/theme/vault_theme.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../providers/vault_provider.dart';
 import '../../domain/models/vault_item.dart';
 import 'vault_detail_screen.dart';
@@ -2712,19 +2708,22 @@ WITH CHECK (LOWER(auth.jwt() ->> 'email') = 'astroarg02@gmail.com');
 `,
   },
   {
-    path: '.github/workflows/build_apk.yml',
-    title: 'build_apk.yml (Compilación APK Automática)',
+    path: '.github/workflows/build_app.yml',
+    title: '.github/workflows/build_app.yml',
     category: 'config',
-    description: 'Flujo de GitHub Actions para compilar el APK instalable en la nube automáticamente.',
-    code: `name: Generar APK de Flutter en la Nube
+    description: 'Workflow de GitHub Actions para compilar automáticamente tanto el APK para Android como el paquete para iPhone (iOS) en la nube.',
+    code: `name: Compilar App Flutter (Android & iPhone)
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Compilar APK Android Release
+  # ==========================================
+  # 1. COMPILACIÓN DE APK ANDROID (UNIVERSAL)
+  # ==========================================
+  build-android:
+    name: Compilar APK Android (Release)
     runs-on: ubuntu-latest
     steps:
       - name: Clonar repositorio
@@ -2733,32 +2732,296 @@ jobs:
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
       - name: Configurar Flutter SDK
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.29.0'
           channel: 'stable'
           cache: true
 
-      - name: Instalar dependencias
-        run: flutter pub get
+      - name: Preparar y Generar Estructura Android Limpia
+        run: |
+          mkdir -p assets/images
+          touch assets/images/.gitkeep
+          
+          # Regenerar directorio Android limpio
+          rm -rf android
+          flutter create . --platforms=android --org=com.vault.privateserver --project-name=vault_private_server
+          
+          # Inyectar permisos y configuracion en AndroidManifest.xml
+          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>
+              <application
+                  android:label="App 66"
+                  android:name="\${applicationName}"
+                  android:icon="@mipmap/ic_launcher"
+                  android:usesCleartextTraffic="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:taskAffinity=""
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data
+                        android:name="io.flutter.embedding.android.NormalTheme"
+                        android:resource="@style/NormalTheme"
+                        />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+              </application>
+          </manifest>
+          EOF
 
-      - name: Compilar APK Release
-        run: flutter build apk --release --split-per-abi
+          # Asegurar minSdk 21
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle || true
+            sed -i 's/minSdk = .*/minSdk = 21/g' android/app/build.gradle || true
+          fi
+          if [ -f "android/app/build.gradle.kts" ]; then
+            sed -i 's/minSdk = .*/minSdk = 21/g' android/app/build.gradle.kts || true
+            sed -i 's/minSdkVersion = .*/minSdkVersion = 21/g' android/app/build.gradle.kts || true
+          fi
 
-      - name: Compilar APK Universal
-        run: flutter build apk --release
+          flutter pub get
 
-      - name: Subir APKs compilados como artefacto
+      - name: Compilar APK Release Universal
+        run: flutter build apk --release --no-tree-shake-icons
+
+      - name: Subir APK Android como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: Vault-Private-Server-APK
+          name: App-66-Android-APK
           path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 14
+
+  # ==========================================
+  # 2. COMPILACIÓN PARA IPHONE (iOS RELEASE)
+  # ==========================================
+  build-ios:
+    name: Compilar Paquete iPhone iOS (Release)
+    runs-on: macos-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Preparar y Generar Estructura iOS Limpia
+        run: |
+          mkdir -p assets/images
+          touch assets/images/.gitkeep
+          
+          # Regenerar directorio iOS
+          flutter create . --platforms=ios --org=com.vault.privateserver --project-name=vault_private_server
+          flutter pub get
+
+      - name: Compilar iOS Release (No-Codesign para Sideload/AltStore/Test)
+        run: |
+          flutter build ios --release --no-codesign
+          
+          # Crear paquete comprimido Payload para instalación en iPhone (Sideloadly / AltStore / TrollStore)
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r App-66-iPhone-iOS.zip Payload
+
+      - name: Subir Paquete iPhone iOS como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-66-iPhone-iOS-Bundle
+          path: build/ios/iphoneos/App-66-iPhone-iOS.zip
           retention-days: 14
 `,
   },
+  {
+    path: 'android/app/src/main/AndroidManifest.xml',
+    title: 'AndroidManifest.xml',
+    category: 'config',
+    description: 'Manifiesto Android con permisos de Internet, almacenamiento para descargas y foreground services.',
+    code: `<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <application
+        android:label="App 66"
+        android:name="\${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>
+`,
+  },
+  {
+    path: 'ios/Runner/Info.plist',
+    title: 'ios/Runner/Info.plist',
+    category: 'config',
+    description: 'Configuración nativa de iOS / iPhone: permisos de almacenamiento, descarga de archivos en Archivos (Files app) y multimedia.',
+    code: `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>App 66</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>App 66</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	
+	<!-- Permisos para permitir guardar archivos descargados en la app Archivos de iPhone -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+
+	<!-- Permisos de Fotos y Cámara -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Esta app requiere acceso a la galería para subir archivos y fotos a la bóveda privada.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Esta app requiere acceso a la cámara para capturar fotos de avatar o contenido.</string>
+
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+</dict>
+</plist>
+`,
+  },
+  {
+    path: 'ios/Podfile',
+    title: 'ios/Podfile',
+    category: 'config',
+    description: 'Especificación de CocoaPods para compilar dependencias nativas de iOS / iPhone en iOS 13.0+.',
+    code: `platform :ios, '13.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+    end
+  end
+end
+`,
+  },
+  {
+    path: 'assets/images/.gitkeep',
+    title: '.gitkeep',
+    category: 'config',
+    description: 'Archivo de retención de directorio para recursos e imágenes.',
+    code: `# Assets directory\n`,
+  },
 ];
+
 

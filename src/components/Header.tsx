@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Smartphone, FileCode, BookOpen, Database, Lock, Moon, Sun } from 'lucide-react';
+import { ShieldCheck, Smartphone, FileCode, BookOpen, Database, Lock, Moon, Sun, Github, Cpu } from 'lucide-react';
 import { UserProfile, AppView } from '../types';
 import { VerifiedBadge } from './VerifiedBadge';
 import { useTheme } from '../context/ThemeContext';
@@ -9,6 +9,8 @@ interface HeaderProps {
   onSelectView: (view: AppView) => void;
   currentUser: UserProfile | null;
   onLogout: () => void;
+  onOpenGitHubModal?: () => void;
+  onOpenAndroidGuideModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +18,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectView,
   currentUser,
   onLogout,
+  onOpenGitHubModal,
+  onOpenAndroidGuideModal,
 }) => {
   const { theme, toggleTheme, isDark } = useTheme();
 
@@ -48,11 +52,11 @@ export const Header: React.FC<HeaderProps> = ({
               Vault Private Server
             </h1>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
-              Flutter & Supabase / Firebase
+              Android & iPhone (iOS)
             </span>
           </div>
           <p className={`text-[11px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-            Bóveda de contenido exclusivo • {isDark ? 'Modo Oscuro (#000000)' : 'Modo Claro'} & Azul (#0066FF)
+            App 66 • Servidor Privado Multiplataforma • Flutter & Supabase / Firebase
           </p>
         </div>
       </div>
@@ -127,6 +131,32 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right controls: Theme Switcher & User Profile */}
       <div className="flex items-center gap-2.5">
+        {/* Compilar APK (Sin GitHub) Button */}
+        {onOpenAndroidGuideModal && (
+          <button
+            id="global-android-guide-btn"
+            onClick={onOpenAndroidGuideModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 text-xs font-bold transition-all shadow-sm active:scale-95"
+            title="Ver métodos para compilar el APK para Android sin GitHub"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden md:inline">Compilar APK (Sin GitHub)</span>
+          </button>
+        )}
+
+        {/* GitHub 1-Click Sync Button */}
+        {onOpenGitHubModal && (
+          <button
+            id="global-github-sync-btn"
+            onClick={onOpenGitHubModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black hover:bg-[#141418] border border-white/20 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+            title="Subir código Flutter y workflow de APK a GitHub"
+          >
+            <Github className="w-3.5 h-3.5 text-white" />
+            <span className="hidden md:inline">Subir a GitHub</span>
+          </button>
+        )}
+
         {/* Dark / Light Mode Toggle Button */}
         <button
           id="global-theme-toggle-btn"
