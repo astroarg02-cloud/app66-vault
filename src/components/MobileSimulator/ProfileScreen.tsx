@@ -1,47 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { UserProfile } from '../../types';
 import { 
   ShieldCheck, LogOut, Key, User, Calendar, Database, 
-  CheckCircle2, XCircle, ArrowLeftRight, Moon, Sun, Palette, Shield, AlertCircle
+  CheckCircle2, XCircle, Moon, Sun, Palette, Shield
 } from 'lucide-react';
-import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, isAuthorizedAdminKey, ADMIN_SECURITY_KEY } from '../../data/initialVaultData';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 
 interface ProfileScreenProps {
   currentUser: UserProfile;
   onLogout: () => void;
-  onSwitchUser?: (user: UserProfile) => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLogout, onSwitchUser }) => {
-  const { theme, toggleTheme, setTheme, isDark } = useTheme();
-  const [unlockKey, setUnlockKey] = useState('');
-  const [keyError, setKeyError] = useState<string | null>(null);
-  const [keySuccess, setKeySuccess] = useState<string | null>(null);
-
-  const handleUnlockAdmin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setKeyError(null);
-    setKeySuccess(null);
-
-    if (isAuthorizedAdminKey(unlockKey)) {
-      if (onSwitchUser) {
-        onSwitchUser({
-          ...currentUser,
-          role: 'admin',
-          tier: 'Bóveda Diamante',
-          displayName: currentUser.displayName.includes('(VIP)') 
-            ? currentUser.displayName.replace('(VIP)', '').trim() + ' (Admin)'
-            : currentUser.displayName,
-        });
-      }
-      setKeySuccess('¡Modo Administrador activado con éxito!');
-      setUnlockKey('');
-    } else {
-      setKeyError('Key de seguridad incorrecta.');
-    }
-  };
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLogout }) => {
+  const { setTheme, isDark } = useTheme();
 
   return (
     <div
@@ -59,140 +31,86 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
             isDark ? 'text-white' : 'text-[#0F172A]'
           }`}
         >
-          Perfil de Servidor
+          Perfil de Cuenta
         </h2>
       </div>
 
       {/* User Card */}
       <div
-        className={`p-5 rounded-2xl text-center space-y-3 border transition-colors ${
-          isDark
+        className={`p-4 rounded-2xl border transition-all ${
+          currentUser.role === 'admin'
+            ? isDark
+              ? 'bg-[#0066FF]/10 border-[#0066FF]/40 shadow-lg shadow-[#0066FF]/10'
+              : 'bg-blue-50 border-blue-200 shadow-sm'
+            : isDark
             ? 'bg-[#0A0A0C] border-[#1E1E24]'
             : 'bg-white border-[#E2E8F0] shadow-sm'
         }`}
       >
-        <div
-          className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center text-xl font-black border transition-colors ${
-            isDark
-              ? 'bg-[#121216] border-[#0066FF]/40 text-[#0066FF]'
-              : 'bg-blue-50 border-blue-200 text-[#0066FF]'
-          }`}
-        >
-          {currentUser.displayName.charAt(0).toUpperCase()}
-        </div>
-
-        <div>
-          <div className="flex items-center justify-center gap-1.5">
-            <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-              {currentUser.displayName}
-            </h3>
-            {currentUser.role === 'admin' && <VerifiedBadge className="w-4 h-4" />}
-          </div>
-          <p className={`text-xs font-mono mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-            {currentUser.email}
-          </p>
-        </div>
-
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0066FF]/15 border border-[#0066FF] text-[10px] font-bold text-[#0066FF] uppercase tracking-wider">
-          {currentUser.role === 'admin' ? (
-            <>
-              <VerifiedBadge className="w-3.5 h-3.5" />
-              <span>ADMINISTRADOR / ROOT VERIFICADO</span>
-            </>
-          ) : (
-            <>
-              <User className="w-3 h-3 text-[#0066FF]" />
-              <span>MIEMBRO VIP (SOLO LECTURA)</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Security Notice for Admin Authorization */}
-      <div
-        className={`p-3.5 rounded-xl border space-y-1.5 transition-colors ${
-          isDark
-            ? 'bg-[#0A0A0C] border-[#1E1E24]'
-            : 'bg-white border-[#E2E8F0] shadow-sm'
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-[#0066FF]" />
-          <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-            Seguridad del Modo Administrador
-          </span>
-        </div>
-        <p className={`text-[11px] leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-          Para obtener privilegios de Administrador (publicar contenido y gestionar la Bóveda), se requiere una <strong className="text-[#0066FF]">Key de seguridad privada</strong>. Los miembros regulares disfrutan de acceso a todas las descargas y discusiones.
-        </p>
-      </div>
-
-      {/* Admin Key Unlock Section (If current user is VIP member) */}
-      {currentUser.role !== 'admin' && onSwitchUser && (
-        <form
-          onSubmit={handleUnlockAdmin}
-          className={`p-4 rounded-2xl border space-y-3 transition-colors ${
-            isDark
-              ? 'bg-[#0066FF]/5 border-[#0066FF]/30'
-              : 'bg-blue-50/60 border-blue-200 shadow-sm'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-[#0066FF]" />
-            <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-              Desbloquear Modo Administrador con Key
-            </span>
-          </div>
-
-          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-            Ingresa la clave de seguridad para activar permisos Root y habilitar el botón de subida:
-          </p>
-
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Key className="w-4 h-4 absolute left-3 top-2.5 text-[#0066FF]" />
-              <input
-                id="unlock-admin-key-input"
-                type="password"
-                value={unlockKey}
-                onChange={(e) => {
-                  setUnlockKey(e.target.value);
-                  setKeyError(null);
-                }}
-                placeholder="Ingresa la Key de seguridad"
-                className={`w-full rounded-xl pl-9 pr-3 py-2 text-xs font-mono tracking-widest focus:outline-none transition-colors border ${
-                  isDark
-                    ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-[#5A5A62]'
-                    : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder-[#94A3B8]'
-                }`}
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            {currentUser.avatarUrl ? (
+              <img
+                src={currentUser.avatarUrl}
+                alt={currentUser.displayName}
+                className="w-12 h-12 rounded-full object-cover border-2 border-[#0066FF]"
               />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-[#0066FF]/20 flex items-center justify-center text-lg font-bold text-[#0066FF]">
+                {currentUser.displayName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="absolute -bottom-1 -right-1">
+              {currentUser.role === 'admin' ? (
+                <div className="bg-[#0066FF] rounded-full p-0.5 shadow-md">
+                  <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                </div>
+              ) : (
+                <div className="bg-emerald-500 rounded-full p-0.5 shadow-md">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                </div>
+              )}
             </div>
-
-            <button
-              id="unlock-admin-btn"
-              type="submit"
-              className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold uppercase tracking-wider shadow-md shadow-[#0066FF]/30 transition-all shrink-0 flex items-center gap-1.5"
-            >
-              <Key className="w-3.5 h-3.5" />
-              <span>Validar</span>
-            </button>
           </div>
 
-          {keyError && (
-            <div className="text-[11px] text-red-400 font-semibold flex items-center gap-1.5 pt-1">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{keyError}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`text-sm font-bold truncate ${
+                  isDark ? 'text-white' : 'text-[#0F172A]'
+                }`}
+              >
+                {currentUser.displayName}
+              </span>
+              {currentUser.role === 'admin' && <VerifiedBadge className="w-3.5 h-3.5 shrink-0" />}
             </div>
-          )}
 
-          {keySuccess && (
-            <div className="text-[11px] text-emerald-500 font-semibold flex items-center gap-1.5 pt-1">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>{keySuccess}</span>
+            <span
+              className={`text-xs block truncate ${
+                isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'
+              }`}
+            >
+              {currentUser.email}
+            </span>
+
+            <div className="flex items-center gap-2 mt-1">
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                  currentUser.role === 'admin'
+                    ? 'bg-[#0066FF] text-white shadow-sm'
+                    : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                }`}
+              >
+                {currentUser.role === 'admin' ? 'ADMINISTRADOR ROOT' : 'MIEMBRO VIP'}
+              </span>
+
+              <span className={`text-[10px] ${isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}`}>
+                {currentUser.tier}
+              </span>
             </div>
-          )}
-        </form>
-      )}
+          </div>
+        </div>
+      </div>
 
       {/* App Theme Switcher Section (Dark / Light) */}
       <div
@@ -250,56 +168,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
           </button>
         </div>
       </div>
-
-      {/* Quick Role Switcher for Testing */}
-      {onSwitchUser && (
-        <div
-          className={`p-3.5 rounded-xl border space-y-2 transition-colors ${
-            isDark
-              ? 'bg-[#0A0A0C] border-[#0066FF]/30'
-              : 'bg-blue-50/50 border-[#0066FF]/30'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-[#0066FF] flex items-center gap-1.5">
-            <ArrowLeftRight className="w-3 h-3" />
-            <span>Alternar Rol para Pruebas</span>
-          </div>
-          <p className={`text-[11px] leading-snug ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-            Comprueba cómo cambia la interfaz cuando eres el Administrador (único que sube contenido) vs un Miembro VIP.
-          </p>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              id="switch-to-admin-btn"
-              onClick={() => onSwitchUser(INITIAL_ADMIN_USER)}
-              className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 border ${
-                currentUser.role === 'admin'
-                  ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
-                  : isDark
-                  ? 'bg-[#121216] text-[#8E8E93] hover:text-white border-[#1E1E24]'
-                  : 'bg-white text-[#64748B] hover:text-[#0F172A] border-[#E2E8F0]'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Admin Root</span>
-            </button>
-
-            <button
-              id="switch-to-member-btn"
-              onClick={() => onSwitchUser(INITIAL_MEMBER_USER)}
-              className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 border ${
-                currentUser.role === 'vip_member'
-                  ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
-                  : isDark
-                  ? 'bg-[#121216] text-[#8E8E93] hover:text-white border-[#1E1E24]'
-                  : 'bg-white text-[#64748B] hover:text-[#0F172A] border-[#E2E8F0]'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>Miembro VIP</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Role-Based Permissions Matrix */}
       <div className="space-y-2">
@@ -365,7 +233,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
           <div className="p-3 flex items-center justify-between">
             <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
               <Key className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Firebase UID</span>
+              <span>ID de Usuario</span>
             </span>
             <span className={`font-mono text-[11px] truncate max-w-[140px] ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
               {currentUser.uid}
@@ -374,37 +242,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
 
           <div className="p-3 flex items-center justify-between">
             <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-              <Database className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Nivel de Bóveda</span>
+              <Calendar className="w-3.5 h-3.5 text-[#0066FF]" />
+              <span>Fecha de Registro</span>
             </span>
-            <span className={`font-semibold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>{currentUser.tier}</span>
+            <span className={isDark ? 'text-white' : 'text-[#0F172A]'}>
+              {currentUser.joinedAt}
+            </span>
           </div>
 
           <div className="p-3 flex items-center justify-between">
             <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-              <Calendar className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Ingreso al Hub</span>
+              <Database className="w-3.5 h-3.5 text-[#0066FF]" />
+              <span>Servidor Vault</span>
             </span>
-            <span className={isDark ? 'text-white' : 'text-[#0F172A]'}>{currentUser.joinedAt}</span>
+            <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+              Conectado
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Logout Action */}
-      <div className="pt-2">
-        <button
-          id="profile-logout-btn"
-          onClick={onLogout}
-          className={`w-full py-3 px-4 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-            isDark
-              ? 'bg-[#0A0A0C] hover:bg-red-500/10 border-[#1E1E24] hover:border-red-500/30 text-red-400'
-              : 'bg-white hover:bg-red-50 border-[#E2E8F0] hover:border-red-200 text-red-600 shadow-sm'
-          }`}
-        >
-          <LogOut className="w-4 h-4" />
-          <span>CERRAR SESIÓN DEL SERVIDOR</span>
-        </button>
-      </div>
+      {/* Logout Button */}
+      <button
+        id="profile-logout-btn"
+        onClick={onLogout}
+        className={`w-full py-3.5 px-4 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+          isDark
+            ? 'border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20'
+            : 'border-red-200 text-red-600 bg-red-50 hover:bg-red-100 shadow-sm'
+        }`}
+      >
+        <LogOut className="w-4 h-4" />
+        <span>Cerrar Sesión Segura</span>
+      </button>
     </div>
   );
 };

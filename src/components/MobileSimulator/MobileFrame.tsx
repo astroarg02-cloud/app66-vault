@@ -46,7 +46,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
 
   return (
     <div className="relative flex flex-col items-center justify-center p-2 sm:p-4 space-y-4">
-      {/* Device & Role Testing Control Bar */}
+      {/* Device Switcher Control Bar */}
       <div className="flex flex-wrap items-center justify-center gap-3 max-w-xl w-full">
         {/* Device Switcher (iPhone vs Android) */}
         <div
@@ -84,45 +84,6 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
             <span>Android (APK)</span>
           </button>
         </div>
-
-        {/* Quick Role Testing Control */}
-        {currentUser && (
-          <div
-            className={`flex items-center gap-1.5 p-1 rounded-2xl border transition-colors ${
-              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
-            }`}
-          >
-            <button
-              id="role-switch-admin"
-              onClick={() => onLogin(INITIAL_ADMIN_USER)}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                currentUser.role === 'admin'
-                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-                  : isDark
-                  ? 'bg-[#121216] text-[#8E8E93] hover:text-white border border-[#1E1E24]'
-                  : 'bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
-              }`}
-            >
-              <VerifiedBadge className="w-3.5 h-3.5" />
-              <span>Admin (Sube)</span>
-            </button>
-
-            <button
-              id="role-switch-member"
-              onClick={() => onLogin(INITIAL_MEMBER_USER)}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                currentUser.role === 'vip_member'
-                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-                  : isDark
-                  ? 'bg-[#121216] text-[#8E8E93] hover:text-white border border-[#1E1E24]'
-                  : 'bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>VIP (Descarga)</span>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Device Frame (Titanium iPhone or Sleek Android) */}
@@ -223,7 +184,6 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
                         setSelectedItem(null);
                         onLogout();
                       }}
-                      onSwitchUser={onLogin}
                     />
                   )}
                 </div>
