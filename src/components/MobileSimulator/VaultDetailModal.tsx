@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   ArrowLeft, Share2, Download, Heart, MessageSquare, 
-  CheckCircle2, Send, Shield, Copy, Check, HardDrive 
+  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VaultItem, UserProfile } from '../../types';
@@ -89,7 +89,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
     >
       {/* Top App Bar */}
       <div
-        className={`flex items-center justify-between px-4 py-3 border-b backdrop-blur-md transition-colors ${
+        className={`flex items-center justify-between px-3.5 py-2.5 border-b backdrop-blur-md transition-colors ${
           isDark
             ? 'border-[#1E1E24] bg-black/90'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
@@ -98,16 +98,15 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
         <button
           id="vault-detail-back-btn"
           onClick={onClose}
-          className={`flex items-center gap-1.5 p-2 rounded-lg transition-colors ${
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all border ${
             isDark
-              ? 'text-white hover:bg-[#121216]'
-              : 'text-[#0F172A] hover:bg-slate-100'
+              ? 'bg-[#121216] text-white hover:bg-[#1E1E24] border-[#1E1E24]'
+              : 'bg-slate-100 text-[#0F172A] hover:bg-slate-200 border-[#E2E8F0]'
           }`}
+          title="Salir de la publicación"
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span className={`text-xs font-semibold ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-            Bóveda
-          </span>
+          <ArrowLeft className="w-4 h-4 text-[#0066FF]" />
+          <span className="text-xs font-bold">Volver</span>
         </button>
 
         <div className="text-xs font-bold tracking-widest text-[#0066FF] uppercase flex items-center gap-1.5">
@@ -115,18 +114,34 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
           <span>Ficha de Contenido</span>
         </div>
 
-        <button
-          id="vault-share-btn"
-          onClick={() => setShowShareModal(true)}
-          className={`p-2 rounded-lg transition-colors ${
-            isDark
-              ? 'text-white hover:bg-[#121216]'
-              : 'text-[#0F172A] hover:bg-slate-100'
-          }`}
-          title="Compartir Invitación"
-        >
-          <Share2 className={`w-5 h-5 ${isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'}`} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            id="vault-share-btn"
+            onClick={() => setShowShareModal(true)}
+            className={`p-2 rounded-xl transition-colors ${
+              isDark
+                ? 'text-white hover:bg-[#121216]'
+                : 'text-[#0F172A] hover:bg-slate-100'
+            }`}
+            title="Compartir Invitación"
+          >
+            <Share2 className={`w-4 h-4 ${isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'}`} />
+          </button>
+
+          {/* Direct Close Button with X */}
+          <button
+            id="vault-close-x-btn"
+            onClick={onClose}
+            className={`p-2 rounded-xl transition-colors ${
+              isDark
+                ? 'text-white hover:bg-red-500/20 hover:text-red-400'
+                : 'text-[#0F172A] hover:bg-red-50 hover:text-red-500'
+            }`}
+            title="Cerrar y salir"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Scrollable Content */}
@@ -379,6 +394,22 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
               })
             )}
           </div>
+        </div>
+
+        {/* Bottom Exit Button */}
+        <div className="pt-2 pb-4">
+          <button
+            id="vault-bottom-exit-btn"
+            onClick={onClose}
+            className={`w-full py-3 px-4 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              isDark
+                ? 'border-[#1E1E24] bg-[#0A0A0C] text-[#8E8E93] hover:text-white hover:border-[#2A2A32] hover:bg-[#121216]'
+                : 'border-[#E2E8F0] bg-white text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 shadow-sm'
+            }`}
+          >
+            <ArrowLeft className="w-4 h-4 text-[#0066FF]" />
+            <span>Salir y volver a la Bóveda</span>
+          </button>
         </div>
       </div>
 
