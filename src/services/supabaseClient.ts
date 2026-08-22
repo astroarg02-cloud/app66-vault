@@ -19,21 +19,79 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-// Database & Authentication helper functions with automatic fallback
+const STORAGE_SESSION_KEY = 'app66_active_session_v1';
+const STORAGE_VAULT_ITEMS_KEY = 'app66_vault_items_v1';
+
+// Database & Authentication helper functions with automatic fallback and persistent sessions
 export const supabaseService = {
-  // --- AUTHENTICATION METHODS ---
-  async getCurrentUser(): Promise<UserProfile | null> {
-    if (!supabase) return null;
-
+  // --- LOCAL PERSISTENCE HELPERS ---
+  saveSession(user: UserProfile | null): void {
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error || !session || !session.user) return null;
-
-      return this.mapSupabaseUserToProfile(session.user);
-    } catch (err) {
-      console.warn('Error fetching current Supabase session:', err);
-      return null;
+      if (user) {
+        localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(STORAGE_SESSION_KEY);
+      }
+    } catch (e) {
+      console.warn('Could not write session to localStorage:', e);
     }
+  },
+
+  getLocalSession(): UserProfile | null {
+    try {
+      const stored = localStorage.getItem(STORAGE_SESSION_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.uid && parsed.role) {
+          return parsed as UserProfile;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read session from localStorage:', e);
+    }
+    return null;
+  },
+
+  saveLocalVaultItems(items: VaultItem[]): void {
+    try {
+      localStorage.setItem(STORAGE_VAULT_ITEMS_KEY, JSON.stringify(items));
+    } catch (e) {
+      console.warn('Could not save vault items to localStorage:', e);
+    }
+  },
+
+  getLocalVaultItems(): VaultItem[] | null {
+    try {
+      const stored = localStorage.getItem(STORAGE_VAULT_ITEMS_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed as VaultItem[];
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load vault items from localStorage:', e);
+    }
+    return null;
+  },
+
+  async getCurrentUser(): Promise<UserProfile | null> {
+    // 1. If Supabase is configured, check live session
+    if (supabase) {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (!error && session && session.user) {
+          const profile = this.mapSupabaseUserToProfile(session.user);
+          this.saveSession(profile);
+          return profile;
+        }
+      } catch (err) {
+        console.warn('Error fetching current Supabase session:', err);
+      }
+    }
+
+    // 2. Persistent fallback from local storage (keeps users logged in across page reloads/browser sessions)
+    return this.getLocalSession();
   },
 
   async signUp(
@@ -50,17 +108,16 @@ export const supabaseService = {
     const isAdmin = wantsAdmin && isAuthorizedAdminKey(adminKey);
 
     if (!supabase) {
-      return {
-        user: {
-          uid: isAdmin ? 'admin_master_astro' : `user_${Date.now()}`,
-          email,
-          displayName: displayName || (isAdmin ? 'Administrador Root' : 'Miembro VIP'),
-          role: isAdmin ? 'admin' : 'vip_member',
-          tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
-          joinedAt: new Date().toISOString().split('T')[0],
-        },
-        error: null,
+      const user: UserProfile = {
+        uid: isAdmin ? 'admin_master_astro' : `user_${Date.now()}`,
+        email,
+        displayName: displayName || (isAdmin ? 'Administrador Root' : 'Miembro VIP'),
+        role: isAdmin ? 'admin' : 'vip_member',
+        tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
+        joinedAt: new Date().toISOString().split('T')[0],
       };
+      this.saveSession(user);
+      return { user, error: null };
     }
 
     try {
@@ -81,6 +138,7 @@ export const supabaseService = {
 
       if (data.user) {
         const profile = this.mapSupabaseUserToProfile(data.user, displayName, isAdmin);
+        this.saveSession(profile);
         return { user: profile, error: null };
       }
 
@@ -104,17 +162,16 @@ export const supabaseService = {
 
     if (!supabase) {
       const fallbackName = email ? email.split('@')[0] : 'Usuario';
-      return {
-        user: {
-          uid: isAdmin ? 'admin_master_astro' : `user_${Date.now()}`,
-          email,
-          displayName: isAdmin ? 'Administrador Root' : `${fallbackName} (VIP)`,
-          role: isAdmin ? 'admin' : 'vip_member',
-          tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
-          joinedAt: new Date().toISOString().split('T')[0],
-        },
-        error: null,
+      const user: UserProfile = {
+        uid: isAdmin ? 'admin_master_astro' : `user_${Date.now()}`,
+        email,
+        displayName: isAdmin ? 'Administrador Root' : `${fallbackName} (VIP)`,
+        role: isAdmin ? 'admin' : 'vip_member',
+        tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
+        joinedAt: new Date().toISOString().split('T')[0],
       };
+      this.saveSession(user);
+      return { user, error: null };
     }
 
     try {
@@ -129,6 +186,7 @@ export const supabaseService = {
 
       if (data.user) {
         const profile = this.mapSupabaseUserToProfile(data.user, undefined, isAdmin);
+        this.saveSession(profile);
         return { user: profile, error: null };
       }
 
@@ -139,6 +197,7 @@ export const supabaseService = {
   },
 
   async signOut(): Promise<void> {
+    this.saveSession(null);
     if (!supabase) return;
     try {
       await supabase.auth.signOut();
@@ -165,48 +224,72 @@ export const supabaseService = {
 
   // --- DATABASE METHODS ---
   async fetchVaultItems(): Promise<VaultItem[]> {
-    if (!supabase) {
-      return INITIAL_VAULT_ITEMS;
-    }
+    // 1. Try fetching from Supabase if configured
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('vault_items')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-    try {
-      const { data, error } = await supabase
-        .from('vault_items')
-        .select('*')
-        .order('created_at', { ascending: false });
+        if (!error && data && data.length > 0) {
+          const mappedItems: VaultItem[] = data.map((row: any) => ({
+            id: row.id,
+            title: row.title,
+            description: row.description || '',
+            category: row.category || 'code',
+            fileType: row.file_type || row.fileType || 'ZIP',
+            downloadUrl: row.download_url || row.downloadUrl || 'https://example.com/vault-file.zip',
+            fileSize: row.file_size || row.fileSize || '10 MB',
+            coverImage: row.cover_image || row.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60',
+            likesCount: Number(row.likes_count ?? row.likesCount ?? 0),
+            likedBy: Array.isArray(row.liked_by) ? row.liked_by : (row.likedBy || []),
+            createdAt: row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : '2026-08-22',
+            comments: Array.isArray(row.comments) ? row.comments : [],
+            isLockedForTier: Boolean(row.is_locked_for_tier ?? row.isLockedForTier),
+            version: row.version || 'v1.0.0',
+            author: row.author || {
+              name: 'Bóveda Central',
+              badge: 'ADMIN'
+            }
+          }));
 
-      if (error || !data || data.length === 0) {
-        if (error) console.warn('Supabase fetch notice (using defaults if empty):', error.message);
-        return INITIAL_VAULT_ITEMS;
-      }
+          // Merge any locally created items that might not have reached Supabase
+          const localItems = this.getLocalVaultItems() || [];
+          const remoteIds = new Set(mappedItems.map(i => i.id));
+          const unsyncedLocals = localItems.filter(i => !remoteIds.has(i.id));
+          const allItems = [...unsyncedLocals, ...mappedItems];
 
-      return data.map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        description: row.description || '',
-        category: row.category || 'code',
-        fileType: row.file_type || row.fileType || 'ZIP',
-        downloadUrl: row.download_url || row.downloadUrl || 'https://example.com/vault-file.zip',
-        fileSize: row.file_size || row.fileSize || '10 MB',
-        coverImage: row.cover_image || row.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60',
-        likesCount: Number(row.likes_count ?? row.likesCount ?? 0),
-        likedBy: Array.isArray(row.liked_by) ? row.liked_by : (row.likedBy || []),
-        createdAt: row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : '2026-08-22',
-        comments: Array.isArray(row.comments) ? row.comments : [],
-        isLockedForTier: Boolean(row.is_locked_for_tier ?? row.isLockedForTier),
-        version: row.version || 'v1.0.0',
-        author: row.author || {
-          name: 'Bóveda Central',
-          badge: 'ADMIN'
+          this.saveLocalVaultItems(allItems);
+          return allItems;
         }
-      }));
-    } catch (err) {
-      console.warn('Error connecting to Supabase, fallback to initial items:', err);
-      return INITIAL_VAULT_ITEMS;
+      } catch (err) {
+        console.warn('Error connecting to Supabase, loading from persistent storage:', err);
+      }
     }
+
+    // 2. Load from persistent localStorage
+    const localItems = this.getLocalVaultItems();
+    if (localItems && localItems.length > 0) {
+      return localItems;
+    }
+
+    // 3. Initial seed if storage is empty
+    this.saveLocalVaultItems(INITIAL_VAULT_ITEMS);
+    return INITIAL_VAULT_ITEMS;
   },
 
   async insertVaultItem(item: VaultItem): Promise<boolean> {
+    // 1. Immediately persist to localStorage
+    try {
+      const currentItems = this.getLocalVaultItems() || INITIAL_VAULT_ITEMS;
+      const updated = [item, ...currentItems.filter(i => i.id !== item.id)];
+      this.saveLocalVaultItems(updated);
+    } catch (e) {
+      console.warn('Error persisting item locally:', e);
+    }
+
+    // 2. Sync to Supabase if configured
     if (!supabase) return true;
 
     try {
@@ -241,6 +324,20 @@ export const supabaseService = {
   },
 
   async updateItemLikes(itemId: string, likesCount: number, likedBy: string[]): Promise<boolean> {
+    // 1. Update in local storage
+    try {
+      const currentItems = this.getLocalVaultItems();
+      if (currentItems) {
+        const updated = currentItems.map(item => 
+          item.id === itemId ? { ...item, likesCount, likedBy } : item
+        );
+        this.saveLocalVaultItems(updated);
+      }
+    } catch (e) {
+      console.warn('Error updating likes locally:', e);
+    }
+
+    // 2. Update in Supabase
     if (!supabase) return true;
 
     try {
@@ -264,6 +361,20 @@ export const supabaseService = {
   },
 
   async updateItemComments(itemId: string, comments: any[]): Promise<boolean> {
+    // 1. Update in local storage
+    try {
+      const currentItems = this.getLocalVaultItems();
+      if (currentItems) {
+        const updated = currentItems.map(item => 
+          item.id === itemId ? { ...item, comments } : item
+        );
+        this.saveLocalVaultItems(updated);
+      }
+    } catch (e) {
+      console.warn('Error updating comments locally:', e);
+    }
+
+    // 2. Update in Supabase
     if (!supabase) return true;
 
     try {

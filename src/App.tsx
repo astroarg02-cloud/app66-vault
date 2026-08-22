@@ -30,7 +30,7 @@ function AppContent() {
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
-  // Check existing session from Supabase on mount
+  // Check existing session from Supabase/Local storage on mount
   useEffect(() => {
     supabaseService.getCurrentUser()
       .then((user) => {
@@ -49,9 +49,19 @@ function AppContent() {
     });
   }, []);
 
+  const handleLogin = (user: UserProfile) => {
+    setCurrentUser(user);
+    supabaseService.saveSession(user);
+  };
+
   const handleLogout = async () => {
     await supabaseService.signOut();
     setCurrentUser(null);
+  };
+
+  const handleSwitchUser = (user: UserProfile) => {
+    setCurrentUser(user);
+    supabaseService.saveSession(user);
   };
 
   // Toggle Like (optimistic state + sync to Supabase)
@@ -159,7 +169,7 @@ function AppContent() {
         <div className={`w-full max-w-md rounded-3xl border shadow-2xl overflow-hidden ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
         }`}>
-          <AuthScreen onLogin={setCurrentUser} />
+          <AuthScreen onLogin={handleLogin} />
         </div>
       </div>
     );
@@ -328,6 +338,7 @@ function AppContent() {
             <ProfileScreen
               currentUser={currentUser}
               onLogout={handleLogout}
+              onSwitchUser={handleSwitchUser}
             />
           )}
         </div>
