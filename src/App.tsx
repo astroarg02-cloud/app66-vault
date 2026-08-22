@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS } from './data/initialVaultData';
 import { VaultItem, UserProfile, VaultComment } from './types';
 import { AuthScreen } from './components/MobileSimulator/AuthScreen';
@@ -303,6 +304,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <AppContent />
+      <SpeedInsights />
     </ThemeProvider>
   );
 }
