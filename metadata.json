@@ -1,0 +1,6 @@
+{
+  "name": "Vault Private Server - Flutter & Firebase Hub",
+  "description": "Bóveda de contenido exclusivo y servidor privado para Flutter y Firebase con arquitectura limpia, Riverpod y UI minimalista negro profundo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
