@@ -28,6 +28,8 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isDraggingCover, setIsDraggingCover] = useState(false);
   const [autoDetectedInfo, setAutoDetectedInfo] = useState<string | null>(null);
+  const [rawFile, setRawFile] = useState<File | null>(null);
+  const [fileMimeType, setFileMimeType] = useState<string>('');
   const { isDark } = useTheme();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,7 +52,9 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     const formattedSize = formatBytes(file.size);
 
+    setRawFile(file);
     setUploadedFileName(file.name);
+    setFileMimeType(file.type || 'application/octet-stream');
     setFileSize(formattedSize);
 
     // Si el usuario no ha escrito un título o tiene el default, sugerimos el nombre del archivo limpio
@@ -165,6 +169,9 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
       category,
       fileType: uploadedFileName ? (fileType || 'Archivo') : '',
       fileSize: uploadedFileName ? (fileSize || '') : '',
+      fileName: uploadedFileName || undefined,
+      fileMimeType: fileMimeType || undefined,
+      rawFileBlob: rawFile || undefined,
       downloadUrl: finalDownloadUrl,
       coverImage: finalCover,
       version: version || 'v1.0',

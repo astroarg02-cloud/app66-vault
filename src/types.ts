@@ -37,6 +37,10 @@ export interface VaultItem {
   comments: VaultComment[];
   isLockedForTier?: boolean;
   version?: string;
+  fileName?: string;
+  fileMimeType?: string;
+  fileData?: string; // base64 or text content
+  rawFileBlob?: Blob | File;
   author: {
     name: string;
     badge: string;

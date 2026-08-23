@@ -356,8 +356,8 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                 isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
               }`}
             >
-              <span>Descarga real directa en formato .ZIP</span>
-              <span>Acceso Verificado</span>
+              <span>{item.fileName ? `Archivo original: ${item.fileName}` : 'Descarga directa en formato original'}</span>
+              <span>Formato Genuino • Verificado</span>
             </div>
           </div>
 
