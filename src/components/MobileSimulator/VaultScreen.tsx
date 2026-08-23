@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { VaultItem, UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { hasVaultItemFile } from '../../utils/vaultHelpers';
 
 interface VaultScreenProps {
   items: VaultItem[];
@@ -247,9 +248,13 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                       alt={item.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    {item.fileType && (
+                    {hasVaultItemFile(item) && item.fileType ? (
                       <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-[#0066FF] uppercase">
                         {item.fileType}
+                      </div>
+                    ) : (
+                      <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-semibold text-white/80 uppercase">
+                        {item.category === 'document' ? 'Doc' : item.category === 'code' ? 'Post' : 'Publicación'}
                       </div>
                     )}
                     {currentUser.role === 'admin' && onDeleteItem && (
@@ -332,12 +337,18 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-1.5">
-                      {item.fileType && (
+                      {hasVaultItemFile(item) && item.fileType ? (
                         <span className="px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[10px] font-bold text-[#0066FF] uppercase">
                           {item.fileType}
                         </span>
+                      ) : (
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase ${
+                          isDark ? 'bg-white/5 text-[#8E8E93]' : 'bg-slate-100 text-[#64748B]'
+                        }`}>
+                          Publicación
+                        </span>
                       )}
-                      {item.fileSize && (
+                      {hasVaultItemFile(item) && item.fileSize && (
                         <span
                           className={`text-[11px] font-mono ${
                             isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'

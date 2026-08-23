@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { 
   ArrowLeft, Share2, Download, Heart, MessageSquare, 
-  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2
+  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2, Info
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VaultItem, UserProfile } from '../../types';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 import { downloadVaultItemResource } from '../../services/zipExporter';
+import { hasVaultItemFile } from '../../utils/vaultHelpers';
 
 interface VaultDetailModalProps {
   item: VaultItem;
@@ -36,6 +37,9 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [likeAnimating, setLikeAnimating] = useState(false);
   const { isDark } = useTheme();
+
+  // Verifica si la publicación tiene un archivo real adjunto/subido
+  const hasFile = hasVaultItemFile(item);
 
   // Handle Real Functional Download and return to Vault Page
   const handleDownload = async () => {
@@ -224,7 +228,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             </div>
 
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-              {item.fileType || item.fileSize ? (
+              {hasFile && (item.fileType || item.fileSize) ? (
                 <div className="flex items-center gap-2">
                   {item.fileType && (
                     <span className="px-2.5 py-1 rounded-md bg-[#0066FF] text-[10px] font-extrabold text-white uppercase tracking-wider">
@@ -238,7 +242,10 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                   )}
                 </div>
               ) : (
-                <div />
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-sm text-[10px] font-medium text-white/90 border border-white/10">
+                  <Info className="w-3 h-3 text-[#0066FF]" />
+                  <span>Publicación de Contenido</span>
+                </div>
               )}
               <div className="flex items-center gap-1 text-[11px] text-white/90 bg-black/60 px-2 py-0.5 rounded">
                 <HardDrive className="w-3 h-3 text-[#0066FF]" />
@@ -306,60 +313,62 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             <p>{item.description}</p>
           </div>
 
-          {/* Main Action: DOWNLOAD BUTTON */}
-          <div className="space-y-2 pt-1">
-            <button
-              id={`vault-download-action-btn-${item.id}`}
-              onClick={handleDownload}
-              disabled={downloadProgress !== null}
-              className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
-                isDownloaded
-                  ? 'bg-[#10B981] text-white shadow-[#10B981]/25 hover:bg-[#059669]'
-                  : downloadProgress !== null
-                  ? 'bg-[#0066FF]/70 text-white cursor-wait'
-                  : 'bg-[#0066FF] hover:bg-[#0052FF] text-white shadow-[#0066FF]/30 active:scale-[0.99]'
-              }`}
-            >
-              {isDownloaded ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>¡Descargado! Regresando a la Bóveda...</span>
-                </>
-              ) : downloadProgress !== null ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Generando paquete... {downloadProgress}%</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  <span>Descargar Archivo {item.fileSize ? `(${item.fileSize})` : ''}</span>
-                </>
-              )}
-            </button>
-
-            {downloadProgress !== null && (
-              <div
-                className={`w-full rounded-full h-1.5 overflow-hidden ${
-                  isDark ? 'bg-[#121216]' : 'bg-slate-200'
+          {/* Main Action: DOWNLOAD BUTTON (Rendered ONLY if a file was uploaded) */}
+          {hasFile ? (
+            <div className="space-y-2 pt-1">
+              <button
+                id={`vault-download-action-btn-${item.id}`}
+                onClick={handleDownload}
+                disabled={downloadProgress !== null}
+                className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
+                  isDownloaded
+                    ? 'bg-[#10B981] text-white shadow-[#10B981]/25 hover:bg-[#059669]'
+                    : downloadProgress !== null
+                    ? 'bg-[#0066FF]/70 text-white cursor-wait'
+                    : 'bg-[#0066FF] hover:bg-[#0052FF] text-white shadow-[#0066FF]/30 active:scale-[0.99]'
                 }`}
               >
-                <div
-                  className="bg-[#0066FF] h-full transition-all duration-200"
-                  style={{ width: `${downloadProgress}%` }}
-                />
-              </div>
-            )}
+                {isDownloaded ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>¡Descargado! Regresando a la Bóveda...</span>
+                  </>
+                ) : downloadProgress !== null ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Generando descarga... {downloadProgress}%</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    <span>Descargar Archivo {item.fileSize ? `(${item.fileSize})` : ''}</span>
+                  </>
+                )}
+              </button>
 
-            <div
-              className={`flex items-center justify-between text-[10px] px-1 ${
-                isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
-              }`}
-            >
-              <span>{item.fileName ? `Archivo original: ${item.fileName}` : 'Descarga directa en formato original'}</span>
-              <span>Formato Genuino • Verificado</span>
+              {downloadProgress !== null && (
+                <div
+                  className={`w-full rounded-full h-1.5 overflow-hidden ${
+                    isDark ? 'bg-[#121216]' : 'bg-slate-200'
+                  }`}
+                >
+                  <div
+                    className="bg-[#0066FF] h-full transition-all duration-200"
+                    style={{ width: `${downloadProgress}%` }}
+                  />
+                </div>
+              )}
+
+              <div
+                className={`flex items-center justify-between text-[10px] px-1 ${
+                  isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+                }`}
+              >
+                <span>{item.fileName ? `Archivo original: ${item.fileName}` : 'Descarga directa en formato original'}</span>
+                <span>Formato Genuino • Verificado</span>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {/* Private Forum / Comments Section */}
           <div
