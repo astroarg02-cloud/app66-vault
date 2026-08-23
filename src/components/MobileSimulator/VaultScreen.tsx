@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { 
   FolderClosed, Lock, Search, Heart, MessageSquare, 
-  Video, FileCode, FileText, Music, Sliders, Plus,
-  ChevronRight, LayoutGrid, List
+  Plus, ChevronRight, LayoutGrid, List, HardDrive
 } from 'lucide-react';
-import { VaultItem, ResourceCategory, UserProfile } from '../../types';
+import { VaultItem, UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 
 interface VaultScreenProps {
@@ -20,36 +19,18 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   onSelectItem,
   onOpenAdminUpload,
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isGridView, setIsGridView] = useState(false);
   const { isDark } = useTheme();
 
-  const categories = [
-    { id: 'all', label: 'Todos', icon: FolderClosed },
-    { id: 'video', label: 'Videos', icon: Video },
-    { id: 'code', label: 'Código', icon: FileCode },
-    { id: 'document', label: 'PDFs', icon: FileText },
-    { id: 'audio', label: 'Audio', icon: Music },
-    { id: 'preset', label: 'Presets', icon: Sliders },
-  ];
-
   const filteredItems = items.filter((item) => {
-    const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    const query = searchQuery.toLowerCase();
+    return (
+      item.title.toLowerCase().includes(query) ||
+      item.description.toLowerCase().includes(query) ||
+      (item.fileType && item.fileType.toLowerCase().includes(query))
+    );
   });
-
-  const getCategoryIcon = (cat: ResourceCategory) => {
-    switch (cat) {
-      case 'video': return Video;
-      case 'code': return FileCode;
-      case 'audio': return Music;
-      case 'preset': return Sliders;
-      default: return FileText;
-    }
-  };
 
   return (
     <div
@@ -171,30 +152,6 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             {isGridView ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
           </button>
         </div>
-
-        {/* Categories Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pt-3 pb-1 no-scrollbar">
-          {categories.map((cat) => {
-            const isSelected = selectedCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                id={`cat-filter-${cat.id}`}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-                    : isDark
-                    ? 'bg-[#0A0A0C] border border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                    : 'bg-[#F1F5F9] border border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                <cat.icon className="w-3 h-3" />
-                <span>{cat.label}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Directory Content List */}
@@ -273,9 +230,11 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                       alt={item.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-[#0066FF] uppercase">
-                      {item.fileType}
-                    </div>
+                    {item.fileType && (
+                      <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-[#0066FF] uppercase">
+                        {item.fileType}
+                      </div>
+                    )}
                   </div>
                   <div className="p-3 flex-1 flex flex-col justify-between">
                     <div>
@@ -294,7 +253,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                           : 'border-[#E2E8F0] text-[#64748B]'
                       }`}
                     >
-                      <span>{item.fileSize}</span>
+                      <span>{item.fileSize || item.version || ''}</span>
                       <div className="flex items-center gap-1">
                         <Heart className="w-3 h-3 text-[#FF2E63]" />
                         <span>{item.likesCount}</span>
@@ -307,7 +266,6 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
           </div>
         ) : (
           filteredItems.map((item) => {
-            const Icon = getCategoryIcon(item.category);
             return (
               <div
                 key={item.id}
@@ -319,31 +277,47 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                     : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/50 shadow-sm'
                 }`}
               >
-                {/* Category / Icon Thumbnail */}
+                {/* Cover / Icon Thumbnail */}
                 <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
+                  className={`w-14 h-14 rounded-xl overflow-hidden shrink-0 border relative transition-colors ${
                     isDark
                       ? 'bg-[#121216] border-[#1E1E24] group-hover:border-[#0066FF]/40'
                       : 'bg-blue-50/80 border-blue-100 group-hover:border-[#0066FF]/40'
                   }`}
                 >
-                  <Icon className="w-5 h-5 text-[#0066FF]" />
+                  {item.coverImage ? (
+                    <img
+                      src={item.coverImage}
+                      alt={item.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <FolderClosed className="w-6 h-6 text-[#0066FF]" />
+                    </div>
+                  )}
                 </div>
 
                 {/* Details */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[10px] font-bold text-[#0066FF] uppercase">
-                      {item.fileType}
-                    </span>
-                    <span
-                      className={`text-[11px] font-mono ${
-                        isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
-                      }`}
-                    >
-                      {item.fileSize}
-                    </span>
-                  </div>
+                  {(item.fileType || item.fileSize) && (
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      {item.fileType ? (
+                        <span className="px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[10px] font-bold text-[#0066FF] uppercase">
+                          {item.fileType}
+                        </span>
+                      ) : <span />}
+                      {item.fileSize && (
+                        <span
+                          className={`text-[11px] font-mono ${
+                            isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+                          }`}
+                        >
+                          {item.fileSize}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   <h3
                     className={`text-sm font-semibold truncate transition-colors ${

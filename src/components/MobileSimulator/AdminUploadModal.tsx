@@ -17,8 +17,8 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<ResourceCategory>('code');
-  const [fileType, setFileType] = useState('ZIP Paquete');
-  const [fileSize, setFileSize] = useState('0 MB');
+  const [fileType, setFileType] = useState('');
+  const [fileSize, setFileSize] = useState('');
   const [coverImage, setCoverImage] = useState<string>('');
   const [coverFileName, setCoverFileName] = useState<string>('');
   const [downloadUrl, setDownloadUrl] = useState('');
@@ -156,14 +156,14 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
 
     // Fallback de portada si no sube una
     const finalCover = coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
-    const finalDownloadUrl = downloadUrl || '#';
+    const finalDownloadUrl = downloadUrl || '';
 
     onUpload({
       title,
       description,
       category,
-      fileType,
-      fileSize: fileSize || '12 MB',
+      fileType: uploadedFileName ? (fileType || 'Archivo') : '',
+      fileSize: uploadedFileName ? (fileSize || '') : '',
       downloadUrl: finalDownloadUrl,
       coverImage: finalCover,
       version: version || 'v1.0',
@@ -283,7 +283,8 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
                     type="button"
                     onClick={() => {
                       setUploadedFileName('');
-                      setFileSize('0 MB');
+                      setFileSize('');
+                      setFileType('');
                       setAutoDetectedInfo(null);
                       setDownloadUrl('');
                     }}
@@ -439,42 +440,6 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
               />
             </div>
 
-            {/* Categoría Selector */}
-            <div>
-              <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                Categoría en la Bóveda
-              </label>
-              <div className="grid grid-cols-5 gap-2">
-                {[
-                  { id: 'video', label: 'Video', icon: Video },
-                  { id: 'code', label: 'Código', icon: FileCode },
-                  { id: 'document', label: 'PDF', icon: FileText },
-                  { id: 'audio', label: 'Audio', icon: Music },
-                  { id: 'preset', label: 'Preset', icon: Sliders },
-                ].map((cat) => {
-                  const Icon = cat.icon;
-                  const isSelected = category === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setCategory(cat.id as ResourceCategory)}
-                      className={`flex flex-col items-center justify-center p-2 rounded-xl border text-xs transition-all ${
-                        isSelected
-                          ? 'bg-[#0066FF] border-[#0066FF] text-white shadow-md shadow-[#0066FF]/25'
-                          : isDark
-                          ? 'bg-[#121216] border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                          : 'bg-slate-50 border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4 mb-1" />
-                      <span>{cat.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* Descripción */}
             <div>
               <label className={`block text-xs font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
@@ -495,40 +460,44 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
               />
             </div>
 
-            {/* Metadatos Reconocidos: Formato, Peso y Versión */}
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                  Formato
-                </label>
-                <input
-                  type="text"
-                  value={fileType}
-                  onChange={(e) => setFileType(e.target.value)}
-                  placeholder="ZIP / MP4"
-                  className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#0066FF] border ${
-                    isDark
-                      ? 'bg-[#121216] border-[#1E1E24] text-white'
-                      : 'bg-white border-[#CBD5E1] text-[#0F172A]'
-                  }`}
-                />
-              </div>
-              <div>
-                <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                  Peso Reconocido
-                </label>
-                <input
-                  type="text"
-                  value={fileSize}
-                  onChange={(e) => setFileSize(e.target.value)}
-                  placeholder="45 MB"
-                  className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#0066FF] border ${
-                    isDark
-                      ? 'bg-[#121216] border-[#1E1E24] text-white'
-                      : 'bg-white border-[#CBD5E1] text-[#0F172A]'
-                  }`}
-                />
-              </div>
+            {/* Metadatos Reconocidos: Formato, Peso y Versión (Formato y Peso solo visibles si se sube archivo) */}
+            <div className={`grid ${uploadedFileName ? 'grid-cols-3' : 'grid-cols-1'} gap-3`}>
+              {uploadedFileName && (
+                <>
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                      Formato
+                    </label>
+                    <input
+                      type="text"
+                      value={fileType}
+                      onChange={(e) => setFileType(e.target.value)}
+                      placeholder="ZIP / MP4"
+                      className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#0066FF] border ${
+                        isDark
+                          ? 'bg-[#121216] border-[#1E1E24] text-white'
+                          : 'bg-white border-[#CBD5E1] text-[#0F172A]'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                      Peso Reconocido
+                    </label>
+                    <input
+                      type="text"
+                      value={fileSize}
+                      onChange={(e) => setFileSize(e.target.value)}
+                      placeholder="45 MB"
+                      className={`w-full rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#0066FF] border ${
+                        isDark
+                          ? 'bg-[#121216] border-[#1E1E24] text-white'
+                          : 'bg-white border-[#CBD5E1] text-[#0F172A]'
+                      }`}
+                    />
+                  </div>
+                </>
+              )}
               <div>
                 <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
                   Versión

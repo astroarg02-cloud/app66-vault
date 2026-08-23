@@ -168,14 +168,22 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             </div>
 
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-md bg-[#0066FF] text-[10px] font-extrabold text-white uppercase tracking-wider">
-                  {item.fileType}
-                </span>
-                <span className="text-xs text-white/90 bg-black/60 px-2 py-0.5 rounded backdrop-blur-sm">
-                  {item.fileSize}
-                </span>
-              </div>
+              {item.fileType || item.fileSize ? (
+                <div className="flex items-center gap-2">
+                  {item.fileType && (
+                    <span className="px-2.5 py-1 rounded-md bg-[#0066FF] text-[10px] font-extrabold text-white uppercase tracking-wider">
+                      {item.fileType}
+                    </span>
+                  )}
+                  {item.fileSize && (
+                    <span className="text-xs text-white/90 bg-black/60 px-2 py-0.5 rounded backdrop-blur-sm">
+                      {item.fileSize}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div />
+              )}
               <div className="flex items-center gap-1 text-[11px] text-white/90 bg-black/60 px-2 py-0.5 rounded">
                 <HardDrive className="w-3 h-3 text-[#0066FF]" />
                 <span>Alojado por Admin</span>
@@ -242,60 +250,62 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             <p>{item.description}</p>
           </div>
 
-          {/* Main Action: DOWNLOAD BUTTON */}
-          <div className="space-y-2 pt-1">
-            <button
-              id={`vault-download-action-btn-${item.id}`}
-              onClick={handleDownload}
-              disabled={downloadProgress !== null}
-              className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
-                isDownloaded
-                  ? 'bg-[#10B981] text-white shadow-[#10B981]/25 hover:bg-[#059669]'
-                  : downloadProgress !== null
-                  ? 'bg-[#0066FF]/70 text-white cursor-wait'
-                  : 'bg-[#0066FF] hover:bg-[#0052FF] text-white shadow-[#0066FF]/30 active:scale-[0.99]'
-              }`}
-            >
-              {isDownloaded ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Archivo Guardado en Dispositivo</span>
-                </>
-              ) : downloadProgress !== null ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Descargando... {downloadProgress}%</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  <span>Descargar Archivo ({item.fileSize})</span>
-                </>
-              )}
-            </button>
-
-            {downloadProgress !== null && (
-              <div
-                className={`w-full rounded-full h-1.5 overflow-hidden ${
-                  isDark ? 'bg-[#121216]' : 'bg-slate-200'
+          {/* Main Action: DOWNLOAD BUTTON (solo si tiene archivo adjunto) */}
+          {(item.fileType || item.downloadUrl) && item.downloadUrl !== '#' && (
+            <div className="space-y-2 pt-1">
+              <button
+                id={`vault-download-action-btn-${item.id}`}
+                onClick={handleDownload}
+                disabled={downloadProgress !== null}
+                className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
+                  isDownloaded
+                    ? 'bg-[#10B981] text-white shadow-[#10B981]/25 hover:bg-[#059669]'
+                    : downloadProgress !== null
+                    ? 'bg-[#0066FF]/70 text-white cursor-wait'
+                    : 'bg-[#0066FF] hover:bg-[#0052FF] text-white shadow-[#0066FF]/30 active:scale-[0.99]'
                 }`}
               >
-                <div
-                  className="bg-[#0066FF] h-full transition-all duration-200"
-                  style={{ width: `${downloadProgress}%` }}
-                />
-              </div>
-            )}
+                {isDownloaded ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Archivo Guardado en Dispositivo</span>
+                  </>
+                ) : downloadProgress !== null ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Descargando... {downloadProgress}%</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    <span>Descargar Archivo {item.fileSize ? `(${item.fileSize})` : ''}</span>
+                  </>
+                )}
+              </button>
 
-            <div
-              className={`flex items-center justify-between text-[10px] px-1 ${
-                isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
-              }`}
-            >
-              <span>Protocolo: Firebase Storage + Dio Cache</span>
-              <span>Acceso Verificado</span>
+              {downloadProgress !== null && (
+                <div
+                  className={`w-full rounded-full h-1.5 overflow-hidden ${
+                    isDark ? 'bg-[#121216]' : 'bg-slate-200'
+                  }`}
+                >
+                  <div
+                    className="bg-[#0066FF] h-full transition-all duration-200"
+                    style={{ width: `${downloadProgress}%` }}
+                  />
+                </div>
+              )}
+
+              <div
+                className={`flex items-center justify-between text-[10px] px-1 ${
+                  isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+                }`}
+              >
+                <span>Protocolo: Firebase Storage + Dio Cache</span>
+                <span>Acceso Verificado</span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Private Forum / Comments Section */}
           <div
