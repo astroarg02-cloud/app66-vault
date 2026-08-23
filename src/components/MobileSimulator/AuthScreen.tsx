@@ -66,23 +66,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       }`}
     >
       <div className="my-auto space-y-5">
-        {/* Animated Vault Emblem */}
+        {/* Animated Emblem / Logo */}
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="relative">
+          <div className="relative group">
             <div
-              className={`w-20 h-20 rounded-full flex items-center justify-center border transition-all ${
+              className={`w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center border transition-all ${
                 enableAdminMode
-                  ? 'bg-[#0066FF]/10 border-[#0066FF] shadow-[0_0_50px_-5px_rgba(0,102,255,0.6)]'
+                  ? 'border-[#0066FF] shadow-[0_0_50px_-5px_rgba(0,102,255,0.6)]'
                   : isDark
-                  ? 'bg-[#0A0A0C] border-[#1E1E24] shadow-[0_0_50px_-10px_rgba(0,102,255,0.4)]'
-                  : 'bg-white border-blue-100 shadow-xl shadow-blue-500/15'
+                  ? 'border-[#0066FF]/40 shadow-[0_0_50px_-10px_rgba(0,102,255,0.5)]'
+                  : 'border-blue-200 shadow-xl shadow-blue-500/20'
               }`}
             >
-              {enableAdminMode ? (
-                <Shield className="w-10 h-10 text-[#0066FF] animate-pulse" />
-              ) : (
-                <ShieldCheck className="w-10 h-10 text-[#0066FF]" />
-              )}
+              <img
+                src="/app-logo.png"
+                alt="App Logo"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
             <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/40">
               <Key className="w-2.5 h-2.5 text-white" />
