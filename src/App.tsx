@@ -9,6 +9,7 @@ import { ProfileScreen } from './components/MobileSimulator/ProfileScreen';
 import { AdminUploadModal } from './components/MobileSimulator/AdminUploadModal';
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { firebaseService } from './services/firebaseService';
 import { supabaseService, isSupabaseConfigured } from './services/supabaseClient';
 import { 
   FolderClosed, 
@@ -18,29 +19,32 @@ import {
   Sun, 
   LogOut, 
   ShieldCheck, 
-  Database
+  Database,
+  Flame
 } from 'lucide-react';
 
 function AppContent() {
   const [items, setItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => firebaseService.getLocalSession());
+  const [isCheckingSession, setIsCheckingSession] = useState(false);
   const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'profile'>('vault');
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
-  // Check existing session and fetch shared vault items on mount & poll periodically
+  // Check existing session and listen to Firebase auth
   useEffect(() => {
-    supabaseService.getCurrentUser()
-      .then((user) => {
-        if (user) {
-          setCurrentUser(user);
-        }
-      })
-      .finally(() => {
-        setIsCheckingSession(false);
-      });
+    const unsub = firebaseService.onAuthState((user) => {
+      if (user) {
+        setCurrentUser(user);
+      }
+      setIsCheckingSession(false);
+    });
+
+    // Safety fallback to guarantee screen is never stuck
+    const timer = setTimeout(() => {
+      setIsCheckingSession(false);
+    }, 200);
 
     const loadItems = async () => {
       try {
@@ -55,25 +59,28 @@ function AppContent() {
 
     loadItems();
 
-    // Auto-polling interval: Syncs updates every 3.5 seconds across all connected clients & devices
     const interval = setInterval(loadItems, 3500);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      unsub();
+      clearInterval(interval);
+    };
   }, []);
 
   const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
-    supabaseService.saveSession(user);
+    firebaseService.saveSession(user);
   };
 
   const handleLogout = async () => {
-    await supabaseService.signOut();
+    await firebaseService.signOut();
     setCurrentUser(null);
   };
 
   const handleSwitchUser = (user: UserProfile) => {
     setCurrentUser(user);
-    supabaseService.saveSession(user);
+    firebaseService.saveSession(user);
   };
 
   // Toggle Like (optimistic state + sync to Supabase)
