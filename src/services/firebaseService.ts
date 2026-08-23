@@ -336,6 +336,88 @@ export const firebaseService = {
     }
   },
 
+  // Save or insert Vault Item in Firestore (so all users in any device see it)
+  async saveVaultItemToFirestore(item: VaultItem): Promise<boolean> {
+    try {
+      const itemDocRef = doc(db, 'vault_items', item.id);
+      await setDoc(itemDocRef, {
+        ...item,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.warn('Could not save item to Firestore:', err);
+      return false;
+    }
+  },
+
+  // Delete Vault Item from Firestore
+  async deleteVaultItemFromFirestore(itemId: string): Promise<boolean> {
+    try {
+      const itemDocRef = doc(db, 'vault_items', itemId);
+      await deleteDoc(itemDocRef);
+      return true;
+    } catch (err) {
+      console.warn('Could not delete item from Firestore:', err);
+      return false;
+    }
+  },
+
+  // Real-time listener for Firestore Vault Items
+  onVaultItemsSnapshot(callback: (items: VaultItem[]) => void) {
+    try {
+      const colRef = collection(db, 'vault_items');
+      return onSnapshot(
+        colRef,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const items: VaultItem[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              items.push({
+                id: docSnap.id,
+                title: data.title || '',
+                description: data.description || '',
+                category: data.category || 'video',
+                fileType: data.fileType || 'MP4',
+                fileSize: data.fileSize || '10 MB',
+                downloadUrl: data.downloadUrl || '',
+                coverImage: data.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
+                createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+                likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
+                likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
+                comments: Array.isArray(data.comments) ? data.comments : [],
+                isLockedForTier: data.isLockedForTier ?? false,
+                version: data.version || 'v1.0',
+                author: data.author || {
+                  name: 'Administrador (astroarg02)',
+                  badge: 'Creador Oficial',
+                },
+              });
+            });
+            callback(items);
+          }
+        },
+        (error) => {
+          console.warn('Firestore onSnapshot error:', error);
+        }
+      );
+    } catch (err) {
+      console.warn('Could not attach Firestore listener:', err);
+      return () => {};
+    }
+  },
+
+  // Update comments in Firestore
+  async updateItemComments(itemId: string, comments: any[]): Promise<void> {
+    try {
+      const docRef = doc(db, 'vault_items', itemId);
+      await updateDoc(docRef, { comments });
+    } catch (e) {
+      console.warn('Error updating comments in Firestore:', e);
+    }
+  },
+
   // Fetch Vault Items from Firestore with local fallback
   async fetchVaultItems(): Promise<VaultItem[] | null> {
     try {
@@ -343,8 +425,28 @@ export const firebaseService = {
       const snap = await getDocs(colRef);
       if (!snap.empty) {
         const items: VaultItem[] = [];
-        snap.forEach((doc) => {
-          items.push({ id: doc.id, ...doc.data() } as VaultItem);
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          items.push({
+            id: docSnap.id,
+            title: data.title || '',
+            description: data.description || '',
+            category: data.category || 'video',
+            fileType: data.fileType || 'MP4',
+            fileSize: data.fileSize || '10 MB',
+            downloadUrl: data.downloadUrl || '',
+            coverImage: data.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
+            createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+            likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
+            likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
+            comments: Array.isArray(data.comments) ? data.comments : [],
+            isLockedForTier: data.isLockedForTier ?? false,
+            version: data.version || 'v1.0',
+            author: data.author || {
+              name: 'Administrador (astroarg02)',
+              badge: 'Creador Oficial',
+            },
+          });
         });
         return items;
       }

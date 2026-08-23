@@ -25,7 +25,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   onAddComment,
   onDeleteItem,
 }) => {
-  const isLiked = item.likedBy.includes(currentUser.uid);
+  const isLiked = Array.isArray(item.likedBy) && item.likedBy.includes(currentUser.uid);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [commentText, setCommentText] = useState('');

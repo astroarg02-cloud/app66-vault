@@ -32,13 +32,20 @@ function AppContent() {
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
-  // Check existing session and listen to Firebase auth
+  // Check existing session and listen to Firebase auth & Firestore live items
   useEffect(() => {
     const unsub = firebaseService.onAuthState((user) => {
       if (user) {
         setCurrentUser(user);
       }
       setIsCheckingSession(false);
+    });
+
+    // Real-time Firestore items listener (anyone in the world immediately sees uploads)
+    const unsubFirestore = firebaseService.onVaultItemsSnapshot((liveItems) => {
+      if (liveItems && Array.isArray(liveItems) && liveItems.length > 0) {
+        setItems(liveItems);
+      }
     });
 
     // Safety fallback to guarantee screen is never stuck
@@ -48,8 +55,16 @@ function AppContent() {
 
     const loadItems = async () => {
       try {
+        // First attempt Firestore items
+        const firestoreItems = await firebaseService.fetchVaultItems();
+        if (firestoreItems && firestoreItems.length > 0) {
+          setItems(firestoreItems);
+          return;
+        }
+
+        // Fallback to Supabase
         const fetchedItems = await supabaseService.fetchVaultItems();
-        if (fetchedItems && Array.isArray(fetchedItems)) {
+        if (fetchedItems && Array.isArray(fetchedItems) && fetchedItems.length > 0) {
           setItems(fetchedItems);
         }
       } catch (err) {
@@ -64,6 +79,7 @@ function AppContent() {
     return () => {
       clearTimeout(timer);
       unsub();
+      unsubFirestore();
       clearInterval(interval);
     };
   }, []);
@@ -151,9 +167,10 @@ function AppContent() {
       comments: [],
     };
 
-    setItems((prev) => [newItem, ...prev]);
+    setItems((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
 
-    // Persist to Supabase and central server
+    // Persist to both Firestore and Supabase for guaranteed global sync across all visitors
+    await firebaseService.saveVaultItemToFirestore(newItem);
     await supabaseService.insertVaultItem(newItem);
   };
 
@@ -163,6 +180,7 @@ function AppContent() {
     if (selectedItem?.id === itemId) {
       setSelectedItem(null);
     }
+    await firebaseService.deleteVaultItemFromFirestore(itemId);
     await supabaseService.deleteVaultItem(itemId);
   };
 
