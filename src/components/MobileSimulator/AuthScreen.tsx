@@ -101,10 +101,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       let friendlyMsg = 'No se pudo completar la autenticación.';
       const code = err?.code || '';
 
-      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-        friendlyMsg = 'Correo o contraseña incorrectos.';
+      if (code === 'auth/user-not-found') {
+        friendlyMsg = 'Esta cuenta no está registrada. Por favor ve a la pestaña "Registrarse" para crearla.';
+      } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+        friendlyMsg = 'Correo o contraseña incorrectos. Verifica tus datos o regístrate si es tu primera vez.';
       } else if (code === 'auth/email-already-in-use') {
-        friendlyMsg = 'Este correo ya está registrado. Inicia sesión.';
+        friendlyMsg = 'Este correo ya está registrado. Por favor selecciona "Iniciar Sesión".';
       } else if (code === 'auth/weak-password') {
         friendlyMsg = 'La contraseña es muy débil. Debe tener al menos 6 caracteres.';
       } else if (code === 'auth/invalid-email') {

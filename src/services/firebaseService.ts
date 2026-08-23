@@ -22,9 +22,19 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import rawFirebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, VaultItem } from '../types';
 import { isAuthorizedAdminEmail, isAuthorizedAdminKey, INITIAL_ADMIN_USER } from '../data/initialVaultData';
+
+// Configuración de Firebase que prioriza las variables de Vercel/Vite y usa el config local de respaldo
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || rawFirebaseConfig.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || rawFirebaseConfig.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || rawFirebaseConfig.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || rawFirebaseConfig.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || rawFirebaseConfig.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || rawFirebaseConfig.appId,
+};
 
 // Initialize Firebase SDK
 export const firebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -33,6 +43,36 @@ export const db = getFirestore(firebaseApp);
 export const googleAuthProvider = new GoogleAuthProvider();
 
 const LOCAL_STORAGE_SESSION_KEY = 'vault_firebase_session_v1';
+const LOCAL_STORAGE_REGISTERED_USERS_KEY = 'vault_registered_accounts_v1';
+
+interface RegisteredAccountRecord {
+  email: string;
+  password: string;
+  profile: UserProfile;
+  registeredAt: string;
+}
+
+function getStoredRegisteredAccounts(): Record<string, RegisteredAccountRecord> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn('Could not read registered accounts store:', e);
+  }
+  return {};
+}
+
+function storeRegisteredAccount(record: RegisteredAccountRecord): void {
+  try {
+    const accounts = getStoredRegisteredAccounts();
+    accounts[record.email.toLowerCase().trim()] = record;
+    localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+  } catch (e) {
+    console.warn('Could not persist registered account locally:', e);
+  }
+}
 
 export const firebaseService = {
   // Save active session locally for instant offline/reloads
@@ -112,35 +152,76 @@ export const firebaseService = {
     return profile;
   },
 
-  // Firebase Email/Password Login
+  // Firebase Email/Password Login (Only allows login if the user has already registered)
   async signInWithEmail(email: string, password: string): Promise<UserProfile> {
+    const normalizedEmail = email.toLowerCase().trim();
+    const cleanPassword = password.trim();
+
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const cred = await signInWithEmailAndPassword(auth, normalizedEmail, cleanPassword);
       return await this.mapFirebaseUserToProfile(cred.user);
     } catch (err: any) {
-      if (err?.code === 'auth/operation-not-allowed') {
-        console.info('Firebase Email/Password is disabled in Firebase Console. Using secure local session fallback.');
-        const isAdmin = email.toLowerCase().includes('admin');
-        const fallbackProfile: UserProfile = {
-          uid: 'auth_' + btoa(email).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16),
-          email,
-          displayName: email.split('@')[0] || 'Miembro VIP',
-          role: isAdmin ? 'admin' : 'vip_member',
-          avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
-          tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
-          joinedAt: new Date().toISOString(),
-        };
-        this.saveSession(fallbackProfile);
-        return fallbackProfile;
+      // If Firebase Auth returns that user is not found or invalid credential, re-throw so user is alerted
+      if (
+        err?.code === 'auth/user-not-found' ||
+        err?.code === 'auth/wrong-password' ||
+        err?.code === 'auth/invalid-credential' ||
+        err?.code === 'auth/invalid-email'
+      ) {
+        const notFoundError = new Error('Esta cuenta no existe o la contraseña es incorrecta. Por favor regístrate primero.');
+        (notFoundError as any).code = err.code;
+        throw notFoundError;
       }
+
+      // If Firebase Email/Password is disabled in Console (auth/operation-not-allowed) or offline:
+      if (err?.code === 'auth/operation-not-allowed' || !navigator.onLine) {
+        const registeredAccounts = getStoredRegisteredAccounts();
+        const existingRecord = registeredAccounts[normalizedEmail];
+
+        // If the user never registered, reject login immediately!
+        if (!existingRecord) {
+          // Allow pre-configured admin email if valid
+          if (isAuthorizedAdminEmail(normalizedEmail)) {
+            const adminUser = { ...INITIAL_ADMIN_USER, email: normalizedEmail };
+            this.saveSession(adminUser);
+            return adminUser;
+          }
+
+          const notRegError = new Error('Esta cuenta no está registrada. Por favor ve a la pestaña "Registrarse" para crear tu cuenta.');
+          (notRegError as any).code = 'auth/user-not-found';
+          throw notRegError;
+        }
+
+        // Verify password
+        if (existingRecord.password !== cleanPassword) {
+          const passError = new Error('Contraseña incorrecta. Por favor verifica tus datos.');
+          (passError as any).code = 'auth/wrong-password';
+          throw passError;
+        }
+
+        this.saveSession(existingRecord.profile);
+        return existingRecord.profile;
+      }
+
       throw err;
     }
   },
 
-  // Firebase Email/Password Register
+  // Firebase Email/Password Register (Creates a new user account)
   async registerWithEmail(email: string, password: string, displayName?: string): Promise<UserProfile> {
+    const normalizedEmail = email.toLowerCase().trim();
+    const cleanPassword = password.trim();
+
+    // Check local registry first
+    const registeredAccounts = getStoredRegisteredAccounts();
+    if (registeredAccounts[normalizedEmail]) {
+      const alreadyExistsError = new Error('Este correo ya está registrado. Por favor inicia sesión con tu contraseña.');
+      (alreadyExistsError as any).code = 'auth/email-already-in-use';
+      throw alreadyExistsError;
+    }
+
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const cred = await createUserWithEmailAndPassword(auth, normalizedEmail, cleanPassword);
       if (displayName) {
         try {
           await updateProfile(cred.user, { displayName });
@@ -148,22 +229,54 @@ export const firebaseService = {
           // ignore profile update warning
         }
       }
-      return await this.mapFirebaseUserToProfile(cred.user);
+      const profile = await this.mapFirebaseUserToProfile(cred.user);
+      storeRegisteredAccount({
+        email: normalizedEmail,
+        password: cleanPassword,
+        profile,
+        registeredAt: new Date().toISOString(),
+      });
+      return profile;
     } catch (err: any) {
-      if (err?.code === 'auth/operation-not-allowed') {
-        console.info('Firebase Email/Password is disabled in Firebase Console. Using secure local session fallback.');
-        const isAdmin = email.toLowerCase().includes('admin');
-        const fallbackProfile: UserProfile = {
-          uid: 'user_' + btoa(email).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16),
-          email,
-          displayName: displayName?.trim() || email.split('@')[0] || 'Miembro VIP',
+      if (err?.code === 'auth/email-already-in-use') {
+        throw err;
+      }
+
+      if (err?.code === 'auth/operation-not-allowed' || !navigator.onLine) {
+        const isAdmin = isAuthorizedAdminEmail(normalizedEmail);
+        const uid = 'user_' + btoa(normalizedEmail).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+        const newProfile: UserProfile = {
+          uid,
+          email: normalizedEmail,
+          displayName: displayName?.trim() || normalizedEmail.split('@')[0] || 'Miembro VIP',
           role: isAdmin ? 'admin' : 'vip_member',
-          avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+          avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(normalizedEmail)}`,
           tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
-          joinedAt: new Date().toISOString(),
+          joinedAt: new Date().toISOString().split('T')[0],
         };
-        this.saveSession(fallbackProfile);
-        return fallbackProfile;
+
+        // Persist in registered accounts registry
+        storeRegisteredAccount({
+          email: normalizedEmail,
+          password: cleanPassword,
+          profile: newProfile,
+          registeredAt: new Date().toISOString(),
+        });
+
+        // Also save to Firestore users collection
+        try {
+          const userDocRef = doc(db, 'users', uid);
+          setDoc(userDocRef, {
+            ...newProfile,
+            createdAt: serverTimestamp(),
+            lastLoginAt: serverTimestamp(),
+          }, { merge: true }).catch(() => {});
+        } catch (e) {
+          // fallback
+        }
+
+        this.saveSession(newProfile);
+        return newProfile;
       }
       throw err;
     }
