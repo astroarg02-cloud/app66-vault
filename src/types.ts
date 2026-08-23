@@ -47,17 +47,7 @@ export interface VaultItem {
   };
 }
 
-export interface DartCodeFile {
-  path: string;
-  title: string;
-  category: 'core' | 'auth' | 'vault' | 'membership' | 'admin' | 'config';
-  description: string;
-  code: string;
-}
-
 export type ThemeMode = 'dark' | 'light';
-
-export type AppView = 'simulator' | 'code' | 'supabase' | 'guide';
 
 export type BackendProvider = 'firebase' | 'supabase';
 

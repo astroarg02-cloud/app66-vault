@@ -326,8 +326,8 @@ INSERT INTO public.vault_items (
 )
 VALUES
 (
-  'Masterclass: Clean Architecture en Flutter & Riverpod 2.0',
-  'Sesión técnica profunda de 2 horas sobre separación de capas, inyección de dependencias, gestión reactiva de estado con AsyncNotifierProvider y manejo seguro de tokens en el servidor.',
+  'Masterclass: Clean Architecture & Modular State Management',
+  'Sesión técnica profunda de 2 horas sobre separación de capas, inyección de dependencias, gestión reactiva de estado y manejo seguro de tokens en el servidor.',
   'video',
   'MP4 4K UHD',
   '1.85 GB',
@@ -337,7 +337,7 @@ VALUES
   'Administrador (astroarg02)'
 ),
 (
-  'Kit de Seguridad: Reglas de Firestore & Supabase RLS Hardening',
+  'Kit de Seguridad: Reglas de Firestore & Database Hardening',
   'Colección completa de políticas de seguridad a nivel de fila (RLS), scripts de verificación de tokens JWT y blueprints de infraestructura cerrada para producción.',
   'document',
   'PDF / Markdown Suite',
@@ -348,12 +348,12 @@ VALUES
   'Administrador (astroarg02)'
 ),
 (
-  'Motor de Descargas Dio + Background Isolate Worker',
-  'Paquete modular en Dart con gestión de descargas reanudables en segundo plano, cálculo de Hash SHA-256 para integridad de archivos y notificaciones nativas en Android e iOS.',
+  'Motor de Descargas Asíncrono & Background Worker',
+  'Paquete modular con gestión de descargas reanudables en segundo plano, cálculo de Hash SHA-256 para integridad de archivos y notificaciones.',
   'code',
   'ZIP Source Code',
   '45.8 MB',
-  'https://github.com/flutter/flutter/archive/refs/heads/master.zip',
+  'https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-41551-large.mp4',
   'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&auto=format&fit=crop&q=80',
   'v3.0.2',
   'Administrador (astroarg02)'

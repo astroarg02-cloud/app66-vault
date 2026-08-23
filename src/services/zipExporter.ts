@@ -1,6 +1,5 @@
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { DART_CODEBASE } from '../data/dartCodebase';
 import { VaultItem } from '../types';
 
 /**
@@ -75,7 +74,7 @@ function resolveItemFileDetails(item: VaultItem): { filename: string; mimeType: 
 }
 
 /**
- * Downloads the actual resource in its exact original format without modifying or forcing any framework
+ * Downloads the actual resource in its exact original format without modifying anything
  */
 export async function downloadVaultItemResource(item: VaultItem): Promise<boolean> {
   try {
@@ -247,20 +246,4 @@ ${item.description}
     console.error('Error al descargar archivo original:', error);
     return false;
   }
-}
-
-/**
- * Full project zip export utility
- */
-export async function exportProjectZip(): Promise<void> {
-  const zip = new JSZip();
-  zip.file(
-    'README.md',
-    `# App 66 - Vault Private Server\nBóveda y servidor privado exclusivo de contenidos.`
-  );
-  DART_CODEBASE.forEach((file) => {
-    zip.file(file.path, file.code);
-  });
-  const blob = await zip.generateAsync({ type: 'blob' });
-  saveAs(blob, 'Vault-Private-Server-Export.zip');
 }
