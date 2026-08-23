@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   FolderClosed, Lock, Search, Heart, MessageSquare, 
-  Plus, ChevronRight, LayoutGrid, List, HardDrive
+  Plus, ChevronRight, LayoutGrid, List, HardDrive, Trash2, AlertTriangle
 } from 'lucide-react';
 import { VaultItem, UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
@@ -11,6 +11,7 @@ interface VaultScreenProps {
   currentUser: UserProfile;
   onSelectItem: (item: VaultItem) => void;
   onOpenAdminUpload: () => void;
+  onDeleteItem?: (itemId: string) => void;
 }
 
 export const VaultScreen: React.FC<VaultScreenProps> = ({
@@ -18,9 +19,12 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   currentUser,
   onSelectItem,
   onOpenAdminUpload,
+  onDeleteItem,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isGridView, setIsGridView] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<VaultItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { isDark } = useTheme();
 
   const filteredItems = items.filter((item) => {
@@ -31,6 +35,19 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
       (item.fileType && item.fileType.toLowerCase().includes(query))
     );
   });
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete || !onDeleteItem || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteItem(itemToDelete.id);
+      setItemToDelete(null);
+    } catch (err) {
+      console.error('Error deleting item from list:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div
@@ -218,7 +235,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                   key={item.id}
                   id={`vault-item-grid-${item.id}`}
                   onClick={() => onSelectItem(item)}
-                  className={`border rounded-xl overflow-hidden cursor-pointer transition-all flex flex-col group ${
+                  className={`border rounded-xl overflow-hidden cursor-pointer transition-all flex flex-col group relative ${
                     isDark
                       ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/60'
                       : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/60 shadow-sm'
@@ -234,6 +251,19 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                       <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-[#0066FF] uppercase">
                         {item.fileType}
                       </div>
+                    )}
+                    {currentUser.role === 'admin' && onDeleteItem && (
+                      <button
+                        id={`delete-grid-btn-${item.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setItemToDelete(item);
+                        }}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 hover:bg-red-600 text-white/80 hover:text-white transition-colors"
+                        title="Eliminar publicación (Admin)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
                   <div className="p-3 flex-1 flex flex-col justify-between">
@@ -271,7 +301,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 key={item.id}
                 id={`vault-item-list-${item.id}`}
                 onClick={() => onSelectItem(item)}
-                className={`border rounded-2xl p-4 cursor-pointer transition-all flex items-start gap-3.5 group active:scale-[0.99] ${
+                className={`border rounded-2xl p-4 cursor-pointer transition-all flex items-start gap-3.5 group active:scale-[0.99] relative ${
                   isDark
                     ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/50'
                     : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/50 shadow-sm'
@@ -300,13 +330,13 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
 
                 {/* Details */}
                 <div className="flex-1 min-w-0">
-                  {(item.fileType || item.fileSize) && (
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      {item.fileType ? (
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5">
+                      {item.fileType && (
                         <span className="px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[10px] font-bold text-[#0066FF] uppercase">
                           {item.fileType}
                         </span>
-                      ) : <span />}
+                      )}
                       {item.fileSize && (
                         <span
                           className={`text-[11px] font-mono ${
@@ -317,7 +347,25 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                         </span>
                       )}
                     </div>
-                  )}
+
+                    {currentUser.role === 'admin' && onDeleteItem && (
+                      <button
+                        id={`delete-list-btn-${item.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setItemToDelete(item);
+                        }}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          isDark
+                            ? 'text-[#5A5A62] hover:text-red-400 hover:bg-red-500/10'
+                            : 'text-[#94A3B8] hover:text-red-600 hover:bg-red-50'
+                        }`}
+                        title="Eliminar publicación (Admin)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
 
                   <h3
                     className={`text-sm font-semibold truncate transition-colors ${
@@ -357,6 +405,59 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
           })
         )}
       </div>
+
+      {/* Admin Delete Confirmation Dialog Modal */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            id="vault-delete-confirm-screen-modal"
+            className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl border ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                  ¿Eliminar Publicación?
+                </h4>
+                <p className={`text-xs mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  Esta acción borrará "{itemToDelete.title}" permanentemente de la bóveda para todos los usuarios.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                id="confirm-delete-screen-btn"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-red-600/30"
+              >
+                {isDeleting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>{isDeleting ? 'Eliminando...' : 'Sí, Eliminar'}</span>
+              </button>
+              <button
+                onClick={() => setItemToDelete(null)}
+                disabled={isDeleting}
+                className={`px-4 py-2.5 rounded-xl text-xs font-semibold border ${
+                  isDark
+                    ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                    : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

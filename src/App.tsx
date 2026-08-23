@@ -30,7 +30,7 @@ function AppContent() {
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
-  // Check existing session from Supabase/Local storage on mount
+  // Check existing session and fetch shared vault items on mount & poll periodically
   useEffect(() => {
     supabaseService.getCurrentUser()
       .then((user) => {
@@ -42,11 +42,23 @@ function AppContent() {
         setIsCheckingSession(false);
       });
 
-    supabaseService.fetchVaultItems().then((fetchedItems) => {
-      if (fetchedItems && fetchedItems.length > 0) {
-        setItems(fetchedItems);
+    const loadItems = async () => {
+      try {
+        const fetchedItems = await supabaseService.fetchVaultItems();
+        if (fetchedItems && Array.isArray(fetchedItems)) {
+          setItems(fetchedItems);
+        }
+      } catch (err) {
+        console.warn('Error loading vault items:', err);
       }
-    });
+    };
+
+    loadItems();
+
+    // Auto-polling interval: Syncs updates every 3.5 seconds across all connected clients & devices
+    const interval = setInterval(loadItems, 3500);
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleLogin = (user: UserProfile) => {
@@ -134,8 +146,17 @@ function AppContent() {
 
     setItems((prev) => [newItem, ...prev]);
 
-    // Persist to Supabase if configured
+    // Persist to Supabase and central server
     await supabaseService.insertVaultItem(newItem);
+  };
+
+  // Delete vault item (Admin exclusively)
+  const handleDeleteItem = async (itemId: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== itemId));
+    if (selectedItem?.id === itemId) {
+      setSelectedItem(null);
+    }
+    await supabaseService.deleteVaultItem(itemId);
   };
 
   // Sync selectedItem if item list updates
@@ -322,6 +343,7 @@ function AppContent() {
               currentUser={currentUser}
               onSelectItem={(item) => setSelectedItem(item)}
               onOpenAdminUpload={() => setShowAdminUpload(true)}
+              onDeleteItem={handleDeleteItem}
             />
           )}
 
@@ -348,6 +370,7 @@ function AppContent() {
           onClose={() => setSelectedItem(null)}
           onToggleLike={handleToggleLike}
           onAddComment={handleAddComment}
+          onDeleteItem={handleDeleteItem}
         />
       )}
 

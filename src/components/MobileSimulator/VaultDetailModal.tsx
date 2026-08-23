@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   ArrowLeft, Share2, Download, Heart, MessageSquare, 
-  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X
+  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2, AlertTriangle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VaultItem, UserProfile } from '../../types';
@@ -14,6 +14,7 @@ interface VaultDetailModalProps {
   onClose: () => void;
   onToggleLike: (itemId: string) => void;
   onAddComment: (itemId: string, text: string) => void;
+  onDeleteItem?: (itemId: string) => void;
 }
 
 export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
@@ -22,12 +23,15 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   onClose,
   onToggleLike,
   onAddComment,
+  onDeleteItem,
 }) => {
   const isLiked = item.likedBy.includes(currentUser.uid);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [likeAnimating, setLikeAnimating] = useState(false);
   const { isDark } = useTheme();
@@ -81,6 +85,21 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  // Handle Delete Item (Admin)
+  const handleDelete = async () => {
+    if (!onDeleteItem || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteItem(item.id);
+      onClose();
+    } catch (err) {
+      console.error('Error deleting item:', err);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
       <div
@@ -117,6 +136,21 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1">
+            {currentUser.role === 'admin' && onDeleteItem && (
+              <button
+                id="vault-detail-delete-btn"
+                onClick={() => setShowDeleteConfirm(true)}
+                className={`p-2 rounded-xl transition-colors ${
+                  isDark
+                    ? 'text-red-400 hover:bg-red-500/20 hover:text-red-300'
+                    : 'text-red-500 hover:bg-red-50 hover:text-red-600'
+                }`}
+                title="Eliminar Publicación (Admin)"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+
             <button
               id="vault-share-btn"
               onClick={() => setShowShareModal(true)}
@@ -408,8 +442,26 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             </div>
           </div>
 
+          {/* Bottom Admin Delete Option */}
+          {currentUser.role === 'admin' && onDeleteItem && (
+            <div className="pt-2">
+              <button
+                id={`vault-delete-post-bottom-btn-${item.id}`}
+                onClick={() => setShowDeleteConfirm(true)}
+                className={`w-full py-2.5 px-4 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  isDark
+                    ? 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                    : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 shadow-sm'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar Esta Publicación (Admin)</span>
+              </button>
+            </div>
+          )}
+
           {/* Bottom Exit Button */}
-          <div className="pt-2 pb-2">
+          <div className="pt-1 pb-2">
             <button
               id="vault-bottom-exit-btn"
               onClick={onClose}
@@ -424,6 +476,59 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div
+              id="delete-confirm-modal"
+              className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl border ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    ¿Eliminar Publicación?
+                  </h4>
+                  <p className={`text-xs mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    Esta acción borrará "{item.title}" permanentemente de la bóveda para todos los usuarios.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  id="confirm-delete-action-btn"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-red-600/30"
+                >
+                  {isDeleting ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span>{isDeleting ? 'Eliminando...' : 'Sí, Eliminar'}</span>
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold border ${
+                    isDark
+                      ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                      : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Share Plus Modal */}
         {showShareModal && (

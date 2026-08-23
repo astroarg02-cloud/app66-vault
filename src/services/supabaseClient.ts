@@ -259,7 +259,22 @@ export const supabaseService = {
 
   // --- DATABASE METHODS ---
   async fetchVaultItems(): Promise<VaultItem[]> {
-    // 1. Try fetching from Supabase if configured
+    let serverItems: VaultItem[] = [];
+
+    // 1. Fetch from Central Express Server (/api/vault/items)
+    try {
+      const res = await fetch('/api/vault/items');
+      if (res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.items) && json.items.length > 0) {
+          serverItems = json.items;
+        }
+      }
+    } catch (e) {
+      console.warn('Backend server items fetch notice:', e);
+    }
+
+    // 2. Try fetching from Supabase if configured
     if (supabase) {
       try {
         const { data, error } = await supabase
@@ -273,10 +288,10 @@ export const supabaseService = {
             title: row.title,
             description: row.description || '',
             category: row.category || 'code',
-            fileType: row.file_type || row.fileType || 'ZIP',
-            downloadUrl: row.download_url || row.downloadUrl || 'https://example.com/vault-file.zip',
-            fileSize: row.file_size || row.fileSize || '10 MB',
-            coverImage: row.cover_image || row.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60',
+            fileType: row.file_type || row.fileType || '',
+            downloadUrl: row.download_url || row.downloadUrl || '',
+            fileSize: row.file_size || row.fileSize || '',
+            coverImage: row.cover_image || row.coverImage || '',
             likesCount: Number(row.likes_count ?? row.likesCount ?? 0),
             likedBy: Array.isArray(row.liked_by) ? row.liked_by : (row.likedBy || []),
             createdAt: row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : '2026-08-22',
@@ -289,27 +304,52 @@ export const supabaseService = {
             }
           }));
 
-          // Merge any locally created items that might not have reached Supabase
-          const localItems = this.getLocalVaultItems() || [];
-          const remoteIds = new Set(mappedItems.map(i => i.id));
-          const unsyncedLocals = localItems.filter(i => !remoteIds.has(i.id));
-          const allItems = [...unsyncedLocals, ...mappedItems];
-
-          this.saveLocalVaultItems(allItems);
-          return allItems;
+          // Merge server and supabase
+          const map = new Map<string, VaultItem>();
+          serverItems.forEach(i => map.set(i.id, i));
+          mappedItems.forEach(i => {
+            if (!map.has(i.id)) map.set(i.id, i);
+          });
+          serverItems = Array.from(map.values());
         }
       } catch (err) {
-        console.warn('Error connecting to Supabase, loading from persistent storage:', err);
+        console.warn('Error connecting to Supabase:', err);
       }
     }
 
-    // 2. Load from persistent localStorage
-    const localItems = this.getLocalVaultItems();
+    // 3. If server items found, persist locally and also sync any local items up to server
+    const localItems = this.getLocalVaultItems() || [];
+    if (serverItems.length > 0) {
+      // Check if local has items that server doesn't have yet, and upload them
+      const serverIds = new Set(serverItems.map(i => i.id));
+      const unsyncedLocals = localItems.filter(i => !serverIds.has(i.id));
+      if (unsyncedLocals.length > 0) {
+        try {
+          fetch('/api/vault/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: unsyncedLocals }),
+          }).catch(() => {});
+        } catch {}
+        serverItems = [...unsyncedLocals, ...serverItems];
+      }
+      this.saveLocalVaultItems(serverItems);
+      return serverItems;
+    }
+
+    // 4. If server was empty but local has items, upload local items to server!
     if (localItems && localItems.length > 0) {
+      try {
+        fetch('/api/vault/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: localItems }),
+        }).catch(() => {});
+      } catch {}
       return localItems;
     }
 
-    // 3. Initial seed if storage is empty
+    // 5. Initial seed if storage is empty
     this.saveLocalVaultItems(INITIAL_VAULT_ITEMS);
     return INITIAL_VAULT_ITEMS;
   },
@@ -324,38 +364,44 @@ export const supabaseService = {
       console.warn('Error persisting item locally:', e);
     }
 
-    // 2. Sync to Supabase if configured
-    if (!supabase) return true;
-
+    // 2. Persist to Central Express Server API
     try {
-      const { error } = await supabase.from('vault_items').insert([
-        {
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          category: item.category,
-          file_type: item.fileType,
-          download_url: item.downloadUrl,
-          file_size: item.fileSize,
-          cover_image: item.coverImage,
-          likes_count: item.likesCount,
-          liked_by: item.likedBy,
-          comments: item.comments || [],
-          is_locked_for_tier: item.isLockedForTier || false,
-          version: item.version || 'v1.0',
-          author: item.author
-        },
-      ]);
-
-      if (error) {
-        console.error('Error inserting item to Supabase:', error);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.error('Failed to insert item to Supabase:', err);
-      return false;
+      await fetch('/api/vault/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item),
+      });
+    } catch (e) {
+      console.warn('Could not post to server API:', e);
     }
+
+    // 3. Sync to Supabase if configured
+    if (supabase) {
+      try {
+        await supabase.from('vault_items').insert([
+          {
+            id: item.id,
+            title: item.title,
+            description: item.description,
+            category: item.category || 'code',
+            file_type: item.fileType || '',
+            download_url: item.downloadUrl || '',
+            file_size: item.fileSize || '',
+            cover_image: item.coverImage || '',
+            likes_count: item.likesCount || 0,
+            liked_by: item.likedBy || [],
+            comments: item.comments || [],
+            is_locked_for_tier: item.isLockedForTier || false,
+            version: item.version || 'v1.0',
+            author: item.author || { name: 'Admin', badge: 'ADMIN' },
+          },
+        ]);
+      } catch (err) {
+        console.error('Failed to insert item to Supabase:', err);
+      }
+    }
+
+    return true;
   },
 
   async updateItemLikes(itemId: string, likesCount: number, likedBy: string[]): Promise<boolean> {
@@ -372,27 +418,31 @@ export const supabaseService = {
       console.warn('Error updating likes locally:', e);
     }
 
-    // 2. Update in Supabase
-    if (!supabase) return true;
-
+    // 2. Update on central server
     try {
-      const { error } = await supabase
-        .from('vault_items')
-        .update({
-          likes_count: likesCount,
-          liked_by: likedBy,
-        })
-        .eq('id', itemId);
+      fetch(`/api/vault/items/${itemId}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ likesCount, likedBy }),
+      }).catch(() => {});
+    } catch {}
 
-      if (error) {
-        console.error('Error updating likes in Supabase:', error);
-        return false;
+    // 3. Update in Supabase
+    if (supabase) {
+      try {
+        await supabase
+          .from('vault_items')
+          .update({
+            likes_count: likesCount,
+            liked_by: likedBy,
+          })
+          .eq('id', itemId);
+      } catch (err) {
+        console.error('Failed to update likes in Supabase:', err);
       }
-      return true;
-    } catch (err) {
-      console.error('Failed to update likes in Supabase:', err);
-      return false;
     }
+
+    return true;
   },
 
   async updateItemComments(itemId: string, comments: any[]): Promise<boolean> {
@@ -409,23 +459,48 @@ export const supabaseService = {
       console.warn('Error updating comments locally:', e);
     }
 
-    // 2. Update in Supabase
-    if (!supabase) return true;
+    // 2. Update on central server
+    try {
+      fetch(`/api/vault/items/${itemId}/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comments }),
+      }).catch(() => {});
+    } catch {}
+
+    // 3. Update in Supabase
+    if (supabase) {
+      try {
+        await supabase
+          .from('vault_items')
+          .update({ comments })
+          .eq('id', itemId);
+      } catch (err) {
+        console.error('Failed to update comments in Supabase:', err);
+      }
+    }
+
+    return true;
+  },
+
+  async deleteVaultItem(itemId: string): Promise<boolean> {
+    try {
+      const currentItems = this.getLocalVaultItems();
+      if (currentItems) {
+        this.saveLocalVaultItems(currentItems.filter(i => i.id !== itemId));
+      }
+    } catch {}
 
     try {
-      const { error } = await supabase
-        .from('vault_items')
-        .update({ comments })
-        .eq('id', itemId);
+      fetch(`/api/vault/items/${itemId}`, { method: 'DELETE' }).catch(() => {});
+    } catch {}
 
-      if (error) {
-        console.error('Error updating comments in Supabase:', error);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.error('Failed to update comments in Supabase:', err);
-      return false;
+    if (supabase) {
+      try {
+        await supabase.from('vault_items').delete().eq('id', itemId);
+      } catch {}
     }
+
+    return true;
   }
 };
