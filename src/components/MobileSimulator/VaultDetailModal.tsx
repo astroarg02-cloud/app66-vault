@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { 
   ArrowLeft, Share2, Download, Heart, MessageSquare, 
-  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2, AlertTriangle
+  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VaultItem, UserProfile } from '../../types';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
+import { downloadVaultItemResource } from '../../services/zipExporter';
 
 interface VaultDetailModalProps {
   item: VaultItem;
@@ -36,29 +37,37 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   const [likeAnimating, setLikeAnimating] = useState(false);
   const { isDark } = useTheme();
 
-  // Handle Download Simulation (Dio / FlutterDownloader)
-  const handleDownload = () => {
+  // Handle Real Functional Download and return to Vault Page
+  const handleDownload = async () => {
     if (downloadProgress !== null || isDownloaded) return;
-    setDownloadProgress(0);
+    setDownloadProgress(25);
 
-    const interval = setInterval(() => {
-      setDownloadProgress((prev) => {
-        if (prev === null) return 0;
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsDownloaded(true);
-          setDownloadProgress(null);
-          confetti({
-            particleCount: 40,
-            spread: 60,
-            origin: { y: 0.8 },
-            colors: ['#0066FF', '#3385FF', '#FFFFFF'],
-          });
-          return 100;
-        }
-        return prev + Math.floor(Math.random() * 15) + 10;
-      });
-    }, 200);
+    try {
+      setDownloadProgress(65);
+      const success = await downloadVaultItemResource(item);
+      setDownloadProgress(100);
+
+      if (success) {
+        setIsDownloaded(true);
+        confetti({
+          particleCount: 50,
+          spread: 70,
+          origin: { y: 0.7 },
+          colors: ['#0066FF', '#3385FF', '#10B981', '#FFFFFF'],
+        });
+
+        // Devolver al usuario a la página de la bóveda después de descargar
+        setTimeout(() => {
+          onClose();
+        }, 1200);
+      }
+    } catch (err) {
+      console.error('Error during item download:', err);
+    } finally {
+      setTimeout(() => {
+        setDownloadProgress(null);
+      }, 1000);
+    }
   };
 
   // Handle Like Animation
@@ -108,6 +117,19 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
           isDark ? 'bg-black border-[#1E1E24] text-white' : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
         }`}
       >
+        {/* Top Floating Notification when downloaded */}
+        {isDownloaded && (
+          <div className="absolute top-0 left-0 right-0 z-50 bg-emerald-600 text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between shadow-xl animate-in slide-in-from-top duration-300">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-white" />
+              <span>¡Archivo descargado! Volviendo a la bóveda...</span>
+            </div>
+            <span className="text-[10px] bg-emerald-700/80 px-2 py-0.5 rounded font-mono">
+              Redirigiendo...
+            </span>
+          </div>
+        )}
+
         {/* Top App Bar */}
         <div
           className={`shrink-0 flex items-center justify-between px-3.5 py-2.5 border-b backdrop-blur-md transition-colors ${
@@ -238,7 +260,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             <div className="flex items-center justify-between pt-0.5">
               <div className={`flex items-center gap-1.5 text-xs ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
                 <span className="w-2 h-2 rounded-full bg-[#0066FF]" />
-                <span className={`font-medium ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>{item.author.name}</span>
+                <span className={`font-medium ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>{item.author?.name || 'Administrador'}</span>
                 <VerifiedBadge className="w-3.5 h-3.5" />
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border ${
@@ -247,7 +269,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                       : 'bg-blue-50 border-blue-200 text-[#0066FF]'
                   }`}
                 >
-                  {item.author.badge}
+                  {item.author?.badge || 'Admin Master'}
                 </span>
               </div>
 
@@ -265,7 +287,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
               >
                 <Heart
                   className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    likeAnimating ? 'scale-135' : 'scale-100'
+                    likeAnimating ? 'scale-125' : 'scale-100'
                   } ${isLiked ? 'fill-[#FF2E63] text-[#FF2E63]' : ''}`}
                 />
                 <span>{item.likesCount}</span>
@@ -284,62 +306,60 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
             <p>{item.description}</p>
           </div>
 
-          {/* Main Action: DOWNLOAD BUTTON (solo si tiene archivo adjunto) */}
-          {(item.fileType || item.downloadUrl) && item.downloadUrl !== '#' && (
-            <div className="space-y-2 pt-1">
-              <button
-                id={`vault-download-action-btn-${item.id}`}
-                onClick={handleDownload}
-                disabled={downloadProgress !== null}
-                className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
-                  isDownloaded
-                    ? 'bg-[#10B981] text-white shadow-[#10B981]/25 hover:bg-[#059669]'
-                    : downloadProgress !== null
-                    ? 'bg-[#0066FF]/70 text-white cursor-wait'
-                    : 'bg-[#0066FF] hover:bg-[#0052FF] text-white shadow-[#0066FF]/30 active:scale-[0.99]'
-                }`}
-              >
-                {isDownloaded ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Archivo Guardado en Dispositivo</span>
-                  </>
-                ) : downloadProgress !== null ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Descargando... {downloadProgress}%</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    <span>Descargar Archivo {item.fileSize ? `(${item.fileSize})` : ''}</span>
-                  </>
-                )}
-              </button>
-
-              {downloadProgress !== null && (
-                <div
-                  className={`w-full rounded-full h-1.5 overflow-hidden ${
-                    isDark ? 'bg-[#121216]' : 'bg-slate-200'
-                  }`}
-                >
-                  <div
-                    className="bg-[#0066FF] h-full transition-all duration-200"
-                    style={{ width: `${downloadProgress}%` }}
-                  />
-                </div>
+          {/* Main Action: DOWNLOAD BUTTON */}
+          <div className="space-y-2 pt-1">
+            <button
+              id={`vault-download-action-btn-${item.id}`}
+              onClick={handleDownload}
+              disabled={downloadProgress !== null}
+              className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
+                isDownloaded
+                  ? 'bg-[#10B981] text-white shadow-[#10B981]/25 hover:bg-[#059669]'
+                  : downloadProgress !== null
+                  ? 'bg-[#0066FF]/70 text-white cursor-wait'
+                  : 'bg-[#0066FF] hover:bg-[#0052FF] text-white shadow-[#0066FF]/30 active:scale-[0.99]'
+              }`}
+            >
+              {isDownloaded ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>¡Descargado! Regresando a la Bóveda...</span>
+                </>
+              ) : downloadProgress !== null ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Generando paquete... {downloadProgress}%</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Descargar Archivo {item.fileSize ? `(${item.fileSize})` : ''}</span>
+                </>
               )}
+            </button>
 
+            {downloadProgress !== null && (
               <div
-                className={`flex items-center justify-between text-[10px] px-1 ${
-                  isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+                className={`w-full rounded-full h-1.5 overflow-hidden ${
+                  isDark ? 'bg-[#121216]' : 'bg-slate-200'
                 }`}
               >
-                <span>Protocolo: Firebase Storage + Dio Cache</span>
-                <span>Acceso Verificado</span>
+                <div
+                  className="bg-[#0066FF] h-full transition-all duration-200"
+                  style={{ width: `${downloadProgress}%` }}
+                />
               </div>
+            )}
+
+            <div
+              className={`flex items-center justify-between text-[10px] px-1 ${
+                isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+              }`}
+            >
+              <span>Descarga real directa en formato .ZIP</span>
+              <span>Acceso Verificado</span>
             </div>
-          )}
+          </div>
 
           {/* Private Forum / Comments Section */}
           <div
@@ -355,245 +375,115 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                     isDark ? 'text-white' : 'text-[#0F172A]'
                   }`}
                 >
-                  Foro Privado ({item.comments.length})
+                  Foro Privado ({item.comments?.length || 0})
                 </h3>
               </div>
-              <span className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                Solo miembros registrados
-              </span>
             </div>
 
-            {/* Comment Input */}
-            <form onSubmit={handleCommentSubmit} className="flex gap-2">
+            {/* Comments List */}
+            <div className="space-y-2.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+              {!item.comments || item.comments.length === 0 ? (
+                <div
+                  className={`text-center py-6 rounded-xl border text-xs ${
+                    isDark
+                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#5A5A62]'
+                      : 'bg-white border-[#E2E8F0] text-[#94A3B8]'
+                  }`}
+                >
+                  No hay comentarios aún en este recurso.
+                </div>
+              ) : (
+                item.comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    className={`p-3 rounded-xl border text-xs space-y-1.5 ${
+                      isDark
+                        ? 'bg-[#0A0A0C] border-[#1E1E24]'
+                        : 'bg-white border-[#E2E8F0] shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                          {comment.userDisplayName}
+                        </span>
+                        {comment.userRole === 'admin' && (
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">
+                            ADMIN
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-[10px] ${isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}`}>
+                        {comment.createdAt}
+                      </span>
+                    </div>
+                    <p className={`leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#475569]'}`}>
+                      {comment.text}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Post Comment Input */}
+            <form onSubmit={handleCommentSubmit} className="flex gap-2 pt-1">
               <input
-                id="comment-input-field"
                 type="text"
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
-                placeholder="Escribe una pregunta o feedback privado..."
-                className={`flex-1 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-[#0066FF] transition-colors border ${
+                placeholder="Escribe en el hilo privado..."
+                className={`flex-1 rounded-xl px-3.5 py-2 text-xs transition-colors focus:outline-none focus:border-[#0066FF] border ${
                   isDark
                     ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-[#5A5A62]'
-                    : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder-[#94A3B8] shadow-sm'
+                    : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder-[#94A3B8]'
                 }`}
               />
               <button
-                id="submit-comment-btn"
                 type="submit"
                 disabled={!commentText.trim()}
-                className="px-3.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] disabled:opacity-40 disabled:hover:bg-[#0066FF] text-white flex items-center justify-center transition-all shadow-sm"
+                className="px-3.5 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center shadow-md shadow-[#0066FF]/20"
               >
                 <Send className="w-3.5 h-3.5" />
               </button>
             </form>
-
-            {/* Comment Thread List */}
-            <div className="space-y-2 pt-0.5">
-              {item.comments.length === 0 ? (
-                <div
-                  className={`text-center py-4 text-xs rounded-xl border ${
-                    isDark
-                      ? 'text-[#5A5A62] bg-[#0A0A0C] border-[#1E1E24]'
-                      : 'text-[#64748B] bg-white border-[#E2E8F0]'
-                  }`}
-                >
-                  Sin comentarios aún. Sé el primero en dejar feedback al administrador.
-                </div>
-              ) : (
-                item.comments.map((c) => {
-                  const isAdminComment = c.userRole === 'admin';
-                  return (
-                    <div
-                      key={c.id}
-                      className={`p-3 rounded-xl border transition-all ${
-                        isAdminComment
-                          ? isDark
-                            ? 'bg-[#0066FF]/10 border-[#0066FF]/30'
-                            : 'bg-blue-50/70 border-[#0066FF]/30'
-                          : isDark
-                          ? 'bg-[#0A0A0C] border-[#1E1E24]'
-                          : 'bg-white border-[#E2E8F0] shadow-sm'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`text-xs font-semibold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                            {c.userDisplayName}
-                          </span>
-                          {isAdminComment && (
-                            <div className="flex items-center gap-1">
-                              <VerifiedBadge className="w-3.5 h-3.5" />
-                              <span className="px-1.5 py-0.2 bg-[#0066FF] text-[8px] font-bold rounded text-white tracking-wider">
-                                ADMIN
-                              </span>
-                            </div>
-                          )}
-                          <span className={`text-[10px] ${isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}`}>
-                            • {c.userTier}
-                          </span>
-                        </div>
-                        <span className={`text-[10px] ${isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}`}>{c.createdAt}</span>
-                      </div>
-                      <p className={`text-xs leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#475569]'}`}>{c.text}</p>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Bottom Admin Delete Option */}
-          {currentUser.role === 'admin' && onDeleteItem && (
-            <div className="pt-2">
-              <button
-                id={`vault-delete-post-bottom-btn-${item.id}`}
-                onClick={() => setShowDeleteConfirm(true)}
-                className={`w-full py-2.5 px-4 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                  isDark
-                    ? 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20'
-                    : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 shadow-sm'
-                }`}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Eliminar Esta Publicación (Admin)</span>
-              </button>
-            </div>
-          )}
-
-          {/* Bottom Exit Button */}
-          <div className="pt-1 pb-2">
-            <button
-              id="vault-bottom-exit-btn"
-              onClick={onClose}
-              className={`w-full py-2.5 px-4 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                isDark
-                  ? 'border-[#1E1E24] bg-[#0A0A0C] text-[#8E8E93] hover:text-white hover:border-[#2A2A32] hover:bg-[#121216]'
-                  : 'border-[#E2E8F0] bg-white text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 shadow-sm'
-              }`}
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Salir y volver a la Bóveda</span>
-            </button>
           </div>
         </div>
 
-        {/* Delete Confirmation Modal */}
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-            <div
-              id="delete-confirm-modal"
-              className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl border ${
-                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                    ¿Eliminar Publicación?
-                  </h4>
-                  <p className={`text-xs mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                    Esta acción borrará "{item.title}" permanentemente de la bóveda para todos los usuarios.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  id="confirm-delete-action-btn"
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-red-600/30"
-                >
-                  {isDeleting ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Trash2 className="w-4 h-4" />
-                  )}
-                  <span>{isDeleting ? 'Eliminando...' : 'Sí, Eliminar'}</span>
-                </button>
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  disabled={isDeleting}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold border ${
-                    isDark
-                      ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                      : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
-                  }`}
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Share Plus Modal */}
+        {/* Share Modal Popup */}
         {showShareModal && (
-          <div className="absolute inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div 
-              id="share-modal-container"
-              className={`w-full max-w-xs rounded-2xl p-5 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150 border ${
-                isDark
-                  ? 'bg-[#0A0A0C] border-[#1E1E24]'
-                  : 'bg-white border-[#E2E8F0]'
+          <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div
+              className={`w-full max-w-xs rounded-2xl p-4 border space-y-3 ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-xl'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-[#0066FF]/20 flex items-center justify-center text-[#0066FF]">
-                  <Share2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                    Invitar al Servidor
-                  </h4>
-                  <p className={`text-[11px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                    Paquete share_plus de Flutter
-                  </p>
-                </div>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-[#0066FF] uppercase tracking-wider">
+                  Enlace de Invitación
+                </h4>
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="text-zinc-400 hover:text-white text-xs font-bold"
+                >
+                  ✕
+                </button>
               </div>
 
               <div
-                className={`rounded-xl p-3 text-xs break-all font-mono border ${
-                  isDark
-                    ? 'bg-[#121216] border-[#1E1E24] text-[#8E8E93]'
-                    : 'bg-slate-100 border-[#E2E8F0] text-[#475569]'
+                className={`p-2 rounded-xl border text-[11px] font-mono break-all ${
+                  isDark ? 'bg-black border-[#1E1E24] text-[#8E8E93]' : 'bg-slate-50 border-[#E2E8F0] text-[#64748B]'
                 }`}
               >
                 {shareUrl}
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  id="copy-invite-link-btn"
-                  onClick={copyShareLink}
-                  className="flex-1 py-2.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-[#0066FF]/25"
-                >
-                  {copiedLink ? (
-                    <>
-                      <Check className="w-4 h-4 text-white" />
-                      <span>Copiado</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>Copiar Enlace</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowShareModal(false)}
-                  className={`px-3.5 py-2.5 rounded-xl text-xs border ${
-                    isDark
-                      ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                      : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
-                  }`}
-                >
-                  Cerrar
-                </button>
-              </div>
+              <button
+                onClick={copyShareLink}
+                className="w-full py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedLink ? 'Copiado' : 'Copiar Enlace'}</span>
+              </button>
             </div>
           </div>
         )}
