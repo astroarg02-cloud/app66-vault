@@ -412,7 +412,7 @@ export const firebaseService = {
   async updateItemComments(itemId: string, comments: any[]): Promise<void> {
     try {
       const docRef = doc(db, 'vault_items', itemId);
-      await updateDoc(docRef, { comments });
+      await setDoc(docRef, { comments, updatedAt: serverTimestamp() }, { merge: true });
     } catch (e) {
       console.warn('Error updating comments in Firestore:', e);
     }
@@ -460,7 +460,7 @@ export const firebaseService = {
   async updateItemLikes(itemId: string, likesCount: number, likedBy: string[]): Promise<void> {
     try {
       const docRef = doc(db, 'vault_items', itemId);
-      await updateDoc(docRef, { likesCount, likedBy });
+      await setDoc(docRef, { likesCount, likedBy, updatedAt: serverTimestamp() }, { merge: true });
     } catch (e) {
       console.warn('Error updating likes in Firestore:', e);
     }

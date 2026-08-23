@@ -99,34 +99,50 @@ function AppContent() {
     firebaseService.saveSession(user);
   };
 
-  // Toggle Like (optimistic state + sync to Supabase)
-  const handleToggleLike = (itemId: string) => {
+  // Toggle Like (optimistic state + sync to Firestore and Supabase)
+  const handleToggleLike = async (itemId: string) => {
     if (!currentUser) return;
+    let updatedItem: VaultItem | null = null;
+    let newLikesCount = 0;
+    let newLikedBy: string[] = [];
+
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.id !== itemId) return item;
         const alreadyLiked = item.likedBy.includes(currentUser.uid);
-        const newLikedBy = alreadyLiked
+        newLikedBy = alreadyLiked
           ? item.likedBy.filter((id) => id !== currentUser.uid)
           : [...item.likedBy, currentUser.uid];
-        const newLikesCount = alreadyLiked
+        newLikesCount = alreadyLiked
           ? Math.max(0, item.likesCount - 1)
           : item.likesCount + 1;
 
-        // Sync with Supabase in background
-        supabaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
-
-        return {
+        updatedItem = {
           ...item,
           likedBy: newLikedBy,
           likesCount: newLikesCount,
         };
+        return updatedItem;
       })
     );
+
+    // Update modal if open
+    setSelectedItem((prev) =>
+      prev && prev.id === itemId
+        ? { ...prev, likedBy: newLikedBy, likesCount: newLikesCount }
+        : prev
+    );
+
+    // Sync with Firestore & Supabase in cloud
+    await firebaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
+    if (updatedItem) {
+      await firebaseService.saveVaultItemToFirestore(updatedItem);
+    }
+    await supabaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
   };
 
-  // Add Comment (optimistic state + sync to Supabase)
-  const handleAddComment = (itemId: string, text: string) => {
+  // Add Comment (optimistic state + sync to Firestore and Supabase)
+  const handleAddComment = async (itemId: string, text: string) => {
     if (!currentUser) return;
     const newComment: VaultComment = {
       id: `c_${Date.now()}`,
@@ -138,20 +154,35 @@ function AppContent() {
       createdAt: 'Justo ahora',
     };
 
+    let updatedItem: VaultItem | null = null;
+    let updatedComments: VaultComment[] = [];
+
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.id !== itemId) return item;
-        const updatedComments = [newComment, ...item.comments];
+        updatedComments = [newComment, ...item.comments];
         
-        // Sync with Supabase in background
-        supabaseService.updateItemComments(itemId, updatedComments);
-
-        return {
+        updatedItem = {
           ...item,
           comments: updatedComments,
         };
+        return updatedItem;
       })
     );
+
+    // Update modal if open
+    setSelectedItem((prev) =>
+      prev && prev.id === itemId
+        ? { ...prev, comments: updatedComments }
+        : prev
+    );
+
+    // Sync with Firestore & Supabase in cloud
+    await firebaseService.updateItemComments(itemId, updatedComments);
+    if (updatedItem) {
+      await firebaseService.saveVaultItemToFirestore(updatedItem);
+    }
+    await supabaseService.updateItemComments(itemId, updatedComments);
   };
 
   // Upload new vault item (Admin exclusively)
@@ -405,6 +436,7 @@ function AppContent() {
           isOpen={showAdminUpload}
           onClose={() => setShowAdminUpload(false)}
           onUpload={handleUploadItem}
+          currentUser={currentUser}
         />
       )}
     </div>

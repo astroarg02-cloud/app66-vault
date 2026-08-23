@@ -3,7 +3,7 @@ import {
   X, UploadCloud, FileCode, Video, FileText, Music, Sliders, 
   Image as ImageIcon, CheckCircle2, FileUp, Trash2, Sparkles, FolderArchive, ArrowUpRight
 } from 'lucide-react';
-import { VaultItem, ResourceCategory } from '../../types';
+import { VaultItem, ResourceCategory, UserProfile } from '../../types';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -11,9 +11,10 @@ interface AdminUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpload: (newItem: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>) => void;
+  currentUser?: UserProfile | null;
 }
 
-export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onClose, onUpload }) => {
+export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onClose, onUpload, currentUser }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<ResourceCategory>('code');
@@ -168,7 +169,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
       coverImage: finalCover,
       version: version || 'v1.0',
       author: {
-        name: 'Administrador',
+        name: currentUser?.displayName || 'Administrador (astroarg02)',
         badge: 'ADMIN ROOT',
       },
     });
