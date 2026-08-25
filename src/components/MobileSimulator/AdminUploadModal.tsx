@@ -158,7 +158,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     }
   };
 
-  // Manejo de imagen de portada (sin URL manual, subida directa o drop)
+  // Manejo de imagen de portada con compresión automática para compatibilidad total con Firestore
   const processCoverImage = (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Por favor selecciona un archivo de imagen válido (PNG, JPG, WEBP).');
@@ -168,7 +168,38 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
-        setCoverImage(event.target.result as string);
+        const rawDataUrl = event.target.result as string;
+        // Optimize and compress cover image with HTML canvas
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 800;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const optimized = canvas.toDataURL('image/jpeg', 0.82);
+            setCoverImage(optimized);
+          } else {
+            setCoverImage(rawDataUrl);
+          }
+        };
+        img.onerror = () => {
+          setCoverImage(rawDataUrl);
+        };
+        img.src = rawDataUrl;
       }
     };
     reader.readAsDataURL(file);

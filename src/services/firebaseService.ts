@@ -336,31 +336,45 @@ export const firebaseService = {
     }
   },
 
-  // Helper to sanitize items for Firestore
+  // Helper to sanitize items for Firestore (Firestore strictly forbids 'undefined' and max 1MB doc size)
   sanitizeItemForFirestore(item: VaultItem): Record<string, any> {
+    // Firestore documents cannot exceed 1MB (1,048,576 bytes).
+    // If base64 fileData is large (>500KB), keep it out of Firestore to prevent document size rejection.
+    let safeFileData = '';
+    if (item.fileData && typeof item.fileData === 'string' && item.fileData.length < 500000) {
+      safeFileData = item.fileData;
+    }
+
     const raw: Record<string, any> = {
-      id: item.id,
-      title: item.title || '',
-      description: item.description || '',
+      id: String(item.id || `vault-res-${Date.now()}`),
+      title: String(item.title || '').trim(),
+      description: String(item.description || '').trim(),
       category: item.category || 'code',
       fileType: item.fileType || '',
       fileSize: item.fileSize || '',
       fileName: item.fileName || '',
       fileMimeType: item.fileMimeType || '',
-      fileData: item.fileData || '',
+      fileData: safeFileData,
       downloadUrl: item.downloadUrl || '',
-      coverImage: item.coverImage || '',
+      coverImage: item.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
       createdAt: item.createdAt || new Date().toISOString().split('T')[0],
       likesCount: typeof item.likesCount === 'number' ? item.likesCount : 0,
-      likedBy: Array.isArray(item.likedBy) ? item.likedBy : [],
-      comments: Array.isArray(item.comments) ? item.comments : [],
+      likedBy: Array.isArray(item.likedBy) ? item.likedBy.filter(Boolean) : [],
+      comments: Array.isArray(item.comments) ? item.comments.filter(Boolean) : [],
       isLockedForTier: Boolean(item.isLockedForTier),
       version: item.version || 'v1.0',
-      author: item.author || {
-        name: 'Administrador (astroarg02)',
-        badge: 'ADMIN ROOT',
+      author: {
+        name: item.author?.name || 'Administrador (astroarg02)',
+        badge: item.author?.badge || 'ADMIN ROOT',
       },
     };
+
+    // Remove any undefined keys
+    Object.keys(raw).forEach((k) => {
+      if (raw[k] === undefined) {
+        delete raw[k];
+      }
+    });
 
     return raw;
   },
@@ -368,17 +382,35 @@ export const firebaseService = {
   // Save or insert Vault Item in Firestore (so all users in any device see it)
   async saveVaultItemToFirestore(item: VaultItem): Promise<boolean> {
     try {
+      if (!item || !item.id) {
+        console.warn('Cannot save item without ID to Firestore');
+        return false;
+      }
       const itemDocRef = doc(db, 'vault_items', item.id);
       const cleanData = this.sanitizeItemForFirestore(item);
       await setDoc(itemDocRef, {
         ...cleanData,
         updatedAt: serverTimestamp(),
       }, { merge: true });
+      console.log(`[Firestore] Successfully saved item "${item.title}" (${item.id})`);
       return true;
-    } catch (err) {
-      console.warn('Could not save item to Firestore:', err);
+    } catch (err: any) {
+      console.error('[Firestore Error] Could not save item to Firestore:', err?.message || err);
       return false;
     }
+  },
+
+  // Sync multiple items to Firestore
+  async syncAllItemsToFirestore(items: VaultItem[]): Promise<number> {
+    if (!Array.isArray(items) || items.length === 0) return 0;
+    let successCount = 0;
+    for (const item of items) {
+      if (item && item.id) {
+        const ok = await this.saveVaultItemToFirestore(item);
+        if (ok) successCount++;
+      }
+    }
+    return successCount;
   },
 
   // Delete Vault Item from Firestore

@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "VaultItem": {
+      "title": "VaultItem",
+      "description": "A resource item in the VIP Vault",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileMimeType": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "coverImage": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "likedBy": { "type": "array" },
+        "comments": { "type": "array" },
+        "isLockedForTier": { "type": "boolean" },
+        "version": { "type": "string" }
+      },
+      "required": ["id", "title", "description", "category"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile in the application",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string" },
+        "tier": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/vault_items/{itemId}": {
+      "schema": "VaultItem",
+      "description": "All public and VIP vault items"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Registered user profile records"
+    }
+  }
+}

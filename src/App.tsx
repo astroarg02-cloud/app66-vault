@@ -78,12 +78,15 @@ function AppContent() {
 
     const loadItems = async () => {
       try {
+        let currentLoaded: VaultItem[] = [];
+
         // 1. Fetch from Central Express Server API
         const res = await fetch('/api/vault/items');
         if (res.ok) {
           const json = await res.json();
           if (json.items && Array.isArray(json.items) && json.items.length > 0) {
             mergeVaultItems(json.items);
+            currentLoaded = json.items;
           }
         }
 
@@ -91,6 +94,10 @@ function AppContent() {
         const firestoreItems = await firebaseService.fetchVaultItems();
         if (firestoreItems && firestoreItems.length > 0) {
           mergeVaultItems(firestoreItems);
+          // If server had more items than firestore, sync them up
+          if (currentLoaded.length > firestoreItems.length) {
+            firebaseService.syncAllItemsToFirestore(currentLoaded).catch(() => {});
+          }
           return;
         }
 
@@ -98,6 +105,18 @@ function AppContent() {
         const fetchedItems = await supabaseService.fetchVaultItems();
         if (fetchedItems && Array.isArray(fetchedItems) && fetchedItems.length > 0) {
           mergeVaultItems(fetchedItems);
+          currentLoaded = fetchedItems;
+        }
+
+        // If Firestore was empty or missing items, sync all loaded items to Firestore
+        if (currentLoaded.length > 0) {
+          firebaseService.syncAllItemsToFirestore(currentLoaded).catch(() => {});
+        } else {
+          // Sync initial items if brand new
+          const localItems = supabaseService.getLocalVaultItems();
+          if (localItems && localItems.length > 0) {
+            firebaseService.syncAllItemsToFirestore(localItems).catch(() => {});
+          }
         }
       } catch (err) {
         console.warn('Error loading vault items:', err);
