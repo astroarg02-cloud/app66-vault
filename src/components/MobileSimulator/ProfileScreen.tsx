@@ -1,19 +1,48 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UserProfile } from '../../types';
 import { 
   ShieldCheck, LogOut, Key, User, Calendar, Database, 
-  CheckCircle2, XCircle, Moon, Sun, Palette, Shield
+  CheckCircle2, XCircle, Moon, Sun, Palette, Shield, Sparkles, AlertCircle
 } from 'lucide-react';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
+import { isAuthorizedAdminKey, ADMIN_SECURITY_KEY } from '../../data/initialVaultData';
+import { firebaseService } from '../../services/firebaseService';
 
 interface ProfileScreenProps {
   currentUser: UserProfile;
   onLogout: () => void;
+  onUpdateUser?: (updated: UserProfile) => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLogout }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLogout, onUpdateUser }) => {
   const { setTheme, isDark } = useTheme();
+  const [adminKeyInput, setAdminKeyInput] = useState('');
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [keySuccess, setKeySuccess] = useState<string | null>(null);
+
+  const handleElevateToAdmin = () => {
+    setKeyError(null);
+    setKeySuccess(null);
+    if (!isAuthorizedAdminKey(adminKeyInput)) {
+      setKeyError('Clave de Administrador incorrecta. Ingrese la clave de seguridad (360).');
+      return;
+    }
+
+    const elevatedUser: UserProfile = {
+      ...currentUser,
+      role: 'admin',
+      tier: 'Bóveda Diamante',
+      displayName: currentUser.displayName.includes('Admin') ? currentUser.displayName : `${currentUser.displayName} (Admin)`,
+    };
+
+    firebaseService.saveSession(elevatedUser);
+    if (onUpdateUser) {
+      onUpdateUser(elevatedUser);
+    }
+    setKeySuccess('¡Privilegios de Administrador ROOT activados exitosamente!');
+    setAdminKeyInput('');
+  };
 
   return (
     <div
@@ -216,6 +245,65 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
           </div>
         </div>
       </div>
+
+      {/* Admin Key Activation for full upload access */}
+      {currentUser.role !== 'admin' && (
+        <div
+          className={`p-4 rounded-2xl border transition-colors ${
+            isDark
+              ? 'bg-[#0A0A0C] border-[#1E1E24]'
+              : 'bg-white border-[#E2E8F0] shadow-sm'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
+              <Key className="w-4 h-4" />
+            </div>
+            <div>
+              <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                Activar Acceso Administrador ROOT
+              </span>
+              <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                Ingresa la clave de seguridad maestra (360) para desbloquear la subida de publicaciones
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 mt-3">
+            <input
+              type="password"
+              value={adminKeyInput}
+              onChange={(e) => setAdminKeyInput(e.target.value)}
+              placeholder="Ingresa clave 360"
+              className={`flex-1 rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] ${
+                isDark
+                  ? 'bg-[#121216] border-[#1E1E24] text-white'
+                  : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
+              }`}
+            />
+            <button
+              onClick={handleElevateToAdmin}
+              className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/20"
+            >
+              Activar
+            </button>
+          </div>
+
+          {keyError && (
+            <div className="flex items-center gap-1.5 text-[11px] text-red-400 mt-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{keyError}</span>
+            </div>
+          )}
+
+          {keySuccess && (
+            <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 mt-2">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>{keySuccess}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Security & Access Info */}
       <div className="space-y-2">

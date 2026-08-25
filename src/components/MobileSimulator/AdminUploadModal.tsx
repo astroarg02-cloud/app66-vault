@@ -30,10 +30,35 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   const [autoDetectedInfo, setAutoDetectedInfo] = useState<string | null>(null);
   const [rawFile, setRawFile] = useState<File | null>(null);
   const [fileMimeType, setFileMimeType] = useState<string>('');
+  const [fileData, setFileData] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { isDark } = useTheme();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setCategory('code');
+    setFileType('');
+    setFileSize('');
+    setCoverImage('');
+    setCoverFileName('');
+    setDownloadUrl('');
+    setUploadedFileName('');
+    setVersion('v1.0');
+    setAutoDetectedInfo(null);
+    setRawFile(null);
+    setFileData('');
+    setFileMimeType('');
+    setIsSubmitting(false);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -56,6 +81,17 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     setUploadedFileName(file.name);
     setFileMimeType(file.type || 'application/octet-stream');
     setFileSize(formattedSize);
+
+    // Read base64 for persistent storage if smaller than 12MB
+    if (file.size <= 12 * 1024 * 1024) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (typeof e.target?.result === 'string') {
+          setFileData(e.target.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
 
     // Si el usuario no ha escrito un título o tiene el default, sugerimos el nombre del archivo limpio
     const cleanTitle = nameWithoutExt
@@ -158,30 +194,38 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !description) return;
+    setIsSubmitting(true);
 
-    // Fallback de portada si no sube una
-    const finalCover = coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
-    const finalDownloadUrl = downloadUrl || '';
+    try {
+      // Fallback de portada si no sube una
+      const finalCover = coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
+      const finalDownloadUrl = downloadUrl || '';
 
-    onUpload({
-      title,
-      description,
-      category,
-      fileType: uploadedFileName ? (fileType || 'Archivo') : '',
-      fileSize: uploadedFileName ? (fileSize || '') : '',
-      fileName: uploadedFileName || undefined,
-      fileMimeType: fileMimeType || undefined,
-      rawFileBlob: rawFile || undefined,
-      downloadUrl: finalDownloadUrl,
-      coverImage: finalCover,
-      version: version || 'v1.0',
-      author: {
-        name: currentUser?.displayName || 'Administrador (astroarg02)',
-        badge: 'ADMIN ROOT',
-      },
-    });
+      onUpload({
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        fileType: uploadedFileName ? (fileType || 'Archivo') : '',
+        fileSize: uploadedFileName ? (fileSize || '') : '',
+        fileName: uploadedFileName || undefined,
+        fileMimeType: fileMimeType || undefined,
+        fileData: fileData || undefined,
+        rawFileBlob: rawFile || undefined,
+        downloadUrl: finalDownloadUrl,
+        coverImage: finalCover,
+        version: version.trim() || 'v1.0',
+        author: {
+          name: currentUser?.displayName || 'Administrador (astroarg02)',
+          badge: 'ADMIN ROOT',
+        },
+      });
 
-    onClose();
+      resetForm();
+      onClose();
+    } catch (err) {
+      console.error('Error submitting vault item:', err);
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -217,7 +261,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className={`p-2 rounded-xl transition-colors ${
               isDark
                 ? 'text-[#8E8E93] hover:text-white hover:bg-[#121216]'
@@ -529,8 +573,9 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
           <div className={`pt-3 border-t flex gap-3 ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
             <button
               type="button"
-              onClick={onClose}
-              className={`flex-1 py-3 px-4 rounded-xl border text-xs font-semibold transition-colors ${
+              onClick={handleClose}
+              disabled={isSubmitting}
+              className={`flex-1 py-3 px-4 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50 ${
                 isDark
                   ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
                   : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
@@ -541,10 +586,20 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
             <button
               id="admin-publish-resource-btn"
               type="submit"
-              className="flex-1 py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#0066FF]/30"
+              disabled={isSubmitting}
+              className="flex-1 py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#0066FF]/30 disabled:opacity-60"
             >
-              <UploadCloud className="w-4 h-4" />
-              <span>Publicar en la Bóveda</span>
+              {isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Publicando...</span>
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Publicar en la Bóveda</span>
+                </>
+              )}
             </button>
           </div>
         </form>

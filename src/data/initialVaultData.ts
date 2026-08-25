@@ -1,5 +1,10 @@
 import { VaultItem, UserProfile } from '../types';
 
+export const ADMIN_AUTHORIZED_EMAILS = [
+  'astroarg02@gmail.com',
+  'cuentaninja989@gmail.com',
+  'admin@vault.private',
+];
 export const ADMIN_AUTHORIZED_EMAIL = 'astroarg02@gmail.com';
 export const ADMIN_SECURITY_KEY = '360';
 
@@ -10,7 +15,8 @@ export const isAuthorizedAdminKey = (key?: string | null): boolean => {
 
 export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
-  return email.trim().toLowerCase() === ADMIN_AUTHORIZED_EMAIL.toLowerCase();
+  const clean = email.trim().toLowerCase();
+  return ADMIN_AUTHORIZED_EMAILS.some((adm) => adm.toLowerCase() === clean);
 };
 
 export const INITIAL_ADMIN_USER: UserProfile = {

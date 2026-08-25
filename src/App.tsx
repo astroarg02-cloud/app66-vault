@@ -24,13 +24,36 @@ import {
 } from 'lucide-react';
 
 function AppContent() {
-  const [items, setItems] = useState<VaultItem[]>(INITIAL_VAULT_ITEMS);
+  const [items, setItems] = useState<VaultItem[]>(() => {
+    const local = supabaseService.getLocalVaultItems();
+    return local && local.length > 0 ? local : INITIAL_VAULT_ITEMS;
+  });
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => firebaseService.getLocalSession());
   const [isCheckingSession, setIsCheckingSession] = useState(false);
   const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'profile'>('vault');
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
+
+  // Helper to merge incoming items with existing state preserving custom user uploads
+  const mergeVaultItems = (incoming: VaultItem[]) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return;
+    setItems((prev) => {
+      const map = new Map<string, VaultItem>();
+      incoming.forEach((it) => {
+        if (it && it.id) map.set(it.id, it);
+      });
+      // Keep any locally created item not yet returned from server
+      prev.forEach((it) => {
+        if (it && it.id && !map.has(it.id)) {
+          map.set(it.id, it);
+        }
+      });
+      const merged = Array.from(map.values());
+      supabaseService.saveLocalVaultItems(merged);
+      return merged;
+    });
+  };
 
   // Check existing session and listen to Firebase auth & Firestore live items
   useEffect(() => {
@@ -44,7 +67,7 @@ function AppContent() {
     // Real-time Firestore items listener (anyone in the world immediately sees uploads)
     const unsubFirestore = firebaseService.onVaultItemsSnapshot((liveItems) => {
       if (liveItems && Array.isArray(liveItems) && liveItems.length > 0) {
-        setItems(liveItems);
+        mergeVaultItems(liveItems);
       }
     });
 
@@ -55,17 +78,26 @@ function AppContent() {
 
     const loadItems = async () => {
       try {
-        // First attempt Firestore items
+        // 1. Fetch from Central Express Server API
+        const res = await fetch('/api/vault/items');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.items && Array.isArray(json.items) && json.items.length > 0) {
+            mergeVaultItems(json.items);
+          }
+        }
+
+        // 2. Fetch from Firestore
         const firestoreItems = await firebaseService.fetchVaultItems();
         if (firestoreItems && firestoreItems.length > 0) {
-          setItems(firestoreItems);
+          mergeVaultItems(firestoreItems);
           return;
         }
 
-        // Fallback to Supabase
+        // 3. Fallback to Supabase
         const fetchedItems = await supabaseService.fetchVaultItems();
         if (fetchedItems && Array.isArray(fetchedItems) && fetchedItems.length > 0) {
-          setItems(fetchedItems);
+          mergeVaultItems(fetchedItems);
         }
       } catch (err) {
         console.warn('Error loading vault items:', err);
@@ -191,28 +223,70 @@ function AppContent() {
   ) => {
     const newItem: VaultItem = {
       ...newItemData,
-      id: `vault-res-${Date.now()}`,
+      id: `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       createdAt: new Date().toISOString().split('T')[0],
       likesCount: 1,
       likedBy: currentUser ? [currentUser.uid] : [],
       comments: [],
     };
 
-    setItems((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
+    setItems((prev) => {
+      const updated = [newItem, ...prev.filter((i) => i.id !== newItem.id)];
+      supabaseService.saveLocalVaultItems(updated);
+      return updated;
+    });
 
-    // Persist to both Firestore and Supabase for guaranteed global sync across all visitors
-    await firebaseService.saveVaultItemToFirestore(newItem);
-    await supabaseService.insertVaultItem(newItem);
+    // 1. Persist to Central Server API
+    try {
+      await fetch('/api/vault/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newItem),
+      });
+    } catch (e) {
+      console.warn('Central API upload error:', e);
+    }
+
+    // 2. Persist to Firestore
+    try {
+      await firebaseService.saveVaultItemToFirestore(newItem);
+    } catch (e) {
+      console.warn('Firestore upload error:', e);
+    }
+
+    // 3. Persist to Supabase
+    try {
+      await supabaseService.insertVaultItem(newItem);
+    } catch (e) {
+      console.warn('Supabase upload error:', e);
+    }
   };
 
   // Delete vault item (Admin exclusively)
   const handleDeleteItem = async (itemId: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== itemId));
+    setItems((prev) => {
+      const updated = prev.filter((item) => item.id !== itemId);
+      supabaseService.saveLocalVaultItems(updated);
+      return updated;
+    });
     if (selectedItem?.id === itemId) {
       setSelectedItem(null);
     }
-    await firebaseService.deleteVaultItemFromFirestore(itemId);
-    await supabaseService.deleteVaultItem(itemId);
+
+    // 1. Delete on Central Server
+    try {
+      await fetch(`/api/vault/items/${itemId}`, { method: 'DELETE' });
+    } catch (e) {}
+
+    // 2. Delete on Firestore
+    try {
+      await firebaseService.deleteVaultItemFromFirestore(itemId);
+    } catch (e) {}
+
+    // 3. Delete on Supabase
+    try {
+      await supabaseService.deleteVaultItem(itemId);
+    } catch (e) {}
   };
 
   // Sync selectedItem if item list updates
@@ -413,6 +487,7 @@ function AppContent() {
             <ProfileScreen
               currentUser={currentUser}
               onLogout={handleLogout}
+              onUpdateUser={(updated) => setCurrentUser(updated)}
             />
           )}
         </div>

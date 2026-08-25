@@ -336,12 +336,42 @@ export const firebaseService = {
     }
   },
 
+  // Helper to sanitize items for Firestore
+  sanitizeItemForFirestore(item: VaultItem): Record<string, any> {
+    const raw: Record<string, any> = {
+      id: item.id,
+      title: item.title || '',
+      description: item.description || '',
+      category: item.category || 'code',
+      fileType: item.fileType || '',
+      fileSize: item.fileSize || '',
+      fileName: item.fileName || '',
+      fileMimeType: item.fileMimeType || '',
+      fileData: item.fileData || '',
+      downloadUrl: item.downloadUrl || '',
+      coverImage: item.coverImage || '',
+      createdAt: item.createdAt || new Date().toISOString().split('T')[0],
+      likesCount: typeof item.likesCount === 'number' ? item.likesCount : 0,
+      likedBy: Array.isArray(item.likedBy) ? item.likedBy : [],
+      comments: Array.isArray(item.comments) ? item.comments : [],
+      isLockedForTier: Boolean(item.isLockedForTier),
+      version: item.version || 'v1.0',
+      author: item.author || {
+        name: 'Administrador (astroarg02)',
+        badge: 'ADMIN ROOT',
+      },
+    };
+
+    return raw;
+  },
+
   // Save or insert Vault Item in Firestore (so all users in any device see it)
   async saveVaultItemToFirestore(item: VaultItem): Promise<boolean> {
     try {
       const itemDocRef = doc(db, 'vault_items', item.id);
+      const cleanData = this.sanitizeItemForFirestore(item);
       await setDoc(itemDocRef, {
-        ...item,
+        ...cleanData,
         updatedAt: serverTimestamp(),
       }, { merge: true });
       return true;
@@ -378,9 +408,12 @@ export const firebaseService = {
                 id: docSnap.id,
                 title: data.title || '',
                 description: data.description || '',
-                category: data.category || 'video',
-                fileType: data.fileType || 'MP4',
-                fileSize: data.fileSize || '10 MB',
+                category: data.category || 'code',
+                fileType: data.fileType || '',
+                fileSize: data.fileSize || '',
+                fileName: data.fileName || undefined,
+                fileMimeType: data.fileMimeType || undefined,
+                fileData: data.fileData || undefined,
                 downloadUrl: data.downloadUrl || '',
                 coverImage: data.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
                 createdAt: data.createdAt || new Date().toISOString().split('T')[0],
@@ -391,7 +424,7 @@ export const firebaseService = {
                 version: data.version || 'v1.0',
                 author: data.author || {
                   name: 'Administrador (astroarg02)',
-                  badge: 'Creador Oficial',
+                  badge: 'ADMIN ROOT',
                 },
               });
             });
@@ -431,9 +464,12 @@ export const firebaseService = {
             id: docSnap.id,
             title: data.title || '',
             description: data.description || '',
-            category: data.category || 'video',
-            fileType: data.fileType || 'MP4',
-            fileSize: data.fileSize || '10 MB',
+            category: data.category || 'code',
+            fileType: data.fileType || '',
+            fileSize: data.fileSize || '',
+            fileName: data.fileName || undefined,
+            fileMimeType: data.fileMimeType || undefined,
+            fileData: data.fileData || undefined,
             downloadUrl: data.downloadUrl || '',
             coverImage: data.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
             createdAt: data.createdAt || new Date().toISOString().split('T')[0],
@@ -444,7 +480,7 @@ export const firebaseService = {
             version: data.version || 'v1.0',
             author: data.author || {
               name: 'Administrador (astroarg02)',
-              badge: 'Creador Oficial',
+              badge: 'ADMIN ROOT',
             },
           });
         });
