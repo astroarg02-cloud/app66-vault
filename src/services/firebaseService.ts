@@ -379,6 +379,54 @@ export const firebaseService = {
     return raw;
   },
 
+  // Helper to convert item into Firestore REST fields format
+  itemToFirestoreRestFields(item: VaultItem): Record<string, any> {
+    const clean = this.sanitizeItemForFirestore(item);
+    const fields: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(clean)) {
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'string') {
+        fields[key] = { stringValue: value };
+      } else if (typeof value === 'number') {
+        fields[key] = { integerValue: String(Math.round(value)) };
+      } else if (typeof value === 'boolean') {
+        fields[key] = { booleanValue: value };
+      } else if (Array.isArray(value)) {
+        fields[key] = {
+          arrayValue: {
+            values: value.map((v) => {
+              if (typeof v === 'string') return { stringValue: v };
+              if (typeof v === 'object') return { stringValue: JSON.stringify(v) };
+              return { stringValue: String(v) };
+            }),
+          },
+        };
+      } else if (typeof value === 'object') {
+        fields[key] = { stringValue: JSON.stringify(value) };
+      }
+    }
+    return fields;
+  },
+
+  // Direct REST write fallback to Firestore
+  async saveToFirestoreREST(item: VaultItem): Promise<boolean> {
+    try {
+      if (!item || !item.id) return false;
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(item.id)}?key=${firebaseConfig.apiKey}`;
+      const fields = this.itemToFirestoreRestFields(item);
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn('Firestore REST write error:', e);
+      return false;
+    }
+  },
+
   // Save or insert Vault Item in Firestore (so all users in any device see it)
   async saveVaultItemToFirestore(item: VaultItem): Promise<boolean> {
     try {
@@ -386,14 +434,29 @@ export const firebaseService = {
         console.warn('Cannot save item without ID to Firestore');
         return false;
       }
-      const itemDocRef = doc(db, 'vault_items', item.id);
-      const cleanData = this.sanitizeItemForFirestore(item);
-      await setDoc(itemDocRef, {
-        ...cleanData,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      console.log(`[Firestore] Successfully saved item "${item.title}" (${item.id})`);
-      return true;
+
+      // 1. Try Web SDK
+      let sdkSuccess = false;
+      try {
+        const itemDocRef = doc(db, 'vault_items', item.id);
+        const cleanData = this.sanitizeItemForFirestore(item);
+        await setDoc(itemDocRef, {
+          ...cleanData,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        sdkSuccess = true;
+      } catch (sdkErr: any) {
+        console.warn('[Firestore Web SDK setDoc Warning]:', sdkErr?.message || sdkErr);
+      }
+
+      // 2. Direct REST write assurance
+      const restSuccess = await this.saveToFirestoreREST(item);
+
+      if (sdkSuccess || restSuccess) {
+        console.log(`[Firestore] Successfully saved item "${item.title}" (${item.id})`);
+        return true;
+      }
+      return false;
     } catch (err: any) {
       console.error('[Firestore Error] Could not save item to Firestore:', err?.message || err);
       return false;
@@ -416,8 +479,18 @@ export const firebaseService = {
   // Delete Vault Item from Firestore
   async deleteVaultItemFromFirestore(itemId: string): Promise<boolean> {
     try {
-      const itemDocRef = doc(db, 'vault_items', itemId);
-      await deleteDoc(itemDocRef);
+      // 1. Web SDK delete
+      try {
+        const itemDocRef = doc(db, 'vault_items', itemId);
+        await deleteDoc(itemDocRef);
+      } catch (e) {}
+
+      // 2. REST delete
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(itemId)}?key=${firebaseConfig.apiKey}`;
+        await fetch(url, { method: 'DELETE' });
+      } catch (e) {}
+
       return true;
     } catch (err) {
       console.warn('Could not delete item from Firestore:', err);
@@ -479,13 +552,27 @@ export const firebaseService = {
       const docRef = doc(db, 'vault_items', itemId);
       await setDoc(docRef, { comments, updatedAt: serverTimestamp() }, { merge: true });
     } catch (e) {
-      console.warn('Error updating comments in Firestore:', e);
+      console.warn('Error updating comments in Firestore Web SDK, trying REST:', e);
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=comments&key=${firebaseConfig.apiKey}`;
+        const values = (comments || []).map((c) => ({ stringValue: typeof c === 'object' ? JSON.stringify(c) : String(c) }));
+        await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              comments: { arrayValue: { values } },
+            },
+          }),
+        });
+      } catch (restErr) {}
     }
   },
 
-  // Fetch Vault Items from Firestore with local fallback
+  // Fetch Vault Items from Firestore with REST fallback
   async fetchVaultItems(): Promise<VaultItem[] | null> {
     try {
+      // 1. Try Web SDK
       const colRef = collection(db, 'vault_items');
       const snap = await getDocs(colRef);
       if (!snap.empty) {
@@ -519,8 +606,68 @@ export const firebaseService = {
         return items;
       }
     } catch (e) {
-      console.warn('Could not read from Firestore collection:', e);
+      console.warn('Could not read from Firestore Web SDK collection, trying REST:', e);
     }
+
+    // 2. REST Fallback
+    try {
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items?key=${firebaseConfig.apiKey}&pageSize=300`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data && Array.isArray(data.documents) && data.documents.length > 0) {
+          const items: VaultItem[] = data.documents.map((docSnap: any) => {
+            const fields = docSnap.fields || {};
+            const id = docSnap.name.split('/').pop() || '';
+            let author = { name: 'Administrador (astroarg02)', badge: 'ADMIN ROOT' };
+            if (fields.author?.stringValue) {
+              try {
+                author = JSON.parse(fields.author.stringValue);
+              } catch (err) {
+                author = { name: fields.author.stringValue, badge: 'ADMIN ROOT' };
+              }
+            }
+            let comments: any[] = [];
+            if (fields.comments?.arrayValue?.values) {
+              comments = fields.comments.arrayValue.values.map((v: any) => {
+                try {
+                  return JSON.parse(v.stringValue);
+                } catch (err) {
+                  return v.stringValue;
+                }
+              });
+            }
+            let likedBy: string[] = [];
+            if (fields.likedBy?.arrayValue?.values) {
+              likedBy = fields.likedBy.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
+            }
+            return {
+              id,
+              title: fields.title?.stringValue || '',
+              description: fields.description?.stringValue || '',
+              category: (fields.category?.stringValue as any) || 'code',
+              fileType: fields.fileType?.stringValue || '',
+              fileSize: fields.fileSize?.stringValue || '',
+              fileName: fields.fileName?.stringValue || undefined,
+              fileMimeType: fields.fileMimeType?.stringValue || undefined,
+              downloadUrl: fields.downloadUrl?.stringValue || '',
+              coverImage: fields.coverImage?.stringValue || '',
+              createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
+              likesCount: Number(fields.likesCount?.integerValue || 0),
+              likedBy,
+              comments,
+              isLockedForTier: Boolean(fields.isLockedForTier?.booleanValue),
+              version: fields.version?.stringValue || 'v1.0',
+              author,
+            };
+          });
+          return items;
+        }
+      }
+    } catch (restErr) {
+      console.warn('Firestore REST read error:', restErr);
+    }
+
     return null;
   },
 
@@ -530,7 +677,20 @@ export const firebaseService = {
       const docRef = doc(db, 'vault_items', itemId);
       await setDoc(docRef, { likesCount, likedBy, updatedAt: serverTimestamp() }, { merge: true });
     } catch (e) {
-      console.warn('Error updating likes in Firestore:', e);
+      console.warn('Error updating likes in Firestore Web SDK, trying REST:', e);
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=likesCount&updateMask.fieldPaths=likedBy&key=${firebaseConfig.apiKey}`;
+        await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              likesCount: { integerValue: String(Math.round(likesCount)) },
+              likedBy: { arrayValue: { values: (likedBy || []).map((u) => ({ stringValue: String(u) })) } },
+            },
+          }),
+        });
+      } catch (restErr) {}
     }
   },
 };
