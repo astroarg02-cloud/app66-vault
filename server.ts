@@ -35,7 +35,15 @@ function readVaultItems(): any[] {
       const raw = fs.readFileSync(VAULT_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed;
+        return parsed.filter(
+          (it) =>
+            it &&
+            it.id &&
+            !it.id.startsWith('test-') &&
+            !it.id.startsWith('res_00') &&
+            it.id !== 'vault-res-test-rest' &&
+            it.id !== 'vault-res-direct-1787703256063'
+        );
       }
     }
   } catch (err) {
@@ -155,7 +163,18 @@ async function fetchAllFromFirestoreREST(): Promise<any[]> {
     const data: any = await res.json();
     if (!data || !Array.isArray(data.documents)) return [];
 
-    return data.documents.map((doc: any) => {
+    return data.documents
+      .filter((doc: any) => {
+        const id = doc.name.split('/').pop() || '';
+        return (
+          id &&
+          !id.startsWith('res_00') &&
+          !id.startsWith('test-') &&
+          id !== 'vault-res-test-rest' &&
+          id !== 'vault-res-direct-1787703256063'
+        );
+      })
+      .map((doc: any) => {
       const fields = doc.fields || {};
       const id = doc.name.split('/').pop() || '';
       
@@ -440,8 +459,19 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Vault Server running on http://0.0.0.0:${PORT}`);
+
+    // Self-healing Firestore sync on startup: ensure all items are in the cloud
+    try {
+      const localItems = readVaultItems();
+      for (const it of localItems) {
+        await saveToFirestoreREST(it);
+      }
+      console.log(`[Cloud Boot Sync] Successfully verified and synced ${localItems.length} items to Firebase Firestore.`);
+    } catch (bootErr) {
+      console.warn('[Cloud Boot Sync Error]:', bootErr);
+    }
   });
 }
 

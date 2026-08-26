@@ -86,15 +86,25 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
       return true;
     }
 
-    // Case 2: If downloadUrl contains a valid Blob URL or Data URL
-    if (item.downloadUrl && (item.downloadUrl.startsWith('blob:') || item.downloadUrl.startsWith('data:'))) {
-      try {
-        const response = await fetch(item.downloadUrl);
-        const blob = await response.blob();
-        saveAs(blob, item.fileName || filename);
-        return true;
-      } catch (err) {
-        console.warn('Could not download directly from URL, generating authentic fallback:', err);
+    // Case 2: If downloadUrl contains a valid Blob URL, Data URL, server endpoint, or external link
+    if (item.downloadUrl) {
+      if (
+        item.downloadUrl.startsWith('blob:') ||
+        item.downloadUrl.startsWith('data:') ||
+        item.downloadUrl.startsWith('/api/') ||
+        item.downloadUrl.startsWith('http://') ||
+        item.downloadUrl.startsWith('https://')
+      ) {
+        try {
+          const response = await fetch(item.downloadUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            saveAs(blob, item.fileName || filename);
+            return true;
+          }
+        } catch (err) {
+          console.warn('Could not download directly from URL, generating authentic fallback:', err);
+        }
       }
     }
 

@@ -468,7 +468,7 @@ export const firebaseService = {
     if (!Array.isArray(items) || items.length === 0) return 0;
     let successCount = 0;
     for (const item of items) {
-      if (item && item.id) {
+      if (item && item.id && !item.id.startsWith('res_00') && !item.id.startsWith('test-') && item.id !== 'vault-res-test-rest' && item.id !== 'vault-res-direct-1787703256063') {
         const ok = await this.saveVaultItemToFirestore(item);
         if (ok) successCount++;
       }
@@ -508,6 +508,9 @@ export const firebaseService = {
           if (!snapshot.empty) {
             const items: VaultItem[] = [];
             snapshot.forEach((docSnap) => {
+              if (docSnap.id.startsWith('res_00') || docSnap.id.startsWith('test-') || docSnap.id === 'vault-res-test-rest' || docSnap.id === 'vault-res-direct-1787703256063') {
+                return;
+              }
               const data = docSnap.data();
               items.push({
                 id: docSnap.id,
@@ -578,6 +581,9 @@ export const firebaseService = {
       if (!snap.empty) {
         const items: VaultItem[] = [];
         snap.forEach((docSnap) => {
+          if (docSnap.id.startsWith('res_00') || docSnap.id.startsWith('test-') || docSnap.id === 'vault-res-test-rest' || docSnap.id === 'vault-res-direct-1787703256063') {
+            return;
+          }
           const data = docSnap.data();
           items.push({
             id: docSnap.id,
@@ -616,7 +622,12 @@ export const firebaseService = {
       if (res.ok) {
         const data: any = await res.json();
         if (data && Array.isArray(data.documents) && data.documents.length > 0) {
-          const items: VaultItem[] = data.documents.map((docSnap: any) => {
+          const items: VaultItem[] = data.documents
+            .filter((docSnap: any) => {
+              const id = docSnap.name.split('/').pop() || '';
+              return !id.startsWith('res_00') && !id.startsWith('test-') && id !== 'vault-res-test-rest' && id !== 'vault-res-direct-1787703256063';
+            })
+            .map((docSnap: any) => {
             const fields = docSnap.fields || {};
             const id = docSnap.name.split('/').pop() || '';
             let author = { name: 'Administrador (astroarg02)', badge: 'ADMIN ROOT' };

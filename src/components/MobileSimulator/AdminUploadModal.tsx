@@ -10,7 +10,7 @@ import { useTheme } from '../../context/ThemeContext';
 interface AdminUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (newItem: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>) => void;
+  onUpload: (newItem: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>) => Promise<any> | void;
   currentUser?: UserProfile | null;
 }
 
@@ -222,17 +222,32 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   };
 
   // Submit y publicación en la bóveda
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !description) return;
+    if (!title || !description || isSubmitting) return;
     setIsSubmitting(true);
 
     try {
+      // Si hay archivo físico y aún no se leyó como dataURL, leerlo primero
+      let finalFileData = fileData;
+      if (rawFile && !finalFileData && rawFile.size <= 25 * 1024 * 1024) {
+        try {
+          finalFileData = await new Promise<string>((resolve) => {
+            const r = new FileReader();
+            r.onload = (ev) => resolve(typeof ev.target?.result === 'string' ? ev.target.result : '');
+            r.onerror = () => resolve('');
+            r.readAsDataURL(rawFile);
+          });
+        } catch (readErr) {
+          console.warn('Error reading raw file data:', readErr);
+        }
+      }
+
       // Fallback de portada si no sube una
       const finalCover = coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
       const finalDownloadUrl = downloadUrl || '';
 
-      onUpload({
+      await onUpload({
         title: title.trim(),
         description: description.trim(),
         category,
@@ -240,7 +255,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
         fileSize: uploadedFileName ? (fileSize || '') : '',
         fileName: uploadedFileName || undefined,
         fileMimeType: fileMimeType || undefined,
-        fileData: fileData || undefined,
+        fileData: finalFileData || undefined,
         rawFileBlob: rawFile || undefined,
         downloadUrl: finalDownloadUrl,
         coverImage: finalCover,
@@ -255,6 +270,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
       onClose();
     } catch (err) {
       console.error('Error submitting vault item:', err);
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -623,7 +639,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
               {isSubmitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Publicando...</span>
+                  <span>Publicando en la nube...</span>
                 </>
               ) : (
                 <>

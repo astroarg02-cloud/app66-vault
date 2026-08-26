@@ -62,12 +62,37 @@ export const supabaseService = {
 
   getLocalVaultItems(): VaultItem[] | null {
     try {
-      const stored = localStorage.getItem(STORAGE_VAULT_ITEMS_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed as VaultItem[];
+      const keysToScan = [
+        STORAGE_VAULT_ITEMS_KEY,
+        'vip_vault_items_local_v3',
+        'vip_vault_items_v2',
+        'vip_vault_items',
+        'vault_items',
+        'app_vault_items',
+      ];
+
+      const itemMap = new Map<string, VaultItem>();
+
+      for (const k of keysToScan) {
+        const stored = localStorage.getItem(k);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((it) => {
+                if (it && it.id && it.title && !it.id.startsWith('res_00') && !it.id.startsWith('test-')) {
+                  if (!itemMap.has(it.id)) {
+                    itemMap.set(it.id, it as VaultItem);
+                  }
+                }
+              });
+            }
+          } catch (pe) {}
         }
+      }
+
+      if (itemMap.size > 0) {
+        return Array.from(itemMap.values());
       }
     } catch (e) {
       console.warn('Could not load vault items from localStorage:', e);

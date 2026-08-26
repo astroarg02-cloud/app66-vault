@@ -41,11 +41,13 @@ function AppContent() {
     setItems((prev) => {
       const map = new Map<string, VaultItem>();
       incoming.forEach((it) => {
-        if (it && it.id) map.set(it.id, it);
+        if (it && it.id && !it.id.startsWith('res_00') && !it.id.startsWith('test-')) {
+          map.set(it.id, it);
+        }
       });
       // Keep any locally created item not yet returned from server
       prev.forEach((it) => {
-        if (it && it.id && !map.has(it.id)) {
+        if (it && it.id && !it.id.startsWith('res_00') && !it.id.startsWith('test-') && !map.has(it.id)) {
           map.set(it.id, it);
         }
       });
@@ -94,11 +96,19 @@ function AppContent() {
         const firestoreItems = await firebaseService.fetchVaultItems();
         if (firestoreItems && firestoreItems.length > 0) {
           mergeVaultItems(firestoreItems);
-          // If server had more items than firestore, sync them up
-          if (currentLoaded.length > firestoreItems.length) {
-            firebaseService.syncAllItemsToFirestore(currentLoaded).catch(() => {});
-          }
-          return;
+        }
+
+        // 3. Always check any items stored in user's browser localStorage
+        const localItems = supabaseService.getLocalVaultItems();
+        if (localItems && localItems.length > 0) {
+          mergeVaultItems(localItems);
+          // Auto-sync any local items to Firestore so they are visible on all devices
+          firebaseService.syncAllItemsToFirestore(localItems).catch(() => {});
+          fetch('/api/vault/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: localItems }),
+          }).catch(() => {});
         }
 
         // 3. Fallback to Supabase
@@ -245,40 +255,49 @@ function AppContent() {
       id: `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       createdAt: new Date().toISOString().split('T')[0],
       likesCount: 1,
-      likedBy: currentUser ? [currentUser.uid] : [],
+      likedBy: currentUser ? [currentUser.uid] : ['admin_master_astro'],
       comments: [],
     };
 
-    setItems((prev) => {
-      const updated = [newItem, ...prev.filter((i) => i.id !== newItem.id)];
-      supabaseService.saveLocalVaultItems(updated);
-      return updated;
-    });
+    let itemToPersist = { ...newItem };
 
-    // 1. Persist to Central Server API
+    // 1. Persist to Central Server API (processes any binary attachments and syncs to Firestore)
     try {
-      await fetch('/api/vault/upload', {
+      const res = await fetch('/api/vault/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItem),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.item) {
+          itemToPersist = { ...itemToPersist, ...data.item };
+        }
+      }
     } catch (e) {
       console.warn('Central API upload error:', e);
     }
 
-    // 2. Persist to Firestore
+    // 2. Persist directly to Firebase Firestore Cloud Database
     try {
-      await firebaseService.saveVaultItemToFirestore(newItem);
+      await firebaseService.saveVaultItemToFirestore(itemToPersist);
     } catch (e) {
-      console.warn('Firestore upload error:', e);
+      console.warn('Firestore direct upload error:', e);
     }
 
-    // 3. Persist to Supabase
+    // 3. Persist to Supabase Database
     try {
-      await supabaseService.insertVaultItem(newItem);
+      await supabaseService.insertVaultItem(itemToPersist);
     } catch (e) {
       console.warn('Supabase upload error:', e);
     }
+
+    // 4. Update UI State & Local Backup
+    setItems((prev) => {
+      const updated = [itemToPersist, ...prev.filter((i) => i.id !== itemToPersist.id)];
+      supabaseService.saveLocalVaultItems(updated);
+      return updated;
+    });
   };
 
   // Delete vault item (Admin exclusively)
