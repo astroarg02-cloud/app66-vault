@@ -23,8 +23,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
-import { UserProfile, VaultItem } from '../types';
-import { isAuthorizedAdminEmail, isAuthorizedAdminKey, INITIAL_ADMIN_USER } from '../data/initialVaultData';
+import { UserProfile, VaultItem, VaultList } from '../types';
+import { isAuthorizedAdminEmail, isAuthorizedAdminKey, INITIAL_ADMIN_USER, INITIAL_VAULT_LISTS } from '../data/initialVaultData';
 
 // Configuración de Firebase que prioriza las variables de Vercel/Vite y usa el config local de respaldo
 const firebaseConfig = {
@@ -436,7 +436,6 @@ export const firebaseService = {
       }
 
       // 1. Try Web SDK
-      let sdkSuccess = false;
       try {
         const itemDocRef = doc(db, 'vault_items', item.id);
         const cleanData = this.sanitizeItemForFirestore(item);
@@ -444,16 +443,14 @@ export const firebaseService = {
           ...cleanData,
           updatedAt: serverTimestamp(),
         }, { merge: true });
-        sdkSuccess = true;
+        return true;
       } catch (sdkErr: any) {
-        console.warn('[Firestore Web SDK setDoc Warning]:', sdkErr?.message || sdkErr);
+        console.warn('[Firestore Web SDK setDoc Warning, falling back to REST]:', sdkErr?.message || sdkErr);
       }
 
-      // 2. Direct REST write assurance
+      // 2. Direct REST write fallback only if Web SDK failed
       const restSuccess = await this.saveToFirestoreREST(item);
-
-      if (sdkSuccess || restSuccess) {
-        console.log(`[Firestore] Successfully saved item "${item.title}" (${item.id})`);
+      if (restSuccess) {
         return true;
       }
       return false;
@@ -463,14 +460,21 @@ export const firebaseService = {
     }
   },
 
-  // Sync multiple items to Firestore
+  // Sync items to Firestore safely without overwhelming write streams
   async syncAllItemsToFirestore(items: VaultItem[]): Promise<number> {
     if (!Array.isArray(items) || items.length === 0) return 0;
     let successCount = 0;
-    for (const item of items) {
-      if (item && item.id && !item.id.startsWith('res_00') && !item.id.startsWith('test-') && item.id !== 'vault-res-test-rest' && item.id !== 'vault-res-direct-1787703256063') {
+    const validItems = items.filter(
+      (item) => item && item.id && !item.id.startsWith('res_00') && !item.id.startsWith('test-') && item.id !== 'vault-res-test-rest' && item.id !== 'vault-res-direct-1787703256063'
+    );
+
+    // Process sequentially in batches to prevent write stream exhaustion
+    for (const item of validItems) {
+      try {
         const ok = await this.saveVaultItemToFirestore(item);
         if (ok) successCount++;
+      } catch (e) {
+        console.warn('Sync item error:', e);
       }
     }
     return successCount;
@@ -703,5 +707,173 @@ export const firebaseService = {
         });
       } catch (restErr) {}
     }
+  },
+
+  // Save or update Vault List in Firestore
+  async saveVaultListToFirestore(list: VaultList): Promise<boolean> {
+    try {
+      if (!list || !list.id) return false;
+      const cleanList = {
+        id: String(list.id),
+        name: String(list.name || '').trim(),
+        description: String(list.description || '').trim(),
+        icon: String(list.icon || 'folder'),
+        color: String(list.color || '#0066FF'),
+        itemIds: Array.isArray(list.itemIds) ? list.itemIds.filter(Boolean) : [],
+        createdAt: list.createdAt || new Date().toISOString().split('T')[0],
+        createdBy: list.createdBy || 'admin_master_astro',
+        updatedAt: serverTimestamp(),
+      };
+
+      try {
+        const listDocRef = doc(db, 'vault_lists', list.id);
+        await setDoc(listDocRef, cleanList, { merge: true });
+        return true;
+      } catch (sdkErr) {
+        console.warn('Web SDK saveVaultList failed, trying REST:', sdkErr);
+      }
+
+      // REST fallback
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(list.id)}?key=${firebaseConfig.apiKey}`;
+      const fields: Record<string, any> = {
+        id: { stringValue: String(cleanList.id) },
+        name: { stringValue: String(cleanList.name) },
+        description: { stringValue: String(cleanList.description) },
+        icon: { stringValue: String(cleanList.icon) },
+        color: { stringValue: String(cleanList.color) },
+        createdAt: { stringValue: String(cleanList.createdAt) },
+        createdBy: { stringValue: String(cleanList.createdBy) },
+        itemIds: {
+          arrayValue: {
+            values: cleanList.itemIds.map((id) => ({ stringValue: String(id) })),
+          },
+        },
+      };
+
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+      });
+      return res.ok;
+    } catch (err) {
+      console.warn('Error saving list to Firestore:', err);
+      return false;
+    }
+  },
+
+  // Delete Vault List from Firestore
+  async deleteVaultListFromFirestore(listId: string): Promise<boolean> {
+    try {
+      try {
+        const docRef = doc(db, 'vault_lists', listId);
+        await deleteDoc(docRef);
+      } catch (e) {}
+
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(listId)}?key=${firebaseConfig.apiKey}`;
+        await fetch(url, { method: 'DELETE' });
+      } catch (e) {}
+
+      return true;
+    } catch (err) {
+      console.warn('Error deleting list from Firestore:', err);
+      return false;
+    }
+  },
+
+  // Real-time listener for Firestore Vault Lists
+  onVaultListsSnapshot(callback: (lists: VaultList[]) => void) {
+    try {
+      const colRef = collection(db, 'vault_lists');
+      return onSnapshot(
+        colRef,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const lists: VaultList[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              lists.push({
+                id: docSnap.id,
+                name: data.name || 'Lista',
+                description: data.description || '',
+                icon: data.icon || 'folder',
+                color: data.color || '#0066FF',
+                itemIds: Array.isArray(data.itemIds) ? data.itemIds : [],
+                createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+                createdBy: data.createdBy || 'admin_master_astro',
+              });
+            });
+            callback(lists);
+          }
+        },
+        (error) => {
+          console.warn('Firestore onVaultListsSnapshot error:', error);
+        }
+      );
+    } catch (err) {
+      console.warn('Could not attach Firestore lists listener:', err);
+      return () => {};
+    }
+  },
+
+  // Fetch lists from Firestore with REST fallback
+  async fetchVaultLists(): Promise<VaultList[] | null> {
+    try {
+      const colRef = collection(db, 'vault_lists');
+      const snap = await getDocs(colRef);
+      if (!snap.empty) {
+        const lists: VaultList[] = [];
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          lists.push({
+            id: docSnap.id,
+            name: data.name || 'Lista',
+            description: data.description || '',
+            icon: data.icon || 'folder',
+            color: data.color || '#0066FF',
+            itemIds: Array.isArray(data.itemIds) ? data.itemIds : [],
+            createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+            createdBy: data.createdBy || 'admin_master_astro',
+          });
+        });
+        return lists;
+      }
+    } catch (e) {
+      console.warn('Could not read from Firestore lists collection, trying REST:', e);
+    }
+
+    try {
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_lists?key=${firebaseConfig.apiKey}&pageSize=100`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data && Array.isArray(data.documents) && data.documents.length > 0) {
+          const lists: VaultList[] = data.documents.map((docSnap: any) => {
+            const fields = docSnap.fields || {};
+            const id = docSnap.name.split('/').pop() || '';
+            let itemIds: string[] = [];
+            if (fields.itemIds?.arrayValue?.values) {
+              itemIds = fields.itemIds.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
+            }
+            return {
+              id,
+              name: fields.name?.stringValue || 'Lista',
+              description: fields.description?.stringValue || '',
+              icon: fields.icon?.stringValue || 'folder',
+              color: fields.color?.stringValue || '#0066FF',
+              itemIds,
+              createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
+              createdBy: fields.createdBy?.stringValue || 'admin_master_astro',
+            };
+          });
+          return lists;
+        }
+      }
+    } catch (restErr) {
+      console.warn('Firestore REST lists read error:', restErr);
+    }
+
+    return null;
   },
 };

@@ -1,40 +1,67 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   FolderClosed, Lock, Search, Heart, MessageSquare, 
-  Plus, ChevronRight, LayoutGrid, List, HardDrive, Trash2, AlertTriangle
+  Plus, ChevronRight, LayoutGrid, List as ListIcon, HardDrive, Trash2, 
+  AlertTriangle, FolderPlus, Edit3, ArrowLeft, Layers, Sparkles
 } from 'lucide-react';
-import { VaultItem, UserProfile } from '../../types';
+import { VaultItem, VaultList, UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { hasVaultItemFile } from '../../utils/vaultHelpers';
+import { getListIcon } from '../../utils/listIcons';
 
 interface VaultScreenProps {
   items: VaultItem[];
+  lists?: VaultList[];
   currentUser: UserProfile;
   onSelectItem: (item: VaultItem) => void;
   onOpenAdminUpload: () => void;
+  onOpenAdminCreateList?: () => void;
+  onOpenAdminEditList?: (list: VaultList) => void;
   onDeleteItem?: (itemId: string) => void;
 }
 
 export const VaultScreen: React.FC<VaultScreenProps> = ({
   items,
+  lists = [],
   currentUser,
   onSelectItem,
   onOpenAdminUpload,
+  onOpenAdminCreateList,
+  onOpenAdminEditList,
   onDeleteItem,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isGridView, setIsGridView] = useState(false);
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [activeTabMode, setActiveTabMode] = useState<'items' | 'collections'>('items');
   const [itemToDelete, setItemToDelete] = useState<VaultItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { isDark } = useTheme();
 
+  // Active selected list object
+  const activeList = selectedListId ? lists.find((l) => l.id === selectedListId) || null : null;
+
+  // Filter items by search query AND active list
   const filteredItems = items.filter((item) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      item.title.toLowerCase().includes(query) ||
-      item.description.toLowerCase().includes(query) ||
-      (item.fileType && item.fileType.toLowerCase().includes(query))
-    );
+    // 1. Check List Filter
+    if (selectedListId && activeList) {
+      const isInsideList = 
+        (Array.isArray(activeList.itemIds) && activeList.itemIds.includes(item.id)) ||
+        (Array.isArray(item.listIds) && item.listIds.includes(selectedListId));
+      if (!isInsideList) return false;
+    }
+
+    // 2. Check Search Query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const matchTitle = item.title.toLowerCase().includes(query);
+      const matchDesc = item.description.toLowerCase().includes(query);
+      const matchType = item.fileType && item.fileType.toLowerCase().includes(query);
+      return matchTitle || matchDesc || matchType;
+    }
+
+    return true;
   });
 
   const handleConfirmDelete = async () => {
@@ -50,6 +77,11 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
     }
   };
 
+  const handleSelectCollection = (listId: string) => {
+    setSelectedListId(listId);
+    setActiveTabMode('items');
+  };
+
   return (
     <div
       className={`h-full flex flex-col overflow-hidden transition-colors duration-300 ${
@@ -58,37 +90,68 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
     >
       {/* Top Bar / Header */}
       <div
-        className={`px-5 pt-4 pb-3 border-b backdrop-blur-md transition-colors ${
+        className={`px-4 sm:px-5 pt-3.5 pb-3 border-b backdrop-blur-md transition-colors shrink-0 ${
           isDark
             ? 'border-[#1E1E24] bg-black/90'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-2.5">
           <div>
-            <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
-              BÓVEDA PRIVADA
+            <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase flex items-center gap-1.5">
+              <span>BÓVEDA PRIVADA</span>
+              {lists.length > 0 && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                  {lists.length} LISTAS
+                </span>
+              )}
             </div>
             <h2
-              className={`text-xl font-bold tracking-tight ${
+              className={`text-lg sm:text-xl font-bold tracking-tight ${
                 isDark ? 'text-white' : 'text-[#0F172A]'
               }`}
             >
-              Directorio de Recursos
+              {activeList ? activeList.name : 'Directorio de Recursos'}
             </h2>
           </div>
 
           <div className="flex items-center gap-2">
             {currentUser.role === 'admin' ? (
-              <button
-                id="admin-upload-trigger-btn"
-                onClick={onOpenAdminUpload}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/25 animate-pulse"
-                title="Solo el Administrador puede alojar nuevos recursos"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Subir Material</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                {onOpenAdminCreateList && (
+                  <motion.button
+                    id="admin-create-list-trigger-btn"
+                    onClick={onOpenAdminCreateList}
+                    whileHover={{ scale: 1.04, y: -1 }}
+                    whileTap={{ scale: 0.96 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      isDark
+                        ? 'bg-[#121216] hover:bg-[#1E1E24] border-[#1E1E24] text-white'
+                        : 'bg-white hover:bg-slate-100 border-[#CBD5E1] text-[#0F172A]'
+                    }`}
+                    title="Crear una nueva lista para agrupar publicaciones"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 text-[#0066FF]" />
+                    <span className="hidden sm:inline">+ Nueva Lista</span>
+                    <span className="sm:hidden">+ Lista</span>
+                  </motion.button>
+                )}
+
+                <motion.button
+                  id="admin-upload-trigger-btn"
+                  onClick={onOpenAdminUpload}
+                  whileHover={{ scale: 1.04, y: -1 }}
+                  whileTap={{ scale: 0.96 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/25 cursor-pointer"
+                  title="Subir y alojar nuevo material"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">+ Subir Material</span>
+                  <span className="sm:hidden">+ Subir</span>
+                </motion.button>
+              </div>
             ) : (
               <div
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
@@ -104,85 +167,388 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
           </div>
         </div>
 
-        {/* Informative Security Banner for Regular VIP Members vs Admin */}
-        {currentUser.role !== 'admin' ? (
-          <div
-            className={`mb-3 p-2.5 rounded-xl border flex items-start gap-2.5 text-[11px] transition-colors ${
-              isDark
-                ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93]'
-                : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#64748B]'
-            }`}
-          >
-            <div className="w-2 h-2 rounded-full bg-[#0066FF] mt-1 shrink-0" />
-            <p className="leading-snug">
-              <strong className={isDark ? 'text-white' : 'text-[#0F172A]'}>
-                Publicaciones exclusivas del Administrador.
-              </strong>{' '}
-              Como Miembro VIP puedes descargar los archivos, interactuar con Me Gusta y participar en el Foro Privado.
-            </p>
+        {/* View Mode Switcher: Todas las Publicaciones vs Vista de Colecciones */}
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="flex items-center p-1 rounded-xl bg-black/5 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-semibold">
+            <button
+              onClick={() => {
+                setActiveTabMode('items');
+              }}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activeTabMode === 'items'
+                  ? 'bg-[#0066FF] text-white shadow-xs'
+                  : isDark
+                  ? 'text-[#8E8E93] hover:text-white'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              Publicaciones ({items.length})
+            </button>
+            <button
+              onClick={() => {
+                setActiveTabMode('collections');
+                setSelectedListId(null);
+              }}
+              className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                activeTabMode === 'collections'
+                  ? 'bg-[#0066FF] text-white shadow-xs'
+                  : isDark
+                  ? 'text-[#8E8E93] hover:text-white'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              <Layers className="w-3 h-3" />
+              <span>Colecciones ({lists.length})</span>
+            </button>
           </div>
-        ) : (
-          <div
-            className={`mb-3 p-2.5 rounded-xl border flex items-start gap-2.5 text-[11px] transition-colors ${
-              isDark
-                ? 'bg-[#0066FF]/10 border-[#0066FF]/30 text-[#8E8E93]'
-                : 'bg-blue-50/80 border-[#0066FF]/30 text-[#334155]'
-            }`}
-          >
-            <div className="w-2 h-2 rounded-full bg-[#0066FF] mt-1 shrink-0 animate-ping" />
-            <p className="leading-snug">
-              <strong className="text-[#0066FF]">Modo Administrador Activo:</strong> Tienes privilegios exclusivos de publicación (crear recursos, subir archivos y gestionar la Bóveda).
-            </p>
+
+          {/* Grid/List switch only when in items mode */}
+          {activeTabMode === 'items' && (
+            <motion.button
+              onClick={() => setIsGridView(!isGridView)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                  : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
+              }`}
+              title="Cambiar vista Lista/Cuadrícula"
+            >
+              {isGridView ? <ListIcon className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+            </motion.button>
+          )}
+        </div>
+
+        {/* LISTS FILTER CAROUSEL / PILL BAR (When in items view) */}
+        {activeTabMode === 'items' && (
+          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1.5 pt-0.5 -mx-1 px-1">
+            {/* All Publications pill */}
+            <button
+              id="filter-all-items-btn"
+              onClick={() => setSelectedListId(null)}
+              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+                selectedListId === null
+                  ? 'bg-[#0066FF] border-[#0066FF] text-white shadow-sm shadow-[#0066FF]/30'
+                  : isDark
+                  ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white hover:border-[#2A2A34]'
+                  : 'bg-white border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] shadow-2xs'
+              }`}
+            >
+              <FolderClosed className="w-3.5 h-3.5" />
+              <span>Todas</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                selectedListId === null ? 'bg-white/20 text-white' : 'bg-black/10 dark:bg-white/10'
+              }`}>
+                {items.length}
+              </span>
+            </button>
+
+            {/* Admin Created Lists */}
+            {lists.map((list) => {
+              const isSelected = selectedListId === list.id;
+              const ListIconComp = getListIcon(list.icon);
+              const listCount = items.filter((it) => 
+                (Array.isArray(list.itemIds) && list.itemIds.includes(it.id)) ||
+                (Array.isArray(it.listIds) && it.listIds.includes(list.id))
+              ).length;
+
+              return (
+                <button
+                  key={list.id}
+                  id={`filter-list-btn-${list.id}`}
+                  onClick={() => setSelectedListId(isSelected ? null : list.id)}
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+                    isSelected
+                      ? 'text-white border-transparent shadow-sm'
+                      : isDark
+                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white hover:border-[#2A2A34]'
+                      : 'bg-white border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] shadow-2xs'
+                  }`}
+                  style={isSelected ? { backgroundColor: list.color || '#0066FF' } : {}}
+                >
+                  <ListIconComp
+                    className="w-3.5 h-3.5"
+                    style={{ color: isSelected ? '#FFFFFF' : list.color || '#0066FF' }}
+                  />
+                  <span>{list.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    isSelected ? 'bg-white/25 text-white' : 'bg-black/10 dark:bg-white/10'
+                  }`}>
+                    {listCount}
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* Admin Quick Add List in bar */}
+            {currentUser.role === 'admin' && onOpenAdminCreateList && (
+              <button
+                onClick={onOpenAdminCreateList}
+                className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-dashed transition-all cursor-pointer ${
+                  isDark
+                    ? 'border-[#2A2A34] text-[#8E8E93] hover:text-white hover:border-[#0066FF]'
+                    : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A] hover:border-[#0066FF]'
+                }`}
+                title="Crear nueva lista de publicaciones"
+              >
+                <Plus className="w-3 h-3 text-[#0066FF]" />
+                <span>Nueva Lista</span>
+              </button>
+            )}
           </div>
         )}
 
-        {/* Search & Grid Toggle */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search
-              className={`w-4 h-4 absolute left-3.5 top-3 ${
-                isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
-              }`}
-            />
-            <input
-              id="vault-search-input"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar en el directorio privado..."
-              className={`w-full rounded-xl pl-10 pr-4 py-2 text-xs transition-colors focus:outline-none focus:border-[#0066FF] border ${
-                isDark
-                  ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-[#5A5A62]'
-                  : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] placeholder-[#94A3B8]'
-              }`}
-            />
-          </div>
-
-          <button
-            onClick={() => setIsGridView(!isGridView)}
-            className={`p-2 rounded-xl border transition-colors ${
-              isDark
-                ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
+        {/* ACTIVE LIST BANNER (If viewing a specific list in items mode) */}
+        {activeTabMode === 'items' && activeList && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className={`mt-2 p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-colors ${
+              isDark ? 'bg-[#121216] border-[#1E1E24]' : 'bg-blue-50/70 border-blue-200'
             }`}
-            title="Cambiar vista Lista/Cuadrícula"
           >
-            {isGridView ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-          </button>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs"
+                style={{ backgroundColor: activeList.color || '#0066FF' }}
+              >
+                {React.createElement(getListIcon(activeList.icon), { className: 'w-4 h-4' })}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    Filtrado por: {activeList.name}
+                  </span>
+                  <span className="text-[10px] opacity-70">
+                    ({filteredItems.length} publicaciones)
+                  </span>
+                </div>
+                {activeList.description && (
+                  <p className={`text-[11px] truncate ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    {activeList.description}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {currentUser.role === 'admin' && onOpenAdminEditList && (
+                <button
+                  type="button"
+                  onClick={() => onOpenAdminEditList(activeList)}
+                  className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                      : 'bg-white border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                  title="Editar o reorganizar esta lista"
+                >
+                  <Edit3 className="w-3 h-3 text-[#0066FF]" />
+                  <span className="hidden sm:inline">Editar</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedListId(null)}
+                className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                  isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-black'
+                }`}
+                title="Quitar filtro de lista"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Todas</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Search input */}
+        <div className="relative mt-2">
+          <Search
+            className={`w-4 h-4 absolute left-3.5 top-2.5 transition-colors ${
+              isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+            }`}
+          />
+          <input
+            id="vault-search-input"
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={
+              activeTabMode === 'collections'
+                ? 'Buscar en las listas y colecciones...'
+                : activeList
+                ? `Buscar dentro de "${activeList.name}"...`
+                : 'Buscar en el directorio privado...'
+            }
+            className={`w-full rounded-xl pl-10 pr-4 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-[#0066FF]/30 focus:border-[#0066FF] border ${
+              isDark
+                ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-[#5A5A62]'
+                : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] placeholder-[#94A3B8]'
+            }`}
+          />
         </div>
       </div>
 
       {/* Directory Content List */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
-        {filteredItems.length === 0 ? (
-          <div
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 sm:p-4 space-y-3">
+        {/* COLLECTIONS / LISTS HUB VIEW */}
+        {activeTabMode === 'collections' ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <div>
+                <h3 className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  Listas Creadas por el Administrador
+                </h3>
+                <p className={`text-[11px] ${isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}`}>
+                  Los usuarios pueden explorar las publicaciones organizadas por temas exclusivos
+                </p>
+              </div>
+              {currentUser.role === 'admin' && onOpenAdminCreateList && (
+                <button
+                  onClick={onOpenAdminCreateList}
+                  className="px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>+ Crear Lista</span>
+                </button>
+              )}
+            </div>
+
+            {lists.length === 0 ? (
+              <div className={`p-8 rounded-2xl border text-center space-y-3 ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+              }`}>
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-[#0066FF]/15 text-[#0066FF] flex items-center justify-center">
+                  <FolderClosed className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold">No hay listas creadas aún</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                    {currentUser.role === 'admin'
+                      ? 'Como Administrador, puedes crear listas para clasificar las publicaciones y que los usuarios las vean organizadas.'
+                      : 'El administrador aún no ha configurado listas de publicaciones.'}
+                  </p>
+                </div>
+                {currentUser.role === 'admin' && onOpenAdminCreateList && (
+                  <button
+                    onClick={onOpenAdminCreateList}
+                    className="px-4 py-2 rounded-xl bg-[#0066FF] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    <FolderPlus className="w-4 h-4" />
+                    <span>Crear Primera Lista</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {lists
+                  .filter((l) => {
+                    if (!searchQuery.trim()) return true;
+                    const q = searchQuery.toLowerCase();
+                    return l.name.toLowerCase().includes(q) || (l.description && l.description.toLowerCase().includes(q));
+                  })
+                  .map((list, idx) => {
+                    const ListIconComp = getListIcon(list.icon);
+                    const listItems = items.filter((it) => 
+                      (Array.isArray(list.itemIds) && list.itemIds.includes(it.id)) ||
+                      (Array.isArray(it.listIds) && it.listIds.includes(list.id))
+                    );
+
+                    return (
+                      <motion.div
+                        key={list.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.22, delay: idx * 0.04 }}
+                        whileHover={{ y: -3, scale: 1.01 }}
+                        className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between group ${
+                          isDark
+                            ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/60 hover:shadow-lg hover:shadow-[#0066FF]/10'
+                            : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/60 shadow-sm hover:shadow-md'
+                        }`}
+                        onClick={() => handleSelectCollection(list.id)}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md"
+                              style={{ backgroundColor: list.color || '#0066FF' }}
+                            >
+                              <ListIconComp className="w-5 h-5" />
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                                {listItems.length} {listItems.length === 1 ? 'publicación' : 'publicaciones'}
+                              </span>
+
+                              {currentUser.role === 'admin' && onOpenAdminEditList && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenAdminEditList(list);
+                                  }}
+                                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                    isDark
+                                      ? 'text-slate-400 hover:text-white hover:bg-[#121216]'
+                                      : 'text-slate-500 hover:text-black hover:bg-slate-100'
+                                  }`}
+                                  title="Editar Lista"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <h4 className={`text-sm font-bold leading-snug group-hover:text-[#0066FF] transition-colors ${
+                            isDark ? 'text-white' : 'text-[#0F172A]'
+                          }`}>
+                            {list.name}
+                          </h4>
+
+                          <p className={`text-xs mt-1 line-clamp-2 leading-relaxed ${
+                            isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'
+                          }`}>
+                            {list.description || 'Colección exclusiva de material organizada por el Administrador.'}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-100 dark:border-white/5 text-[11px]">
+                          <span className={isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}>
+                            Creada: {list.createdAt || 'Reciente'}
+                          </span>
+                          <span className="text-[#0066FF] font-semibold flex items-center gap-0.5 group-hover:translate-x-1 transition-transform">
+                            <span>Ver publicaciones</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        ) : filteredItems.length === 0 ? (
+          /* EMPTY STATE FOR ITEMS VIEW */
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
             className={`py-12 px-6 flex flex-col items-center justify-center text-center rounded-2xl space-y-4 border transition-colors ${
               isDark
                 ? 'bg-[#0A0A0C] border-[#1E1E24]'
                 : 'bg-white border-[#E2E8F0] shadow-sm'
             }`}
           >
-            <div
+            <motion.div
+              animate={{ y: [0, -6, 0] }}
+              transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
               className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${
                 isDark
                   ? 'bg-black border-[#1E1E24] shadow-[0_0_30px_-5px_rgba(0,102,255,0.2)]'
@@ -190,31 +556,58 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
               }`}
             >
               <FolderClosed className="w-7 h-7 text-[#0066FF]" />
-            </div>
+            </motion.div>
             <div className="space-y-1 max-w-xs">
               <h4
                 className={`text-sm font-bold tracking-wide ${
                   isDark ? 'text-white' : 'text-[#0F172A]'
                 }`}
               >
-                Bóveda Sin Publicaciones
+                {activeList ? `No hay publicaciones en "${activeList.name}"` : 'Bóveda Sin Publicaciones'}
               </h4>
               <p className={`text-xs leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                {currentUser.role === 'admin'
+                {activeList
+                  ? currentUser.role === 'admin'
+                    ? 'Esta lista no tiene publicaciones asociadas. Puedes editar la lista para incluir publicaciones existentes o subir nuevo material.'
+                    : 'El administrador aún no ha asignado publicaciones a esta lista.'
+                  : currentUser.role === 'admin'
                   ? 'La bóveda se encuentra vacía. Como Administrador tienes permiso exclusivo para subir y alojar nuevo material.'
                   : 'Actualmente no hay publicaciones en el servidor. Solo el Administrador puede publicar nuevo contenido exclusivo.'}
               </p>
             </div>
 
-            {currentUser.role === 'admin' ? (
-              <button
+            {activeList ? (
+              <div className="flex items-center gap-2 pt-2">
+                {currentUser.role === 'admin' && onOpenAdminEditList && (
+                  <motion.button
+                    onClick={() => onOpenAdminEditList(activeList)}
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0066FF] text-white text-xs font-bold cursor-pointer shadow-md"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Asignar Publicaciones</span>
+                  </motion.button>
+                )}
+                <button
+                  onClick={() => setSelectedListId(null)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/10 text-xs font-semibold cursor-pointer"
+                >
+                  Ver Todas
+                </button>
+              </div>
+            ) : currentUser.role === 'admin' ? (
+              <motion.button
                 id="empty-state-admin-upload-btn"
                 onClick={onOpenAdminUpload}
-                className="mt-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-lg shadow-[#0066FF]/30"
+                whileHover={{ scale: 1.04, y: -2 }}
+                whileTap={{ scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                className="mt-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-lg shadow-[#0066FF]/30 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>Publicar Primer Recurso (Admin)</span>
-              </button>
+              </motion.button>
             ) : (
               <div
                 className={`mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] border ${
@@ -227,248 +620,325 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 <span>En espera de publicaciones del Administrador</span>
               </div>
             )}
-          </div>
+          </motion.div>
         ) : isGridView ? (
-          <div className="grid grid-cols-2 gap-3">
-            {filteredItems.map((item) => {
-              return (
-                <div
-                  key={item.id}
-                  id={`vault-item-grid-${item.id}`}
-                  onClick={() => onSelectItem(item)}
-                  className={`border rounded-xl overflow-hidden cursor-pointer transition-all flex flex-col group relative ${
-                    isDark
-                      ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/60'
-                      : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/60 shadow-sm'
-                  }`}
-                >
-                  <div className={`relative h-24 overflow-hidden ${isDark ? 'bg-[#121216]' : 'bg-[#E2E8F0]'}`}>
-                    <img
-                      src={item.coverImage}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {hasVaultItemFile(item) && item.fileType ? (
-                      <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-[#0066FF] uppercase">
-                        {item.fileType}
+          /* GRID VIEW */
+          <motion.div 
+            layout 
+            className="grid grid-cols-2 gap-3"
+          >
+            <AnimatePresence>
+              {filteredItems.map((item, index) => {
+                const itemLists = lists.filter((l) => Array.isArray(l.itemIds) && l.itemIds.includes(item.id));
+                return (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{
+                      duration: 0.25,
+                      delay: Math.min(index * 0.03, 0.25),
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                    whileHover={{ y: -4, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    id={`vault-item-grid-${item.id}`}
+                    onClick={() => onSelectItem(item)}
+                    className={`border rounded-xl overflow-hidden cursor-pointer transition-shadow flex flex-col group relative ${
+                      isDark
+                        ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/70 hover:shadow-lg hover:shadow-[#0066FF]/10'
+                        : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/70 shadow-sm hover:shadow-md'
+                    }`}
+                  >
+                    <div className={`relative h-24 overflow-hidden ${isDark ? 'bg-[#121216]' : 'bg-[#E2E8F0]'}`}>
+                      <img
+                        src={item.coverImage}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out"
+                      />
+                      {hasVaultItemFile(item) && item.fileType ? (
+                        <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-[9px] font-bold text-[#0066FF] uppercase">
+                          {item.fileType}
+                        </div>
+                      ) : (
+                        <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-xs text-[9px] font-semibold text-white/80 uppercase">
+                          {item.category === 'document' ? 'Doc' : item.category === 'code' ? 'Post' : 'Publicación'}
+                        </div>
+                      )}
+
+                      {/* List badge on grid card */}
+                      {itemLists.length > 0 && (
+                        <div className="absolute bottom-1.5 left-2 flex items-center gap-1">
+                          {itemLists.slice(0, 2).map((l) => (
+                            <span
+                              key={l.id}
+                              className="px-1.5 py-0.2 rounded text-[8px] font-bold text-white shadow-xs backdrop-blur-xs"
+                              style={{ backgroundColor: l.color || '#0066FF' }}
+                            >
+                              {l.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {currentUser.role === 'admin' && onDeleteItem && (
+                        <motion.button
+                          id={`delete-grid-btn-${item.id}`}
+                          whileHover={{ scale: 1.15 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setItemToDelete(item);
+                          }}
+                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 hover:bg-red-600 text-white/80 hover:text-white transition-colors"
+                          title="Eliminar publicación (Admin)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </motion.button>
+                      )}
+                    </div>
+                    <div className="p-3 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h4
+                          className={`text-xs font-semibold line-clamp-2 leading-tight ${
+                            isDark ? 'text-white' : 'text-[#0F172A]'
+                          }`}
+                        >
+                          {item.title}
+                        </h4>
                       </div>
-                    ) : (
-                      <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-semibold text-white/80 uppercase">
-                        {item.category === 'document' ? 'Doc' : item.category === 'code' ? 'Post' : 'Publicación'}
-                      </div>
-                    )}
-                    {currentUser.role === 'admin' && onDeleteItem && (
-                      <button
-                        id={`delete-grid-btn-${item.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setItemToDelete(item);
-                        }}
-                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 hover:bg-red-600 text-white/80 hover:text-white transition-colors"
-                        title="Eliminar publicación (Admin)"
+                      <div
+                        className={`flex items-center justify-between pt-2 mt-2 border-t text-[10px] ${
+                          isDark
+                            ? 'border-[#1E1E24] text-[#8E8E93]'
+                            : 'border-[#E2E8F0] text-[#64748B]'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="p-3 flex-1 flex flex-col justify-between">
-                    <div>
-                      <h4
-                        className={`text-xs font-semibold line-clamp-2 leading-tight ${
+                        <span>{item.fileSize || item.version || ''}</span>
+                        <div className="flex items-center gap-1">
+                          <Heart className="w-3 h-3 text-[#FF2E63]" />
+                          <span>{item.likesCount}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </motion.div>
+        ) : (
+          /* LIST VIEW */
+          <motion.div layout className="space-y-3">
+            <AnimatePresence>
+              {filteredItems.map((item, index) => {
+                const itemLists = lists.filter((l) => Array.isArray(l.itemIds) && l.itemIds.includes(item.id));
+                return (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.92 }}
+                    transition={{
+                      duration: 0.24,
+                      delay: Math.min(index * 0.03, 0.25),
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                    whileHover={{ y: -3, scale: 1.008 }}
+                    whileTap={{ scale: 0.985 }}
+                    id={`vault-item-list-${item.id}`}
+                    onClick={() => onSelectItem(item)}
+                    className={`border rounded-2xl p-4 cursor-pointer transition-shadow flex items-start gap-3.5 group relative ${
+                      isDark
+                        ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/60 hover:shadow-lg hover:shadow-[#0066FF]/10'
+                        : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/60 shadow-sm hover:shadow-md'
+                    }`}
+                  >
+                    {/* Cover / Icon Thumbnail */}
+                    <div
+                      className={`w-14 h-14 rounded-xl overflow-hidden shrink-0 border relative transition-colors ${
+                        isDark
+                          ? 'bg-[#121216] border-[#1E1E24] group-hover:border-[#0066FF]/40'
+                          : 'bg-blue-50/80 border-blue-100 group-hover:border-[#0066FF]/40'
+                      }`}
+                    >
+                      {item.coverImage ? (
+                        <img
+                          src={item.coverImage}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <FolderClosed className="w-6 h-6 text-[#0066FF]" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {hasVaultItemFile(item) && item.fileType ? (
+                            <span className="px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[10px] font-bold text-[#0066FF] uppercase">
+                              {item.fileType}
+                            </span>
+                          ) : (
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase ${
+                              isDark ? 'bg-white/5 text-[#8E8E93]' : 'bg-slate-100 text-[#64748B]'
+                            }`}>
+                              Publicación
+                            </span>
+                          )}
+
+                          {/* List badges */}
+                          {itemLists.map((l) => (
+                            <span
+                              key={l.id}
+                              className="px-1.5 py-0.2 rounded text-[9px] font-bold text-white"
+                              style={{ backgroundColor: l.color || '#0066FF' }}
+                            >
+                              {l.name}
+                            </span>
+                          ))}
+
+                          {hasVaultItemFile(item) && item.fileSize && (
+                            <span
+                              className={`text-[11px] font-mono ${
+                                isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+                              }`}
+                            >
+                              {item.fileSize}
+                            </span>
+                          )}
+                        </div>
+
+                        {currentUser.role === 'admin' && onDeleteItem && (
+                          <motion.button
+                            id={`delete-list-btn-${item.id}`}
+                            whileHover={{ scale: 1.2 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setItemToDelete(item);
+                            }}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              isDark
+                                ? 'text-[#5A5A62] hover:text-red-400 hover:bg-red-500/10'
+                                : 'text-[#94A3B8] hover:text-red-600 hover:bg-red-50'
+                            }`}
+                            title="Eliminar publicación (Admin)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </motion.button>
+                        )}
+                      </div>
+
+                      <h3
+                        className={`text-sm font-semibold truncate transition-colors ${
                           isDark ? 'text-white' : 'text-[#0F172A]'
                         }`}
                       >
                         {item.title}
-                      </h4>
-                    </div>
-                    <div
-                      className={`flex items-center justify-between pt-2 mt-2 border-t text-[10px] ${
-                        isDark
-                          ? 'border-[#1E1E24] text-[#8E8E93]'
-                          : 'border-[#E2E8F0] text-[#64748B]'
-                      }`}
-                    >
-                      <span>{item.fileSize || item.version || ''}</span>
-                      <div className="flex items-center gap-1">
-                        <Heart className="w-3 h-3 text-[#FF2E63]" />
-                        <span>{item.likesCount}</span>
+                      </h3>
+
+                      <p className={`text-xs line-clamp-1 mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                        {item.description}
+                      </p>
+
+                      <div
+                        className={`flex items-center gap-4 mt-2 pt-2 border-t text-[11px] ${
+                          isDark
+                            ? 'border-[#1E1E24]/60 text-[#8E8E93]'
+                            : 'border-[#E2E8F0] text-[#64748B]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <Heart className="w-3 h-3 text-[#5A5A62]" />
+                          <span>{item.likesCount}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3 text-[#5A5A62]" />
+                          <span>{item.comments.length} en debate</span>
+                        </div>
+                        <span className="ml-auto text-[10px] opacity-70">
+                          {item.version || 'v1.0'}
+                        </span>
+                        <ChevronRight className="w-4 h-4 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:text-[#0066FF] transition-all" />
                       </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          filteredItems.map((item) => {
-            return (
-              <div
-                key={item.id}
-                id={`vault-item-list-${item.id}`}
-                onClick={() => onSelectItem(item)}
-                className={`border rounded-2xl p-4 cursor-pointer transition-all flex items-start gap-3.5 group active:scale-[0.99] relative ${
-                  isDark
-                    ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/50'
-                    : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/50 shadow-sm'
-                }`}
-              >
-                {/* Cover / Icon Thumbnail */}
-                <div
-                  className={`w-14 h-14 rounded-xl overflow-hidden shrink-0 border relative transition-colors ${
-                    isDark
-                      ? 'bg-[#121216] border-[#1E1E24] group-hover:border-[#0066FF]/40'
-                      : 'bg-blue-50/80 border-blue-100 group-hover:border-[#0066FF]/40'
-                  }`}
-                >
-                  {item.coverImage ? (
-                    <img
-                      src={item.coverImage}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <FolderClosed className="w-6 h-6 text-[#0066FF]" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Details */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <div className="flex items-center gap-1.5">
-                      {hasVaultItemFile(item) && item.fileType ? (
-                        <span className="px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[10px] font-bold text-[#0066FF] uppercase">
-                          {item.fileType}
-                        </span>
-                      ) : (
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase ${
-                          isDark ? 'bg-white/5 text-[#8E8E93]' : 'bg-slate-100 text-[#64748B]'
-                        }`}>
-                          Publicación
-                        </span>
-                      )}
-                      {hasVaultItemFile(item) && item.fileSize && (
-                        <span
-                          className={`text-[11px] font-mono ${
-                            isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
-                          }`}
-                        >
-                          {item.fileSize}
-                        </span>
-                      )}
-                    </div>
-
-                    {currentUser.role === 'admin' && onDeleteItem && (
-                      <button
-                        id={`delete-list-btn-${item.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setItemToDelete(item);
-                        }}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          isDark
-                            ? 'text-[#5A5A62] hover:text-red-400 hover:bg-red-500/10'
-                            : 'text-[#94A3B8] hover:text-red-600 hover:bg-red-50'
-                        }`}
-                        title="Eliminar publicación (Admin)"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  <h3
-                    className={`text-sm font-semibold truncate transition-colors ${
-                      isDark ? 'text-white' : 'text-[#0F172A]'
-                    }`}
-                  >
-                    {item.title}
-                  </h3>
-
-                  <p className={`text-xs line-clamp-1 mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                    {item.description}
-                  </p>
-
-                  <div
-                    className={`flex items-center gap-4 mt-2 pt-2 border-t text-[11px] ${
-                      isDark
-                        ? 'border-[#1E1E24]/60 text-[#8E8E93]'
-                        : 'border-[#E2E8F0] text-[#64748B]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <Heart className="w-3 h-3 text-[#5A5A62]" />
-                      <span>{item.likesCount}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <MessageSquare className="w-3 h-3 text-[#5A5A62]" />
-                      <span>{item.comments.length} en debate</span>
-                    </div>
-                    <span className="ml-auto text-[10px] opacity-70">
-                      {item.version || 'v1.0'}
-                    </span>
-                    <ChevronRight className="w-4 h-4 opacity-70 group-hover:opacity-100 group-hover:text-[#0066FF] transition-all" />
-                  </div>
-                </div>
-              </div>
-            );
-          })
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </motion.div>
         )}
       </div>
 
       {/* Admin Delete Confirmation Dialog Modal */}
-      {itemToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div
-            id="vault-delete-confirm-screen-modal"
-            className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl border ${
-              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5" />
+      <AnimatePresence>
+        {itemToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              id="vault-delete-confirm-screen-modal"
+              initial={{ opacity: 0, scale: 0.92, y: 14 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 14 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+              className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl border ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    ¿Eliminar Publicación?
+                  </h4>
+                  <p className={`text-xs mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    Esta acción borrará "{itemToDelete.title}" permanentemente de la bóveda para todos los usuarios.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                  ¿Eliminar Publicación?
-                </h4>
-                <p className={`text-xs mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                  Esta acción borrará "{itemToDelete.title}" permanentemente de la bóveda para todos los usuarios.
-                </p>
-              </div>
-            </div>
 
-            <div className="flex gap-2 pt-2">
-              <button
-                id="confirm-delete-screen-btn"
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-red-600/30"
-              >
-                {isDeleting ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-                <span>{isDeleting ? 'Eliminando...' : 'Sí, Eliminar'}</span>
-              </button>
-              <button
-                onClick={() => setItemToDelete(null)}
-                disabled={isDeleting}
-                className={`px-4 py-2.5 rounded-xl text-xs font-semibold border ${
-                  isDark
-                    ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                    : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                Cancelar
-              </button>
-            </div>
+              <div className="flex gap-2 pt-2">
+                <motion.button
+                  id="confirm-delete-screen-btn"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-red-600/30 cursor-pointer"
+                >
+                  {isDeleting ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span>{isDeleting ? 'Eliminando...' : 'Sí, Eliminar'}</span>
+                </motion.button>
+                <motion.button
+                  onClick={() => setItemToDelete(null)}
+                  disabled={isDeleting}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold border cursor-pointer ${
+                    isDark
+                      ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                      : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Cancelar
+                </motion.button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 };

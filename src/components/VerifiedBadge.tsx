@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 
 interface VerifiedBadgeProps {
   className?: string;
@@ -14,8 +15,11 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
   animate = true,
 }) => {
   return (
-    <span 
-      className={`inline-flex items-center justify-center align-middle transition-transform duration-300 hover:scale-125 hover:rotate-6 cursor-pointer ${
+    <motion.span 
+      whileHover={{ scale: 1.22, rotate: 6 }}
+      whileTap={{ scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+      className={`inline-flex items-center justify-center align-middle cursor-pointer ${
         animate ? 'animate-badge-pop' : ''
       }`}
       title={title}
@@ -51,6 +55,6 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
           strokeLinecap="round"
         />
       </svg>
-    </span>
+    </motion.span>
   );
 };

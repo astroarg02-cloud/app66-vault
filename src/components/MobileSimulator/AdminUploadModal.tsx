@@ -1,20 +1,22 @@
 import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, UploadCloud, FileCode, Video, FileText, Music, Sliders, 
-  Image as ImageIcon, CheckCircle2, FileUp, Trash2, Sparkles, FolderArchive, ArrowUpRight
+  Image as ImageIcon, CheckCircle2, FileUp, Trash2, Sparkles, FolderArchive, ArrowUpRight, FolderPlus
 } from 'lucide-react';
-import { VaultItem, ResourceCategory, UserProfile } from '../../types';
+import { VaultItem, ResourceCategory, UserProfile, VaultList } from '../../types';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 
 interface AdminUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (newItem: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>) => Promise<any> | void;
+  onUpload: (newItem: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>, targetListIds?: string[]) => Promise<any> | void;
   currentUser?: UserProfile | null;
+  lists?: VaultList[];
 }
 
-export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onClose, onUpload, currentUser }) => {
+export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onClose, onUpload, currentUser, lists = [] }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<ResourceCategory>('code');
@@ -25,6 +27,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   const [downloadUrl, setDownloadUrl] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [version, setVersion] = useState('v1.0');
+  const [selectedListIds, setSelectedListIds] = useState<string[]>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isDraggingCover, setIsDraggingCover] = useState(false);
   const [autoDetectedInfo, setAutoDetectedInfo] = useState<string | null>(null);
@@ -260,13 +263,15 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
         downloadUrl: finalDownloadUrl,
         coverImage: finalCover,
         version: version.trim() || 'v1.0',
+        listIds: selectedListIds,
         author: {
           name: currentUser?.displayName || 'Administrador (astroarg02)',
           badge: 'ADMIN ROOT',
         },
-      });
+      }, selectedListIds);
 
       resetForm();
+      setSelectedListIds([]);
       onClose();
     } catch (err) {
       console.error('Error submitting vault item:', err);
@@ -276,9 +281,19 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
-      <div 
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4"
+    >
+      <motion.div 
         id="admin-upload-modal-container"
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 16 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 28 }}
         className={`w-full max-w-lg rounded-3xl max-h-[92dvh] flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border transition-colors ${
           isDark
             ? 'bg-[#0A0A0C] border-[#1E1E24] text-white'
@@ -307,16 +322,18 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
               </p>
             </div>
           </div>
-          <button
+          <motion.button
             onClick={handleClose}
-            className={`p-2 rounded-xl transition-colors ${
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            className={`p-2 rounded-xl transition-colors cursor-pointer ${
               isDark
                 ? 'text-[#8E8E93] hover:text-white hover:bg-[#121216]'
                 : 'text-[#64748B] hover:text-[#0F172A] hover:bg-slate-200'
             }`}
           >
             <X className="w-5 h-5" />
-          </button>
+          </motion.button>
         </div>
 
         {/* Modal Scrollable Form */}
@@ -614,27 +631,73 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
                 />
               </div>
             </div>
+
+            {/* Asignación a Listas Creadas por el Administrador */}
+            {lists && lists.length > 0 && (
+              <div className="pt-2">
+                <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  <FolderPlus className="w-3.5 h-3.5 text-[#0066FF]" />
+                  <span>Asignar a Listas / Colecciones (Opcional)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {lists.map((list) => {
+                    const isSelected = selectedListIds.includes(list.id);
+                    return (
+                      <button
+                        key={list.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedListIds((prev) =>
+                            prev.includes(list.id)
+                              ? prev.filter((id) => id !== list.id)
+                              : [...prev, list.id]
+                          );
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#0066FF] border-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
+                            : isDark
+                            ? 'bg-[#121216] border-[#1E1E24] text-[#8E8E93] hover:text-white hover:border-[#2A2A34]'
+                            : 'bg-slate-50 border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
+                        }`}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: list.color || '#0066FF' }}
+                        />
+                        <span>{list.name}</span>
+                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 ml-0.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Submit Buttons */}
           <div className={`pt-3 border-t flex gap-3 ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
-            <button
+            <motion.button
               type="button"
               onClick={handleClose}
               disabled={isSubmitting}
-              className={`flex-1 py-3 px-4 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50 ${
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className={`flex-1 py-3 px-4 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer ${
                 isDark
                   ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
                   : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
               Cancelar
-            </button>
-            <button
+            </motion.button>
+            <motion.button
               id="admin-publish-resource-btn"
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#0066FF]/30 disabled:opacity-60"
+              whileHover={{ scale: 1.02, y: -1 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex-1 py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#0066FF]/30 disabled:opacity-60 cursor-pointer"
             >
               {isSubmitting ? (
                 <>
@@ -647,10 +710,10 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
                   <span>Publicar en la Bóveda</span>
                 </>
               )}
-            </button>
+            </motion.button>
           </div>
         </form>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };

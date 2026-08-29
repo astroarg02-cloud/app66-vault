@@ -1,4 +1,4 @@
-import { VaultItem, UserProfile } from '../types';
+import { VaultItem, VaultList, UserProfile } from '../types';
 
 export const ADMIN_AUTHORIZED_EMAILS = [
   'astroarg02@gmail.com',
@@ -117,3 +117,27 @@ export const INITIAL_VAULT_ITEMS: VaultItem[] = [
     comments: [],
   },
 ];
+
+export const INITIAL_VAULT_LISTS: VaultList[] = [
+  {
+    id: 'list-apps-systems',
+    name: '📱 Archivos iOS & Android',
+    description: 'Recursos, utilidades y aplicaciones exclusivas para dispositivos móviles.',
+    icon: 'smartphone',
+    color: '#0066FF',
+    itemIds: ['vault-res-1787518251503'],
+    createdAt: '2026-08-23',
+    createdBy: 'admin_master_astro',
+  },
+  {
+    id: 'list-regedits-sensi',
+    name: '⚡ Regedits y Sensibilidad',
+    description: 'Configuraciones de máxima respuesta táctil, archivos REG y paneles optimizados.',
+    icon: 'sliders',
+    color: '#10B981',
+    itemIds: ['vault-res-1787520057677', 'vault-res-1787520090540', 'vault-res-1787520163631'],
+    createdAt: '2026-08-23',
+    createdBy: 'admin_master_astro',
+  },
+];
+

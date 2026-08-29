@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS } from './data/initialVaultData';
-import { VaultItem, UserProfile, VaultComment } from './types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS, INITIAL_VAULT_LISTS } from './data/initialVaultData';
+import { VaultItem, UserProfile, VaultComment, VaultList } from './types';
 import { AuthScreen } from './components/MobileSimulator/AuthScreen';
 import { VaultScreen } from './components/MobileSimulator/VaultScreen';
 import { VaultDetailModal } from './components/MobileSimulator/VaultDetailModal';
 import { MembershipScreen } from './components/MobileSimulator/MembershipScreen';
 import { ProfileScreen } from './components/MobileSimulator/ProfileScreen';
 import { AdminUploadModal } from './components/MobileSimulator/AdminUploadModal';
+import { AdminListModal } from './components/MobileSimulator/AdminListModal';
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { firebaseService } from './services/firebaseService';
@@ -20,7 +22,8 @@ import {
   LogOut, 
   ShieldCheck, 
   Database,
-  Flame
+  Flame,
+  Layers
 } from 'lucide-react';
 
 function AppContent() {
@@ -28,15 +31,29 @@ function AppContent() {
     const local = supabaseService.getLocalVaultItems();
     return local && local.length > 0 ? local : INITIAL_VAULT_ITEMS;
   });
+
+  const [lists, setLists] = useState<VaultList[]>(() => {
+    try {
+      const saved = localStorage.getItem('vault_lists_cache');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return INITIAL_VAULT_LISTS;
+  });
+
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => firebaseService.getLocalSession());
   const [isCheckingSession, setIsCheckingSession] = useState(false);
   const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'profile'>('vault');
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);
+  const [showAdminListModal, setShowAdminListModal] = useState(false);
+  const [editingList, setEditingList] = useState<VaultList | null>(null);
   const { theme, toggleTheme, isDark } = useTheme();
 
   // Helper to merge incoming items with existing state preserving custom user uploads
-  const mergeVaultItems = (incoming: VaultItem[]) => {
+  const mergeVaultItems = useCallback((incoming: VaultItem[]) => {
     if (!Array.isArray(incoming) || incoming.length === 0) return;
     setItems((prev) => {
       const map = new Map<string, VaultItem>();
@@ -55,9 +72,32 @@ function AppContent() {
       supabaseService.saveLocalVaultItems(merged);
       return merged;
     });
-  };
+  }, []);
 
-  // Check existing session and listen to Firebase auth & Firestore live items
+  // Helper to merge lists
+  const mergeVaultLists = useCallback((incoming: VaultList[]) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return;
+    setLists((prev) => {
+      const map = new Map<string, VaultList>();
+      // First populate with incoming
+      incoming.forEach((l) => {
+        if (l && l.id) map.set(l.id, l);
+      });
+      // Merge with previous
+      prev.forEach((l) => {
+        if (l && l.id && !map.has(l.id)) {
+          map.set(l.id, l);
+        }
+      });
+      const merged = Array.from(map.values());
+      try {
+        localStorage.setItem('vault_lists_cache', JSON.stringify(merged));
+      } catch (e) {}
+      return merged;
+    });
+  }, []);
+
+  // Check existing session and listen to Firebase auth & Firestore live items and lists
   useEffect(() => {
     const unsub = firebaseService.onAuthState((user) => {
       if (user) {
@@ -66,84 +106,93 @@ function AppContent() {
       setIsCheckingSession(false);
     });
 
-    // Real-time Firestore items listener (anyone in the world immediately sees uploads)
-    const unsubFirestore = firebaseService.onVaultItemsSnapshot((liveItems) => {
+    // Real-time Firestore items listener
+    const unsubFirestoreItems = firebaseService.onVaultItemsSnapshot((liveItems) => {
       if (liveItems && Array.isArray(liveItems) && liveItems.length > 0) {
         mergeVaultItems(liveItems);
       }
     });
 
-    // Safety fallback to guarantee screen is never stuck
+    // Real-time Firestore lists listener
+    const unsubFirestoreLists = firebaseService.onVaultListsSnapshot((liveLists) => {
+      if (liveLists && Array.isArray(liveLists) && liveLists.length > 0) {
+        mergeVaultLists(liveLists);
+      }
+    });
+
+    // Safety fallback
     const timer = setTimeout(() => {
       setIsCheckingSession(false);
     }, 200);
 
-    const loadItems = async () => {
+    const loadData = async () => {
       try {
-        let currentLoaded: VaultItem[] = [];
-
-        // 1. Fetch from Central Express Server API
-        const res = await fetch('/api/vault/items');
-        if (res.ok) {
-          const json = await res.json();
+        // 1. Fetch Items from Central Express Server API
+        const resItems = await fetch('/api/vault/items');
+        if (resItems.ok) {
+          const json = await resItems.json();
           if (json.items && Array.isArray(json.items) && json.items.length > 0) {
             mergeVaultItems(json.items);
-            currentLoaded = json.items;
           }
         }
 
-        // 2. Fetch from Firestore
+        // 2. Fetch Lists from Central Express Server API
+        const resLists = await fetch('/api/vault/lists');
+        if (resLists.ok) {
+          const jsonLists = await resLists.json();
+          if (jsonLists.lists && Array.isArray(jsonLists.lists) && jsonLists.lists.length > 0) {
+            mergeVaultLists(jsonLists.lists);
+          }
+        }
+
+        // 3. Fetch Items from Firestore
         const firestoreItems = await firebaseService.fetchVaultItems();
         if (firestoreItems && firestoreItems.length > 0) {
           mergeVaultItems(firestoreItems);
         }
 
-        // 3. Always check any items stored in user's browser localStorage
+        // 4. Fetch Lists from Firestore
+        const firestoreLists = await firebaseService.fetchVaultLists();
+        if (firestoreLists && firestoreLists.length > 0) {
+          mergeVaultLists(firestoreLists);
+        }
+
+        // 5. Check items stored in user's browser localStorage
         const localItems = supabaseService.getLocalVaultItems();
         if (localItems && localItems.length > 0) {
           mergeVaultItems(localItems);
-          // Auto-sync any local items to Firestore so they are visible on all devices
-          firebaseService.syncAllItemsToFirestore(localItems).catch(() => {});
-          fetch('/api/vault/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: localItems }),
-          }).catch(() => {});
-        }
-
-        // 3. Fallback to Supabase
-        const fetchedItems = await supabaseService.fetchVaultItems();
-        if (fetchedItems && Array.isArray(fetchedItems) && fetchedItems.length > 0) {
-          mergeVaultItems(fetchedItems);
-          currentLoaded = fetchedItems;
-        }
-
-        // If Firestore was empty or missing items, sync all loaded items to Firestore
-        if (currentLoaded.length > 0) {
-          firebaseService.syncAllItemsToFirestore(currentLoaded).catch(() => {});
-        } else {
-          // Sync initial items if brand new
-          const localItems = supabaseService.getLocalVaultItems();
-          if (localItems && localItems.length > 0) {
-            firebaseService.syncAllItemsToFirestore(localItems).catch(() => {});
-          }
         }
       } catch (err) {
-        console.warn('Error loading vault items:', err);
+        console.warn('Error loading initial vault data:', err);
       }
     };
 
-    loadItems();
+    loadData();
 
-    const interval = setInterval(loadItems, 3500);
+    // Background poll every 30 seconds
+    const interval = setInterval(async () => {
+      try {
+        const resItems = await fetch('/api/vault/items');
+        if (resItems.ok) {
+          const json = await resItems.json();
+          if (json.items && Array.isArray(json.items)) mergeVaultItems(json.items);
+        }
+        const resLists = await fetch('/api/vault/lists');
+        if (resLists.ok) {
+          const jsonLists = await resLists.json();
+          if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
+        }
+      } catch (e) {}
+    }, 30000);
 
     return () => {
       clearTimeout(timer);
       unsub();
-      unsubFirestore();
+      unsubFirestoreItems();
+      unsubFirestoreLists();
       clearInterval(interval);
     };
-  }, []);
+  }, [mergeVaultItems, mergeVaultLists]);
 
   const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
@@ -155,15 +204,9 @@ function AppContent() {
     setCurrentUser(null);
   };
 
-  const handleSwitchUser = (user: UserProfile) => {
-    setCurrentUser(user);
-    firebaseService.saveSession(user);
-  };
-
   // Toggle Like (optimistic state + sync to Firestore and Supabase)
   const handleToggleLike = async (itemId: string) => {
     if (!currentUser) return;
-    let updatedItem: VaultItem | null = null;
     let newLikesCount = 0;
     let newLikedBy: string[] = [];
 
@@ -178,12 +221,11 @@ function AppContent() {
           ? Math.max(0, item.likesCount - 1)
           : item.likesCount + 1;
 
-        updatedItem = {
+        return {
           ...item,
           likedBy: newLikedBy,
           likesCount: newLikesCount,
         };
-        return updatedItem;
       })
     );
 
@@ -194,12 +236,16 @@ function AppContent() {
         : prev
     );
 
-    // Sync with Firestore & Supabase in cloud
-    await firebaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
-    if (updatedItem) {
-      await firebaseService.saveVaultItemToFirestore(updatedItem);
+    try {
+      await firebaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
+    } catch (e) {
+      console.warn('Could not update likes in Firestore:', e);
     }
-    await supabaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
+    try {
+      await supabaseService.updateItemLikes(itemId, newLikesCount, newLikedBy);
+    } catch (e) {
+      console.warn('Could not update likes in Supabase:', e);
+    }
   };
 
   // Add Comment (optimistic state + sync to Firestore and Supabase)
@@ -215,19 +261,16 @@ function AppContent() {
       createdAt: 'Justo ahora',
     };
 
-    let updatedItem: VaultItem | null = null;
     let updatedComments: VaultComment[] = [];
 
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.id !== itemId) return item;
         updatedComments = [newComment, ...item.comments];
-        
-        updatedItem = {
+        return {
           ...item,
           comments: updatedComments,
         };
-        return updatedItem;
       })
     );
 
@@ -238,30 +281,37 @@ function AppContent() {
         : prev
     );
 
-    // Sync with Firestore & Supabase in cloud
-    await firebaseService.updateItemComments(itemId, updatedComments);
-    if (updatedItem) {
-      await firebaseService.saveVaultItemToFirestore(updatedItem);
+    try {
+      await firebaseService.updateItemComments(itemId, updatedComments);
+    } catch (e) {
+      console.warn('Could not update comments in Firestore:', e);
     }
-    await supabaseService.updateItemComments(itemId, updatedComments);
+    try {
+      await supabaseService.updateItemComments(itemId, updatedComments);
+    } catch (e) {
+      console.warn('Could not update comments in Supabase:', e);
+    }
   };
 
-  // Upload new vault item (Admin exclusively)
+  // Upload new vault item (Admin exclusively) with optional list assignments
   const handleUploadItem = async (
-    newItemData: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>
+    newItemData: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>,
+    targetListIds: string[] = []
   ) => {
+    const newItemId = `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newItem: VaultItem = {
       ...newItemData,
-      id: `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: newItemId,
       createdAt: new Date().toISOString().split('T')[0],
       likesCount: 1,
       likedBy: currentUser ? [currentUser.uid] : ['admin_master_astro'],
       comments: [],
+      listIds: targetListIds.length > 0 ? targetListIds : newItemData.listIds,
     };
 
     let itemToPersist = { ...newItem };
 
-    // 1. Persist to Central Server API (processes any binary attachments and syncs to Firestore)
+    // 1. Persist to Central Server API
     try {
       const res = await fetch('/api/vault/upload', {
         method: 'POST',
@@ -278,14 +328,14 @@ function AppContent() {
       console.warn('Central API upload error:', e);
     }
 
-    // 2. Persist directly to Firebase Firestore Cloud Database
+    // 2. Persist to Firestore
     try {
       await firebaseService.saveVaultItemToFirestore(itemToPersist);
     } catch (e) {
       console.warn('Firestore direct upload error:', e);
     }
 
-    // 3. Persist to Supabase Database
+    // 3. Persist to Supabase
     try {
       await supabaseService.insertVaultItem(itemToPersist);
     } catch (e) {
@@ -298,6 +348,32 @@ function AppContent() {
       supabaseService.saveLocalVaultItems(updated);
       return updated;
     });
+
+    // 5. If assigned to target lists, update those lists
+    if (targetListIds.length > 0) {
+      targetListIds.forEach(async (listId) => {
+        const listToUpdate = lists.find((l) => l.id === listId);
+        if (listToUpdate && !listToUpdate.itemIds.includes(itemToPersist.id)) {
+          const updatedItemIds = [...listToUpdate.itemIds, itemToPersist.id];
+          const updatedList = { ...listToUpdate, itemIds: updatedItemIds };
+          
+          setLists((prev) =>
+            prev.map((l) => (l.id === listId ? updatedList : l))
+          );
+
+          try {
+            await fetch('/api/vault/lists', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updatedList),
+            });
+            await firebaseService.saveVaultListToFirestore(updatedList);
+          } catch (e) {
+            console.warn('Error updating list with new item:', e);
+          }
+        }
+      });
+    }
   };
 
   // Delete vault item (Admin exclusively)
@@ -310,6 +386,14 @@ function AppContent() {
     if (selectedItem?.id === itemId) {
       setSelectedItem(null);
     }
+
+    // Also update lists containing this item
+    setLists((prevLists) =>
+      prevLists.map((l) => ({
+        ...l,
+        itemIds: l.itemIds.filter((id) => id !== itemId),
+      }))
+    );
 
     // 1. Delete on Central Server
     try {
@@ -327,6 +411,113 @@ function AppContent() {
     } catch (e) {}
   };
 
+  // Create or Update Vault List (Admin)
+  const handleSaveList = async (listData: Partial<VaultList>) => {
+    const listId = listData.id || `list_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const fullList: VaultList = {
+      id: listId,
+      name: listData.name?.trim() || 'Nueva Colección',
+      description: listData.description?.trim() || '',
+      icon: listData.icon || 'folder',
+      color: listData.color || '#0066FF',
+      itemIds: Array.isArray(listData.itemIds) ? listData.itemIds : [],
+      createdBy: currentUser?.displayName || 'Administrador',
+      createdAt: listData.createdAt || new Date().toISOString().split('T')[0],
+    };
+
+    // Optimistic UI update
+    setLists((prev) => {
+      const exists = prev.some((l) => l.id === fullList.id);
+      const next = exists
+        ? prev.map((l) => (l.id === fullList.id ? fullList : l))
+        : [...prev, fullList];
+      try {
+        localStorage.setItem('vault_lists_cache', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    // 1. Server API
+    try {
+      await fetch('/api/vault/lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullList),
+      });
+    } catch (e) {
+      console.warn('Error saving list to central server:', e);
+    }
+
+    // 2. Firestore
+    try {
+      await firebaseService.saveVaultListToFirestore(fullList);
+    } catch (e) {
+      console.warn('Error saving list to Firestore:', e);
+    }
+
+    setShowAdminListModal(false);
+    setEditingList(null);
+  };
+
+  // Delete Vault List (Admin)
+  const handleDeleteList = async (listId: string) => {
+    // Optimistic UI
+    setLists((prev) => {
+      const next = prev.filter((l) => l.id !== listId);
+      try {
+        localStorage.setItem('vault_lists_cache', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    // 1. Server API
+    try {
+      await fetch(`/api/vault/lists/${listId}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Error deleting list from server:', e);
+    }
+
+    // 2. Firestore
+    try {
+      await firebaseService.deleteVaultListFromFirestore(listId);
+    } catch (e) {
+      console.warn('Error deleting list from Firestore:', e);
+    }
+
+    setShowAdminListModal(false);
+    setEditingList(null);
+  };
+
+  // Toggle single item in list (Admin quick action)
+  const handleToggleItemInList = async (listId: string, itemId: string) => {
+    let updatedList: VaultList | null = null;
+
+    setLists((prev) =>
+      prev.map((l) => {
+        if (l.id !== listId) return l;
+        const exists = l.itemIds.includes(itemId);
+        const newItemIds = exists
+          ? l.itemIds.filter((id) => id !== itemId)
+          : [...l.itemIds, itemId];
+        updatedList = { ...l, itemIds: newItemIds };
+        return updatedList;
+      })
+    );
+
+    if (updatedList) {
+      try {
+        await fetch(`/api/vault/lists/${listId}/toggle-item`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemId }),
+        });
+        await firebaseService.saveVaultListToFirestore(updatedList);
+      } catch (e) {
+        console.warn('Error toggling item in list:', e);
+      }
+    }
+  };
+
   // Sync selectedItem if item list updates
   const activeDetailItem = selectedItem
     ? items.find((i) => i.id === selectedItem.id) || selectedItem
@@ -338,9 +529,14 @@ function AppContent() {
       <div className={`h-[100dvh] w-full flex flex-col items-center justify-center gap-4 transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
       }`}>
-        <div className="w-12 h-12 rounded-2xl bg-[#0066FF] flex items-center justify-center text-white shadow-xl shadow-[#0066FF]/40 animate-pulse">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+          className="w-12 h-12 rounded-2xl bg-[#0066FF] flex items-center justify-center text-white shadow-xl shadow-[#0066FF]/40 animate-pulse"
+        >
           <ShieldCheck className="w-6 h-6" />
-        </div>
+        </motion.div>
         <div className="flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-[#0066FF]">
           <div className="w-3.5 h-3.5 border-2 border-[#0066FF] border-t-transparent rounded-full animate-spin" />
           <span>Verificando Acceso a la Bóveda...</span>
@@ -355,11 +551,16 @@ function AppContent() {
       <div className={`h-[100dvh] w-full flex items-center justify-center p-3 sm:p-4 overflow-y-auto transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
       }`}>
-        <div className={`w-full max-w-md max-h-[94dvh] rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
-          isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
-        }`}>
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.96, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+          className={`w-full max-w-md max-h-[94dvh] rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
+            isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+          }`}
+        >
           <AuthScreen onLogin={handleLogin} />
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -383,9 +584,14 @@ function AppContent() {
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand & Logo */}
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-[#0066FF] flex items-center justify-center shadow-lg shadow-[#0066FF]/30 text-white shrink-0">
+            <motion.div 
+              whileHover={{ scale: 1.08, rotate: 3 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-[#0066FF] flex items-center justify-center shadow-lg shadow-[#0066FF]/30 text-white shrink-0 cursor-pointer"
+            >
               <ShieldCheck className="w-5 h-5" />
-            </div>
+            </motion.div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm sm:text-lg font-black tracking-tight leading-none">
@@ -406,19 +612,26 @@ function AppContent() {
             </div>
           </div>
 
-          {/* Center Navigation Tabs */}
-          <nav className="flex items-center gap-1 sm:gap-1.5 p-1 rounded-2xl border bg-black/10 dark:bg-white/5 border-slate-200 dark:border-white/10">
+          {/* Center Navigation Tabs with smooth sliding active pill */}
+          <nav className="flex items-center gap-1 sm:gap-1.5 p-1 rounded-2xl border bg-black/10 dark:bg-white/5 border-slate-200 dark:border-white/10 relative">
             <button
               id="nav-tab-vault"
               onClick={() => setCurrentTab('vault')}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
                 currentTab === 'vault'
-                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
+                  ? 'text-white'
                   : isDark
                   ? 'text-[#8E8E93] hover:text-white'
                   : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
+              {currentTab === 'vault' && (
+                <motion.div
+                  layoutId="activeTabPill"
+                  className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30 -z-10"
+                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                />
+              )}
               <FolderClosed className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">Bóveda</span>
             </button>
@@ -426,14 +639,21 @@ function AppContent() {
             <button
               id="nav-tab-membership"
               onClick={() => setCurrentTab('membership')}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
                 currentTab === 'membership'
-                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
+                  ? 'text-white'
                   : isDark
                   ? 'text-[#8E8E93] hover:text-white'
                   : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
+              {currentTab === 'membership' && (
+                <motion.div
+                  layoutId="activeTabPill"
+                  className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30 -z-10"
+                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                />
+              )}
               <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">Membresía VIP</span>
             </button>
@@ -441,14 +661,21 @@ function AppContent() {
             <button
               id="nav-tab-profile"
               onClick={() => setCurrentTab('profile')}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
                 currentTab === 'profile'
-                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
+                  ? 'text-white'
                   : isDark
                   ? 'text-[#8E8E93] hover:text-white'
                   : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
+              {currentTab === 'profile' && (
+                <motion.div
+                  layoutId="activeTabPill"
+                  className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30 -z-10"
+                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                />
+              )}
               <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">Mi Perfil</span>
             </button>
@@ -470,24 +697,40 @@ function AppContent() {
             </div>
 
             {/* Theme Toggle */}
-            <button
+            <motion.button
               id="theme-toggle-btn"
               onClick={toggleTheme}
-              className={`p-1.5 sm:p-2 rounded-xl border transition-colors ${
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-[#1A1A22] text-[#8E8E93] hover:text-white'
                   : 'border-[#E2E8F0] hover:bg-slate-100 text-[#64748B] hover:text-black'
               }`}
               title="Cambiar Modo Claro / Oscuro"
             >
-              {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
-            </button>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={theme}
+                  initial={{ rotate: -90, opacity: 0 }}
+                  animate={{ rotate: 0, opacity: 1 }}
+                  exit={{ rotate: 90, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
+                </motion.div>
+              </AnimatePresence>
+            </motion.button>
 
             {/* Logout Button */}
-            <button
+            <motion.button
               id="logout-btn"
               onClick={handleLogout}
-              className={`p-1.5 sm:p-2 rounded-xl border transition-colors ${
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-red-500/15 hover:border-red-500/30 text-[#8E8E93] hover:text-red-400'
                   : 'border-[#E2E8F0] hover:bg-red-50 text-[#64748B] hover:text-red-600'
@@ -495,7 +738,7 @@ function AppContent() {
               title="Cerrar Sesión"
             >
               <LogOut className="w-4 h-4" />
-            </button>
+            </motion.button>
           </div>
         </div>
       </header>
@@ -505,53 +748,115 @@ function AppContent() {
         <div className={`w-full h-full flex-1 rounded-2xl sm:rounded-3xl border shadow-xl overflow-hidden flex flex-col min-h-0 relative transition-colors ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
         }`}>
-          {currentTab === 'vault' && (
-            <VaultScreen
-              items={items}
-              currentUser={currentUser}
-              onSelectItem={(item) => setSelectedItem(item)}
-              onOpenAdminUpload={() => setShowAdminUpload(true)}
-              onDeleteItem={handleDeleteItem}
-            />
-          )}
+          <AnimatePresence mode="wait">
+            {currentTab === 'vault' && (
+              <motion.div
+                key="vault"
+                initial={{ opacity: 0, y: 8, scale: 0.995 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.995 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="w-full h-full flex flex-col min-h-0"
+              >
+                <VaultScreen
+                  items={items}
+                  lists={lists}
+                  currentUser={currentUser}
+                  onSelectItem={(item) => setSelectedItem(item)}
+                  onOpenAdminUpload={() => setShowAdminUpload(true)}
+                  onOpenAdminCreateList={() => {
+                    setEditingList(null);
+                    setShowAdminListModal(true);
+                  }}
+                  onOpenAdminEditList={(list) => {
+                    setEditingList(list);
+                    setShowAdminListModal(true);
+                  }}
+                  onDeleteItem={handleDeleteItem}
+                />
+              </motion.div>
+            )}
 
-          {currentTab === 'membership' && (
-            <MembershipScreen
-              currentUser={currentUser}
-            />
-          )}
+            {currentTab === 'membership' && (
+              <motion.div
+                key="membership"
+                initial={{ opacity: 0, y: 8, scale: 0.995 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.995 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="w-full h-full flex flex-col min-h-0"
+              >
+                <MembershipScreen
+                  currentUser={currentUser}
+                />
+              </motion.div>
+            )}
 
-          {currentTab === 'profile' && (
-            <ProfileScreen
-              currentUser={currentUser}
-              onLogout={handleLogout}
-              onUpdateUser={(updated) => setCurrentUser(updated)}
-            />
-          )}
+            {currentTab === 'profile' && (
+              <motion.div
+                key="profile"
+                initial={{ opacity: 0, y: 8, scale: 0.995 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.995 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="w-full h-full flex flex-col min-h-0"
+              >
+                <ProfileScreen
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  onUpdateUser={(updated) => setCurrentUser(updated)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </main>
 
-      {/* Resource Detail & Countdown Modal */}
-      {activeDetailItem && (
-        <VaultDetailModal
-          item={activeDetailItem}
-          currentUser={currentUser}
-          onClose={() => setSelectedItem(null)}
-          onToggleLike={handleToggleLike}
-          onAddComment={handleAddComment}
-          onDeleteItem={handleDeleteItem}
-        />
-      )}
+      {/* Resource Detail & Modal */}
+      <AnimatePresence>
+        {activeDetailItem && (
+          <VaultDetailModal
+            item={activeDetailItem}
+            currentUser={currentUser}
+            onClose={() => setSelectedItem(null)}
+            onToggleLike={handleToggleLike}
+            onAddComment={handleAddComment}
+            onDeleteItem={handleDeleteItem}
+            lists={lists}
+            onToggleItemInList={handleToggleItemInList}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Admin Exclusive Upload Modal */}
-      {showAdminUpload && (
-        <AdminUploadModal
-          isOpen={showAdminUpload}
-          onClose={() => setShowAdminUpload(false)}
-          onUpload={handleUploadItem}
-          currentUser={currentUser}
-        />
-      )}
+      <AnimatePresence>
+        {showAdminUpload && (
+          <AdminUploadModal
+            isOpen={showAdminUpload}
+            onClose={() => setShowAdminUpload(false)}
+            onUpload={handleUploadItem}
+            currentUser={currentUser}
+            lists={lists}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Admin List Creator / Manager Modal */}
+      <AnimatePresence>
+        {showAdminListModal && (
+          <AdminListModal
+            isOpen={showAdminListModal}
+            onClose={() => {
+              setShowAdminListModal(false);
+              setEditingList(null);
+            }}
+            onSave={handleSaveList}
+            onDelete={handleDeleteList}
+            initialList={editingList}
+            items={items}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

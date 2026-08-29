@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../../types';
 import { 
   ShieldCheck, LogOut, Key, User, Calendar, Database, 
@@ -45,7 +46,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
   };
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
       className={`h-full flex flex-col overflow-y-auto custom-scrollbar p-5 space-y-5 transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
@@ -65,7 +70,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
       </div>
 
       {/* User Card */}
-      <div
+      <motion.div
+        whileHover={{ scale: 1.01 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
         className={`p-4 rounded-2xl border transition-all ${
           currentUser.role === 'admin'
             ? isDark
@@ -139,7 +146,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* App Theme Switcher Section (Dark / Light) */}
       <div
@@ -170,10 +177,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <button
+          <motion.button
             id="theme-dark-select-btn"
             onClick={() => setTheme('dark')}
-            className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border ${
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer ${
               isDark
                 ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
                 : 'bg-[#F1F5F9] text-[#64748B] border-[#E2E8F0] hover:text-[#0F172A]'
@@ -181,12 +190,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
           >
             <Moon className="w-3.5 h-3.5" />
             <span>Modo Oscuro</span>
-          </button>
+          </motion.button>
 
-          <button
+          <motion.button
             id="theme-light-select-btn"
             onClick={() => setTheme('light')}
-            className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border ${
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer ${
               !isDark
                 ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
                 : 'bg-[#121216] text-[#8E8E93] border-[#1E1E24] hover:text-white'
@@ -194,7 +205,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
           >
             <Sun className="w-3.5 h-3.5" />
             <span>Modo Claro</span>
-          </button>
+          </motion.button>
         </div>
       </div>
 
@@ -281,27 +292,41 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
                   : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
               }`}
             />
-            <button
+            <motion.button
               onClick={handleElevateToAdmin}
-              className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/20"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/20 cursor-pointer"
             >
               Activar
-            </button>
+            </motion.button>
           </div>
 
-          {keyError && (
-            <div className="flex items-center gap-1.5 text-[11px] text-red-400 mt-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{keyError}</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {keyError && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex items-center gap-1.5 text-[11px] text-red-400 mt-2"
+              >
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{keyError}</span>
+              </motion.div>
+            )}
 
-          {keySuccess && (
-            <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 mt-2">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>{keySuccess}</span>
-            </div>
-          )}
+            {keySuccess && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex items-center gap-1.5 text-[11px] text-emerald-400 mt-2"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span>{keySuccess}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -352,10 +377,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
       </div>
 
       {/* Logout Button */}
-      <button
+      <motion.button
         id="profile-logout-btn"
         onClick={onLogout}
-        className={`w-full py-3.5 px-4 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        className={`w-full py-3.5 px-4 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
           isDark
             ? 'border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20'
             : 'border-red-200 text-red-600 bg-red-50 hover:bg-red-100 shadow-sm'
@@ -363,7 +390,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
       >
         <LogOut className="w-4 h-4" />
         <span>Cerrar Sesión Segura</span>
-      </button>
-    </div>
+      </motion.button>
+    </motion.div>
   );
 };

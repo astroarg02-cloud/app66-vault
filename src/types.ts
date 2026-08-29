@@ -22,6 +22,17 @@ export interface VaultComment {
   createdAt: string;
 }
 
+export interface VaultList {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  itemIds: string[];
+  createdAt: string;
+  createdBy?: string;
+}
+
 export interface VaultItem {
   id: string;
   title: string;
@@ -41,6 +52,7 @@ export interface VaultItem {
   fileMimeType?: string;
   fileData?: string; // base64 or text content
   rawFileBlob?: Blob | File;
+  listIds?: string[];
   author: {
     name: string;
     badge: string;

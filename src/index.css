@@ -7,31 +7,17 @@
   }
   50% {
     filter: drop-shadow(0 0 14px rgba(0, 102, 255, 0.95)) drop-shadow(0 0 22px rgba(0, 102, 255, 0.4));
-    transform: scale(1.05);
-  }
-}
-
-@keyframes checkmark-draw {
-  0% {
-    stroke-dashoffset: 20;
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    stroke-dashoffset: 0;
-    opacity: 1;
+    transform: scale(1.04);
   }
 }
 
 @keyframes badge-spin-once {
   0% {
-    transform: rotate(0deg) scale(0.8);
+    transform: rotate(-10deg) scale(0.85);
     opacity: 0;
   }
-  70% {
-    transform: rotate(15deg) scale(1.1);
+  60% {
+    transform: rotate(6deg) scale(1.08);
   }
   100% {
     transform: rotate(0deg) scale(1);
@@ -39,12 +25,57 @@
   }
 }
 
+@keyframes float-subtle {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
 .animate-verified-pulse {
-  animation: verified-pulse 3s ease-in-out infinite;
+  animation: verified-pulse 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .animate-badge-pop {
-  animation: badge-spin-once 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: badge-spin-once 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-float-subtle {
+  animation: float-subtle 4s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3.5s ease-in-out infinite;
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, currentColor 0%, #0066FF 50%, currentColor 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shimmer-sweep 4s linear infinite;
 }
 
 @layer utilities {
@@ -53,11 +84,12 @@
     height: 6px;
   }
   .custom-scrollbar::-webkit-scrollbar-track {
-    background: #000000;
+    background: transparent;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #1E1E24;
+    background: rgba(142, 142, 147, 0.25);
     border-radius: 9999px;
+    transition: background-color 0.2s ease;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #0066FF;

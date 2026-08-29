@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Lock,
   CheckCircle2,
@@ -123,15 +124,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   };
 
   return (
-    <div
-      className={`h-full flex flex-col justify-between p-6 sm:p-8 overflow-y-auto custom-scrollbar transition-colors duration-300 relative ${
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.25 }}
+      className={`h-full flex flex-col justify-between p-6 select-none overflow-y-auto custom-scrollbar transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >
       <div className="my-auto space-y-4">
         {/* Animated Vault Emblem */}
         <div className="flex flex-col items-center text-center space-y-2.5">
-          <div className="relative">
+          <motion.div 
+            className="relative"
+            animate={{ y: [0, -4, 0] }}
+            transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+          >
             <div
               className={`w-18 h-18 rounded-full flex items-center justify-center border transition-all ${
                 enableAdminMode
@@ -150,7 +159,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
             <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/40">
               <Key className="w-2.5 h-2.5 text-white" />
             </div>
-          </div>
+          </motion.div>
 
           <div>
             <div className="flex items-center justify-center gap-1.5 text-[11px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
@@ -221,20 +230,34 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
         </div>
 
         {/* Error Alert */}
-        {errorMessage && (
-          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {errorMessage && (
+            <motion.div 
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-start gap-2.5"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Success Alert */}
-        {successMessage && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-start gap-2.5">
-            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{successMessage}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {successMessage && (
+            <motion.div 
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-start gap-2.5"
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{successMessage}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Formulario Administrador con Key */}
         {enableAdminMode ? (
@@ -280,43 +303,48 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               </div>
             </div>
 
-            <button
+            <motion.button
               id="admin-direct-submit-btn"
               type="submit"
               disabled={isLoading}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               className="w-full py-3 px-5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] active:scale-[0.99] text-white font-bold text-xs sm:text-sm tracking-wide uppercase flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer"
             >
               <Shield className="w-4 h-4" />
               <span>INGRESAR COMO ADMINISTRADOR</span>
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
               onClick={() => {
                 setEnableAdminMode(false);
                 setAdminKey('');
                 setErrorMessage(null);
               }}
-              className={`w-full text-center text-xs py-1 flex items-center justify-center gap-1.5 transition-colors ${
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full text-center text-xs py-1 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                 isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Volver a Inicio de Sesión</span>
-            </button>
+            </motion.button>
           </form>
         ) : (
           /* Formulario Normal de Auth (Login y Register) */
           <div className="space-y-3">
             {/* Tab Toggle: Iniciar Sesión / Registrarse */}
-            <div className={`p-1 rounded-2xl flex border ${isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'}`}>
-              <button
+            <div className={`p-1 rounded-2xl flex border relative ${isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'}`}>
+              <motion.button
                 type="button"
                 onClick={() => {
                   setIsSignUp(false);
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
+                whileTap={{ scale: 0.96 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   !isSignUp
                     ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
@@ -324,14 +352,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 }`}
               >
                 <LogIn className="w-3.5 h-3.5" /> Iniciar Sesión
-              </button>
-              <button
+              </motion.button>
+              <motion.button
                 type="button"
                 onClick={() => {
                   setIsSignUp(true);
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
+                whileTap={{ scale: 0.96 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   isSignUp
                     ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
@@ -339,32 +368,38 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 }`}
               >
                 <UserPlus className="w-3.5 h-3.5" /> Registrarse
-              </button>
+              </motion.button>
             </div>
 
             {/* Formulario de Login & Register */}
             <form onSubmit={handleSubmit} className="space-y-2.5">
-              {isSignUp && (
-                <div>
-                  <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
-                    Nombre o Usuario
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" />
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Tu nombre o apodo"
-                      className={`w-full pl-10 pr-3 py-2 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] transition-colors ${
-                        isDark
-                          ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-slate-600'
-                          : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
-                      }`}
-                    />
-                  </div>
-                </div>
-              )}
+              <AnimatePresence>
+                {isSignUp && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                  >
+                    <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
+                      Nombre o Usuario
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="Tu nombre o apodo"
+                        className={`w-full pl-10 pr-3 py-2 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] transition-colors ${
+                          isDark
+                            ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-slate-600'
+                            : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
+                        }`}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <div>
                 <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
@@ -415,9 +450,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 </div>
               </div>
 
-              <button
+              <motion.button
                 type="submit"
                 disabled={isLoading}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 className="w-full py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] active:scale-[0.99] text-white font-bold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer disabled:opacity-50 mt-3"
               >
                 {isLoading ? (
@@ -428,7 +465,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                     <span>{isSignUp ? 'Crear Cuenta' : 'Iniciar Sesión'}</span>
                   </>
                 )}
-              </button>
+              </motion.button>
             </form>
           </div>
         )}
@@ -445,6 +482,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           BÓVEDA PRIVADA & FIREBASE AUTH
         </span>
       </div>
-    </div>
+    </motion.div>
   );
 };

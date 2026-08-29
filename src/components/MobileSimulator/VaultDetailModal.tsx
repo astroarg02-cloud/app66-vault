@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, Share2, Download, Heart, MessageSquare, 
-  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2, Info
+  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2, Info, FolderPlus, FolderCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { VaultItem, UserProfile } from '../../types';
+import { VaultItem, UserProfile, VaultList } from '../../types';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 import { downloadVaultItemResource } from '../../services/zipExporter';
 import { hasVaultItemFile } from '../../utils/vaultHelpers';
+import { getListIcon } from '../../utils/listIcons';
 
 interface VaultDetailModalProps {
   item: VaultItem;
@@ -17,6 +19,8 @@ interface VaultDetailModalProps {
   onToggleLike: (itemId: string) => void;
   onAddComment: (itemId: string, text: string) => void;
   onDeleteItem?: (itemId: string) => void;
+  lists?: VaultList[];
+  onToggleItemInList?: (listId: string, itemId: string) => void;
 }
 
 export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
@@ -26,6 +30,8 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   onToggleLike,
   onAddComment,
   onDeleteItem,
+  lists = [],
+  onToggleItemInList,
 }) => {
   const isLiked = Array.isArray(item.likedBy) && item.likedBy.includes(currentUser.uid);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
@@ -33,10 +39,14 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   const [commentText, setCommentText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showListPicker, setShowListPicker] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [likeAnimating, setLikeAnimating] = useState(false);
   const { isDark } = useTheme();
+
+  // Find which lists contain this item
+  const itemLists = lists.filter((l) => Array.isArray(l.itemIds) && l.itemIds.includes(item.id));
 
   // Verifica si la publicación tiene un archivo real adjunto/subido
   const hasFile = hasVaultItemFile(item);
@@ -114,25 +124,43 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
-      <div
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4"
+    >
+      <motion.div
         id="vault-detail-modal-container"
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 16 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 28 }}
         className={`w-full max-w-lg max-h-[92dvh] rounded-3xl flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border transition-colors duration-300 relative ${
           isDark ? 'bg-black border-[#1E1E24] text-white' : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
         }`}
       >
         {/* Top Floating Notification when downloaded */}
-        {isDownloaded && (
-          <div className="absolute top-0 left-0 right-0 z-50 bg-emerald-600 text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between shadow-xl animate-in slide-in-from-top duration-300">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-white" />
-              <span>¡Archivo descargado! Volviendo a la bóveda...</span>
-            </div>
-            <span className="text-[10px] bg-emerald-700/80 px-2 py-0.5 rounded font-mono">
-              Redirigiendo...
-            </span>
-          </div>
-        )}
+        <AnimatePresence>
+          {isDownloaded && (
+            <motion.div 
+              initial={{ y: -50, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -50, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              className="absolute top-0 left-0 right-0 z-50 bg-emerald-600 text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between shadow-xl"
+            >
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-white" />
+                <span>¡Archivo descargado! Volviendo a la bóveda...</span>
+              </div>
+              <span className="text-[10px] bg-emerald-700/80 px-2 py-0.5 rounded font-mono">
+                Redirigiendo...
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Top App Bar */}
         <div
@@ -142,10 +170,12 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
               : 'border-[#E2E8F0] bg-white/95 shadow-sm'
           }`}
         >
-          <button
+          <motion.button
             id="vault-detail-back-btn"
             onClick={onClose}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all border ${
+            whileHover={{ scale: 1.05, x: -2 }}
+            whileTap={{ scale: 0.95 }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all border cursor-pointer ${
               isDark
                 ? 'bg-[#121216] text-white hover:bg-[#1E1E24] border-[#1E1E24]'
                 : 'bg-slate-100 text-[#0F172A] hover:bg-slate-200 border-[#E2E8F0]'
@@ -154,7 +184,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
           >
             <ArrowLeft className="w-4 h-4 text-[#0066FF]" />
             <span className="text-xs font-bold">Volver</span>
-          </button>
+          </motion.button>
 
           <div className="text-xs font-bold tracking-widest text-[#0066FF] uppercase flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5" />
@@ -163,10 +193,12 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
 
           <div className="flex items-center gap-1">
             {currentUser.role === 'admin' && onDeleteItem && (
-              <button
+              <motion.button
                 id="vault-detail-delete-btn"
                 onClick={() => setShowDeleteConfirm(true)}
-                className={`p-2 rounded-xl transition-colors ${
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                className={`p-2 rounded-xl transition-colors cursor-pointer ${
                   isDark
                     ? 'text-red-400 hover:bg-red-500/20 hover:text-red-300'
                     : 'text-red-500 hover:bg-red-50 hover:text-red-600'
@@ -174,13 +206,15 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                 title="Eliminar Publicación (Admin)"
               >
                 <Trash2 className="w-4 h-4" />
-              </button>
+              </motion.button>
             )}
 
-            <button
+            <motion.button
               id="vault-share-btn"
               onClick={() => setShowShareModal(true)}
-              className={`p-2 rounded-xl transition-colors ${
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className={`p-2 rounded-xl transition-colors cursor-pointer ${
                 isDark
                   ? 'text-white hover:bg-[#121216]'
                   : 'text-[#0F172A] hover:bg-slate-100'
@@ -188,13 +222,15 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
               title="Compartir Invitación"
             >
               <Share2 className={`w-4 h-4 ${isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'}`} />
-            </button>
+            </motion.button>
 
             {/* Direct Close Button with X */}
-            <button
+            <motion.button
               id="vault-close-x-btn"
               onClick={onClose}
-              className={`p-2 rounded-xl transition-colors ${
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className={`p-2 rounded-xl transition-colors cursor-pointer ${
                 isDark
                   ? 'text-white hover:bg-red-500/20 hover:text-red-400'
                   : 'text-[#0F172A] hover:bg-red-50 hover:text-red-500'
@@ -202,7 +238,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
               title="Cerrar y salir"
             >
               <X className="w-4 h-4" />
-            </button>
+            </motion.button>
           </div>
         </div>
 
@@ -280,11 +316,14 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                 </span>
               </div>
 
-              {/* Animated Like Button */}
-              <button
+              {/* Animated Like Button with spring bounce */}
+              <motion.button
                 id={`vault-like-btn-${item.id}`}
                 onClick={handleLike}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold transition-all ${
+                whileHover={{ scale: 1.06 }}
+                whileTap={{ scale: 0.92 }}
+                transition={{ type: 'spring', stiffness: 450, damping: 18 }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold transition-colors cursor-pointer ${
                   isLiked
                     ? 'bg-[#0066FF]/15 border-[#0066FF] text-[#0066FF] shadow-sm'
                     : isDark
@@ -292,14 +331,106 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                     : 'bg-white border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] shadow-sm'
                 }`}
               >
-                <Heart
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    likeAnimating ? 'scale-125' : 'scale-100'
-                  } ${isLiked ? 'fill-[#FF2E63] text-[#FF2E63]' : ''}`}
-                />
+                <motion.div
+                  animate={likeAnimating ? { scale: [1, 1.4, 1], rotate: [0, -12, 12, 0] } : {}}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Heart
+                    className={`w-3.5 h-3.5 ${isLiked ? 'fill-[#FF2E63] text-[#FF2E63]' : ''}`}
+                  />
+                </motion.div>
                 <span>{item.likesCount}</span>
-              </button>
+              </motion.button>
             </div>
+
+            {/* Listas a las que pertenece esta publicación */}
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              {itemLists.length > 0 ? (
+                itemLists.map((list) => {
+                  const ListIconComponent = getListIcon(list.icon);
+                  return (
+                    <div
+                      key={list.id}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${
+                        isDark ? 'bg-[#121216] border-[#1E1E24] text-white' : 'bg-white border-[#CBD5E1] text-[#0F172A] shadow-xs'
+                      }`}
+                    >
+                      <ListIconComponent className="w-3.5 h-3.5" style={{ color: list.color || '#0066FF' }} />
+                      <span>{list.name}</span>
+                    </div>
+                  );
+                })
+              ) : null}
+
+              {currentUser.role === 'admin' && onToggleItemInList && lists.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowListPicker(!showListPicker)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                    showListPicker
+                      ? 'bg-[#0066FF] border-[#0066FF] text-white'
+                      : isDark
+                      ? 'border-dashed border-[#2A2A34] text-[#8E8E93] hover:text-white hover:border-[#0066FF]'
+                      : 'border-dashed border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A] hover:border-[#0066FF]'
+                  }`}
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>Gestionar Listas</span>
+                </button>
+              )}
+            </div>
+
+            {/* Admin Quick List Assignment Popover */}
+            <AnimatePresence>
+              {showListPicker && currentUser.role === 'admin' && onToggleItemInList && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className={`p-3 rounded-2xl border space-y-2 overflow-hidden transition-colors ${
+                    isDark ? 'bg-[#121216] border-[#0066FF]/40' : 'bg-blue-50/60 border-[#0066FF]/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase text-[#0066FF] tracking-wider flex items-center gap-1">
+                      <FolderCheck className="w-3.5 h-3.5" />
+                      <span>Incluir en listas:</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowListPicker(false)}
+                      className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      Listo
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {lists.map((l) => {
+                      const isInside = Array.isArray(l.itemIds) && l.itemIds.includes(item.id);
+                      const IconComp = getListIcon(l.icon);
+                      return (
+                        <button
+                          key={l.id}
+                          type="button"
+                          onClick={() => onToggleItemInList(l.id, item.id)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                            isInside
+                              ? 'bg-[#0066FF] border-[#0066FF] text-white shadow-sm'
+                              : isDark
+                              ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                              : 'bg-white border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
+                          }`}
+                        >
+                          <IconComp className="w-3 h-3" />
+                          <span>{l.name}</span>
+                          {isInside && <Check className="w-3 h-3 ml-0.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Description */}
@@ -316,11 +447,14 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
           {/* Main Action: DOWNLOAD BUTTON (Rendered ONLY if a file was uploaded) */}
           {hasFile ? (
             <div className="space-y-2 pt-1">
-              <button
+              <motion.button
                 id={`vault-download-action-btn-${item.id}`}
                 onClick={handleDownload}
                 disabled={downloadProgress !== null}
-                className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
+                whileHover={{ scale: 1.02, y: -1 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                className={`w-full py-3.5 px-5 rounded-xl font-bold text-xs sm:text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
                   isDownloaded
                     ? 'bg-[#10B981] text-white shadow-[#10B981]/25 hover:bg-[#059669]'
                     : downloadProgress !== null
@@ -344,7 +478,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                     <span>Descargar Archivo {item.fileSize ? `(${item.fileSize})` : ''}</span>
                   </>
                 )}
-              </button>
+              </motion.button>
 
               {downloadProgress !== null && (
                 <div
@@ -352,9 +486,11 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                     isDark ? 'bg-[#121216]' : 'bg-slate-200'
                   }`}
                 >
-                  <div
-                    className="bg-[#0066FF] h-full transition-all duration-200"
-                    style={{ width: `${downloadProgress}%` }}
+                  <motion.div
+                    className="bg-[#0066FF] h-full"
+                    initial={{ width: '0%' }}
+                    animate={{ width: `${downloadProgress}%` }}
+                    transition={{ ease: 'easeOut', duration: 0.25 }}
                   />
                 </div>
               )}
@@ -389,7 +525,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Comments List */}
+            {/* Comments List with staggered animation */}
             <div className="space-y-2.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
               {!item.comments || item.comments.length === 0 ? (
                 <div
@@ -402,9 +538,12 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                   No hay comentarios aún en este recurso.
                 </div>
               ) : (
-                item.comments.map((comment) => (
-                  <div
+                item.comments.map((comment, i) => (
+                  <motion.div
                     key={comment.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2, delay: i * 0.04 }}
                     className={`p-3 rounded-xl border text-xs space-y-1.5 ${
                       isDark
                         ? 'bg-[#0A0A0C] border-[#1E1E24]'
@@ -429,7 +568,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                     <p className={`leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#475569]'}`}>
                       {comment.text}
                     </p>
-                  </div>
+                  </motion.div>
                 ))
               )}
             </div>
@@ -441,62 +580,126 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
                 placeholder="Escribe en el hilo privado..."
-                className={`flex-1 rounded-xl px-3.5 py-2 text-xs transition-colors focus:outline-none focus:border-[#0066FF] border ${
+                className={`flex-1 rounded-xl px-3.5 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-[#0066FF]/30 focus:border-[#0066FF] border ${
                   isDark
                     ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-[#5A5A62]'
                     : 'bg-white border-[#CBD5E1] text-[#0F172A] placeholder-[#94A3B8]'
                 }`}
               />
-              <button
+              <motion.button
                 type="submit"
                 disabled={!commentText.trim()}
-                className="px-3.5 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center shadow-md shadow-[#0066FF]/20"
+                whileHover={{ scale: 1.06 }}
+                whileTap={{ scale: 0.94 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                className="px-3.5 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center shadow-md shadow-[#0066FF]/20 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-              </button>
+              </motion.button>
             </form>
           </div>
         </div>
 
         {/* Share Modal Popup */}
-        {showShareModal && (
-          <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div
-              className={`w-full max-w-xs rounded-2xl p-4 border space-y-3 ${
-                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-xl'
-              }`}
+        <AnimatePresence>
+          {showShareModal && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
             >
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-[#0066FF] uppercase tracking-wider">
-                  Enlace de Invitación
-                </h4>
-                <button
-                  onClick={() => setShowShareModal(false)}
-                  className="text-zinc-400 hover:text-white text-xs font-bold"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div
-                className={`p-2 rounded-xl border text-[11px] font-mono break-all ${
-                  isDark ? 'bg-black border-[#1E1E24] text-[#8E8E93]' : 'bg-slate-50 border-[#E2E8F0] text-[#64748B]'
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                className={`w-full max-w-xs rounded-2xl p-4 border space-y-3 ${
+                  isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-xl'
                 }`}
               >
-                {shareUrl}
-              </div>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[#0066FF] uppercase tracking-wider">
+                    Enlace de Invitación
+                  </h4>
+                  <button
+                    onClick={() => setShowShareModal(false)}
+                    className="text-zinc-400 hover:text-white text-xs font-bold p-1 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
 
-              <button
-                onClick={copyShareLink}
-                className="w-full py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                <div
+                  className={`p-2 rounded-xl border text-[11px] font-mono break-all ${
+                    isDark ? 'bg-black border-[#1E1E24] text-[#8E8E93]' : 'bg-slate-50 border-[#E2E8F0] text-[#64748B]'
+                  }`}
+                >
+                  {shareUrl}
+                </div>
+
+                <motion.button
+                  onClick={copyShareLink}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="w-full py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLink ? 'Copiado' : 'Copiar Enlace'}</span>
+                </motion.button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Delete Confirmation Modal */}
+        <AnimatePresence>
+          {showDeleteConfirm && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 10 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                className={`w-full max-w-xs rounded-2xl p-4 border space-y-3 ${
+                  isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-xl'
+                }`}
               >
-                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedLink ? 'Copiado' : 'Copiar Enlace'}</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+                <h4 className="text-xs font-bold text-red-500 uppercase tracking-wider">
+                  ¿Eliminar publicación?
+                </h4>
+                <p className={`text-xs ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  Se borrará permanentemente de la bóveda.
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <motion.button
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    {isDeleting ? 'Borrando...' : 'Eliminar'}
+                  </motion.button>
+                  <motion.button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="px-3 py-2 rounded-xl border border-zinc-700 text-zinc-300 text-xs font-semibold cursor-pointer"
+                  >
+                    Cancelar
+                  </motion.button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </motion.div>
   );
 };

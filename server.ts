@@ -14,6 +14,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 const DATA_DIR = path.join(process.cwd(), 'server_data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const VAULT_FILE = path.join(DATA_DIR, 'vault_items.json');
+const VAULT_LISTS_FILE = path.join(DATA_DIR, 'vault_lists.json');
 
 // Ensure storage directories exist
 if (!fs.existsSync(DATA_DIR)) {
@@ -26,6 +27,143 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // Initial seed if file does not exist
 if (!fs.existsSync(VAULT_FILE)) {
   fs.writeFileSync(VAULT_FILE, JSON.stringify([], null, 2), 'utf-8');
+}
+if (!fs.existsSync(VAULT_LISTS_FILE)) {
+  const defaultLists = [
+    {
+      id: 'list-apps-systems',
+      name: '📱 Archivos iOS & Android',
+      description: 'Recursos, utilidades y aplicaciones exclusivas para dispositivos móviles.',
+      icon: 'smartphone',
+      color: '#0066FF',
+      itemIds: ['vault-res-1787518251503'],
+      createdAt: '2026-08-23',
+      createdBy: 'admin_master_astro',
+    },
+    {
+      id: 'list-regedits-sensi',
+      name: '⚡ Regedits y Sensibilidad',
+      description: 'Configuraciones de máxima respuesta táctil, archivos REG y paneles optimizados.',
+      icon: 'sliders',
+      color: '#10B981',
+      itemIds: ['vault-res-1787520057677', 'vault-res-1787520090540', 'vault-res-1787520163631'],
+      createdAt: '2026-08-23',
+      createdBy: 'admin_master_astro',
+    },
+  ];
+  fs.writeFileSync(VAULT_LISTS_FILE, JSON.stringify(defaultLists, null, 2), 'utf-8');
+}
+
+// Helper to read lists safely
+function readVaultLists(): any[] {
+  try {
+    if (fs.existsSync(VAULT_LISTS_FILE)) {
+      const raw = fs.readFileSync(VAULT_LISTS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((l) => l && l.id && l.name);
+      }
+    }
+  } catch (err) {
+    console.error('Error reading vault lists from file:', err);
+  }
+  return [];
+}
+
+// Helper to write lists safely
+function writeVaultLists(lists: any[]): boolean {
+  try {
+    fs.writeFileSync(VAULT_LISTS_FILE, JSON.stringify(lists, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('Error writing vault lists to file:', err);
+    return false;
+  }
+}
+
+// Convert list to Firestore REST format
+function listToFirestoreFields(list: any): Record<string, any> {
+  const fields: Record<string, any> = {
+    id: { stringValue: String(list.id || '') },
+    name: { stringValue: String(list.name || '') },
+    description: { stringValue: String(list.description || '') },
+    icon: { stringValue: String(list.icon || 'folder') },
+    color: { stringValue: String(list.color || '#0066FF') },
+    createdAt: { stringValue: String(list.createdAt || new Date().toISOString().split('T')[0]) },
+    createdBy: { stringValue: String(list.createdBy || 'admin_master_astro') },
+    itemIds: {
+      arrayValue: {
+        values: (Array.isArray(list.itemIds) ? list.itemIds : []).map((id: any) => ({
+          stringValue: String(id),
+        })),
+      },
+    },
+  };
+  return fields;
+}
+
+// Save list to Firestore REST
+async function saveListToFirestoreREST(list: any): Promise<boolean> {
+  try {
+    if (!list || !list.id) return false;
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(list.id)}?key=${rawFirebaseConfig.apiKey}`;
+    const fields = listToFirestoreFields(list);
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.error('[Firestore List Sync Error]:', err);
+    return false;
+  }
+}
+
+// Delete list from Firestore REST
+async function deleteListFromFirestoreREST(listId: string): Promise<boolean> {
+  try {
+    if (!listId) return false;
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(listId)}?key=${rawFirebaseConfig.apiKey}`;
+    const response = await fetch(url, { method: 'DELETE' });
+    return response.ok;
+  } catch (err) {
+    console.error('[Firestore List Delete Error]:', err);
+    return false;
+  }
+}
+
+// Fetch all lists from Firestore REST
+async function fetchAllListsFromFirestoreREST(): Promise<any[]> {
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_lists?key=${rawFirebaseConfig.apiKey}&pageSize=100`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    if (!data || !Array.isArray(data.documents)) return [];
+
+    return data.documents.map((doc: any) => {
+      const fields = doc.fields || {};
+      const id = doc.name.split('/').pop() || '';
+      let itemIds: string[] = [];
+      if (fields.itemIds?.arrayValue?.values) {
+        itemIds = fields.itemIds.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
+      }
+      return {
+        id,
+        name: fields.name?.stringValue || 'Lista sin nombre',
+        description: fields.description?.stringValue || '',
+        icon: fields.icon?.stringValue || 'folder',
+        color: fields.color?.stringValue || '#0066FF',
+        itemIds,
+        createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
+        createdBy: fields.createdBy?.stringValue || 'admin_master_astro',
+      };
+    });
+  } catch (err) {
+    console.error('Error fetching Firestore REST lists:', err);
+    return [];
+  }
 }
 
 // Helper to read items safely
@@ -437,7 +575,144 @@ app.delete('/api/vault/items/:id', async (req, res) => {
     const updated = items.filter((i) => i.id !== id);
     writeVaultItems(updated);
     await deleteFromFirestoreREST(id);
+
+    // Also remove from all lists
+    const lists = readVaultLists();
+    let listsChanged = false;
+    const updatedLists = lists.map((l) => {
+      if (l.itemIds && l.itemIds.includes(id)) {
+        listsChanged = true;
+        return { ...l, itemIds: l.itemIds.filter((itemId: string) => itemId !== id) };
+      }
+      return l;
+    });
+    if (listsChanged) {
+      writeVaultLists(updatedLists);
+      for (const l of updatedLists) {
+        saveListToFirestoreREST(l).catch(() => {});
+      }
+    }
+
     return res.json({ success: true, total: updated.length });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/vault/lists - Fetch all lists created by Admin
+app.get('/api/vault/lists', async (req, res) => {
+  try {
+    const localLists = readVaultLists();
+    const firestoreLists = await fetchAllListsFromFirestoreREST();
+
+    const listMap = new Map<string, any>();
+    localLists.forEach((l) => {
+      if (l && l.id) listMap.set(l.id, l);
+    });
+    firestoreLists.forEach((l) => {
+      if (l && l.id) {
+        const existing = listMap.get(l.id);
+        listMap.set(l.id, { ...existing, ...l });
+      }
+    });
+
+    const merged = Array.from(listMap.values());
+    if (merged.length > 0) {
+      writeVaultLists(merged);
+    }
+    return res.json({ success: true, lists: merged });
+  } catch (err: any) {
+    const localLists = readVaultLists();
+    return res.json({ success: true, lists: localLists });
+  }
+});
+
+// POST /api/vault/lists - Create or update list (Admin)
+app.post('/api/vault/lists', async (req, res) => {
+  try {
+    const newList = req.body;
+    if (!newList || !newList.name) {
+      return res.status(400).json({ success: false, error: 'Nombre de lista requerido' });
+    }
+
+    if (!newList.id) {
+      newList.id = `list-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+    if (!Array.isArray(newList.itemIds)) {
+      newList.itemIds = [];
+    }
+    if (!newList.createdAt) {
+      newList.createdAt = new Date().toISOString().split('T')[0];
+    }
+
+    const currentLists = readVaultLists();
+    const existingIndex = currentLists.findIndex((l) => l.id === newList.id);
+    let updatedLists: any[];
+
+    if (existingIndex >= 0) {
+      updatedLists = [...currentLists];
+      updatedLists[existingIndex] = { ...updatedLists[existingIndex], ...newList };
+    } else {
+      updatedLists = [newList, ...currentLists];
+    }
+
+    writeVaultLists(updatedLists);
+    await saveListToFirestoreREST(newList);
+
+    return res.json({
+      success: true,
+      list: newList,
+      lists: updatedLists,
+    });
+  } catch (err: any) {
+    console.error('Error saving list:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/vault/lists/:id - Delete list (Admin)
+app.delete('/api/vault/lists/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const lists = readVaultLists();
+    const updated = lists.filter((l) => l.id !== id);
+    writeVaultLists(updated);
+    await deleteListFromFirestoreREST(id);
+    return res.json({ success: true, lists: updated });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/vault/lists/:id/toggle-item - Add or remove publication from list (Admin)
+app.post('/api/vault/lists/:id/toggle-item', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { itemId } = req.body;
+    if (!itemId) {
+      return res.status(400).json({ success: false, error: 'ID de publicación requerido' });
+    }
+
+    const lists = readVaultLists();
+    const listIndex = lists.findIndex((l) => l.id === id);
+    if (listIndex < 0) {
+      return res.status(404).json({ success: false, error: 'Lista no encontrada' });
+    }
+
+    const targetList = lists[listIndex];
+    const currentItemIds: string[] = Array.isArray(targetList.itemIds) ? targetList.itemIds : [];
+    const isInside = currentItemIds.includes(itemId);
+
+    const newItemIds = isInside
+      ? currentItemIds.filter((itId) => itId !== itemId)
+      : [...currentItemIds, itemId];
+
+    targetList.itemIds = newItemIds;
+    lists[listIndex] = targetList;
+    writeVaultLists(lists);
+    await saveListToFirestoreREST(targetList);
+
+    return res.json({ success: true, list: targetList, isInside: !isInside });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
