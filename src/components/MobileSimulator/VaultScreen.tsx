@@ -33,10 +33,13 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   onDeleteList,
   onDeleteItem,
 }) => {
+  const isAdmin = currentUser.role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [isGridView, setIsGridView] = useState(false);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
-  const [activeTabMode, setActiveTabMode] = useState<'items' | 'collections'>('items');
+  const [activeTabMode, setActiveTabMode] = useState<'items' | 'collections'>(
+    isAdmin ? 'items' : 'collections'
+  );
   const [itemToDelete, setItemToDelete] = useState<VaultItem | null>(null);
   const [listToDelete, setListToDelete] = useState<VaultList | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -54,6 +57,9 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
         (Array.isArray(activeList.itemIds) && activeList.itemIds.includes(item.id)) ||
         (Array.isArray(item.listIds) && item.listIds.includes(selectedListId));
       if (!isInsideList) return false;
+    } else if (!isAdmin && activeTabMode === 'collections') {
+      // Non-admins only view items inside an explicitly selected collection
+      return false;
     }
 
     // 2. Check Search Query
@@ -87,6 +93,9 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
     try {
       if (selectedListId === listToDelete.id) {
         setSelectedListId(null);
+        if (!isAdmin) {
+          setActiveTabMode('collections');
+        }
       }
       await onDeleteList(listToDelete.id);
       setListToDelete(null);
@@ -100,6 +109,13 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   const handleSelectCollection = (listId: string) => {
     setSelectedListId(listId);
     setActiveTabMode('items');
+  };
+
+  const handleBackToCollections = () => {
+    setSelectedListId(null);
+    if (!isAdmin) {
+      setActiveTabMode('collections');
+    }
   };
 
   return (
@@ -119,10 +135,10 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
         <div className="flex items-center justify-between mb-2.5">
           <div>
             <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase flex items-center gap-1.5">
-              <span>BÓVEDA PRIVADA</span>
+              <span>{isAdmin ? 'BÓVEDA PRIVADA' : activeList ? 'COLECCIÓN SELECCIONADA' : 'COLECCIONES EXCLUSIVAS'}</span>
               {lists.length > 0 && (
                 <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
-                  {lists.length} LISTAS
+                  {lists.length} COLECCIONES
                 </span>
               )}
             </div>
@@ -131,12 +147,18 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 isDark ? 'text-white' : 'text-[#0F172A]'
               }`}
             >
-              {activeList ? activeList.name : 'Directorio de Recursos'}
+              {activeList
+                ? activeList.name
+                : isAdmin
+                ? activeTabMode === 'collections'
+                  ? 'Gestión de Colecciones'
+                  : 'Directorio de Recursos'
+                : 'Colecciones de Publicaciones'}
             </h2>
           </div>
 
           <div className="flex items-center gap-2">
-            {currentUser.role === 'admin' ? (
+            {isAdmin ? (
               <div className="flex items-center gap-1.5">
                 {onOpenAdminCreateList && (
                   <motion.button
@@ -153,8 +175,8 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                     title="Crear una nueva lista para agrupar publicaciones"
                   >
                     <FolderPlus className="w-3.5 h-3.5 text-[#0066FF]" />
-                    <span className="hidden sm:inline">+ Nueva Lista</span>
-                    <span className="sm:hidden">+ Lista</span>
+                    <span className="hidden sm:inline">+ Nueva Colección</span>
+                    <span className="sm:hidden">+ Colección</span>
                   </motion.button>
                 )}
 
@@ -187,62 +209,64 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
           </div>
         </div>
 
-        {/* View Mode Switcher: Todas las Publicaciones vs Vista de Colecciones */}
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <div className="flex items-center p-1 rounded-xl bg-black/5 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-semibold">
-            <button
-              onClick={() => {
-                setActiveTabMode('items');
-              }}
-              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                activeTabMode === 'items'
-                  ? 'bg-[#0066FF] text-white shadow-xs'
-                  : isDark
-                  ? 'text-[#8E8E93] hover:text-white'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              Publicaciones ({items.length})
-            </button>
-            <button
-              onClick={() => {
-                setActiveTabMode('collections');
-                setSelectedListId(null);
-              }}
-              className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                activeTabMode === 'collections'
-                  ? 'bg-[#0066FF] text-white shadow-xs'
-                  : isDark
-                  ? 'text-[#8E8E93] hover:text-white'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              <span>Colecciones ({lists.length})</span>
-            </button>
+        {/* View Mode Switcher: ONLY VISIBLE FOR ADMINS */}
+        {isAdmin && (
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center p-1 rounded-xl bg-black/5 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-semibold">
+              <button
+                onClick={() => {
+                  setActiveTabMode('items');
+                }}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  activeTabMode === 'items'
+                    ? 'bg-[#0066FF] text-white shadow-xs'
+                    : isDark
+                    ? 'text-[#8E8E93] hover:text-white'
+                    : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                Publicaciones ({items.length})
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTabMode('collections');
+                  setSelectedListId(null);
+                }}
+                className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                  activeTabMode === 'collections'
+                    ? 'bg-[#0066FF] text-white shadow-xs'
+                    : isDark
+                    ? 'text-[#8E8E93] hover:text-white'
+                    : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                <Layers className="w-3 h-3" />
+                <span>Colecciones ({lists.length})</span>
+              </button>
+            </div>
+
+            {/* Grid/List switch in admin items mode */}
+            {activeTabMode === 'items' && (
+              <motion.button
+                onClick={() => setIsGridView(!isGridView)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
+                  isDark
+                    ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                    : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
+                }`}
+                title="Cambiar vista Lista/Cuadrícula"
+              >
+                {isGridView ? <ListIcon className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+              </motion.button>
+            )}
           </div>
+        )}
 
-          {/* Grid/List switch only when in items mode */}
-          {activeTabMode === 'items' && (
-            <motion.button
-              onClick={() => setIsGridView(!isGridView)}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
-                isDark
-                  ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                  : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
-              }`}
-              title="Cambiar vista Lista/Cuadrícula"
-            >
-              {isGridView ? <ListIcon className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-            </motion.button>
-          )}
-        </div>
-
-        {/* LISTS FILTER CAROUSEL / PILL BAR (When in items view) */}
-        {activeTabMode === 'items' && (
+        {/* ADMIN ONLY: LISTS FILTER CAROUSEL / PILL BAR (When in items view) */}
+        {isAdmin && activeTabMode === 'items' && (
           <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1.5 pt-0.5 -mx-1 px-1">
             {/* All Publications pill */}
             <button
@@ -303,7 +327,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             })}
 
             {/* Admin Quick Add List in bar */}
-            {currentUser.role === 'admin' && onOpenAdminCreateList && (
+            {onOpenAdminCreateList && (
               <button
                 onClick={onOpenAdminCreateList}
                 className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-dashed transition-all cursor-pointer ${
@@ -311,39 +335,39 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                     ? 'border-[#2A2A34] text-[#8E8E93] hover:text-white hover:border-[#0066FF]'
                     : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A] hover:border-[#0066FF]'
                 }`}
-                title="Crear nueva lista de publicaciones"
+                title="Crear nueva colección de publicaciones"
               >
                 <Plus className="w-3 h-3 text-[#0066FF]" />
-                <span>Nueva Lista</span>
+                <span>Nueva Colección</span>
               </button>
             )}
           </div>
         )}
 
-        {/* ACTIVE LIST BANNER (If viewing a specific list in items mode) */}
+        {/* ACTIVE LIST / COLLECTION BANNER (When viewing inside a specific list) */}
         {activeTabMode === 'items' && activeList && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className={`mt-2 p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-colors ${
+            className={`mt-2 p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-2 transition-colors ${
               isDark ? 'bg-[#121216] border-[#1E1E24]' : 'bg-blue-50/70 border-blue-200'
             }`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs"
                 style={{ backgroundColor: activeList.color || '#0066FF' }}
               >
-                {React.createElement(getListIcon(activeList.icon), { className: 'w-4 h-4' })}
+                {React.createElement(getListIcon(activeList.icon), { className: 'w-4.5 h-4.5' })}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs font-bold truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                    Filtrado por: {activeList.name}
+                  <span className={`text-xs sm:text-sm font-bold truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    {activeList.name}
                   </span>
-                  <span className="text-[10px] opacity-70">
-                    ({filteredItems.length} publicaciones)
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[#0066FF]">
+                    {filteredItems.length} {filteredItems.length === 1 ? 'publicación' : 'publicaciones'}
                   </span>
                 </div>
                 {activeList.description && (
@@ -355,7 +379,23 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {currentUser.role === 'admin' && onOpenAdminEditList && (
+              {/* Grid / List switch for regular users inside a collection */}
+              {!isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsGridView(!isGridView)}
+                  className={`p-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                      : 'bg-white border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                  title="Cambiar vista Lista/Cuadrícula"
+                >
+                  {isGridView ? <ListIcon className="w-3.5 h-3.5" /> : <LayoutGrid className="w-3.5 h-3.5" />}
+                </button>
+              )}
+
+              {isAdmin && onOpenAdminEditList && (
                 <button
                   type="button"
                   onClick={() => onOpenAdminEditList(activeList)}
@@ -364,13 +404,14 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                       ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
                       : 'bg-white border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
                   }`}
-                  title="Editar o reorganizar esta lista"
+                  title="Editar o reorganizar esta colección"
                 >
                   <Edit3 className="w-3 h-3 text-[#0066FF]" />
                   <span className="hidden sm:inline">Editar</span>
                 </button>
               )}
-              {currentUser.role === 'admin' && onDeleteList && (
+
+              {isAdmin && onDeleteList && (
                 <button
                   type="button"
                   onClick={() => setListToDelete(activeList)}
@@ -379,22 +420,25 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                       ? 'bg-[#0A0A0C] border-[#1E1E24] text-red-400 hover:bg-red-500/15 hover:border-red-500/30'
                       : 'bg-white border-[#CBD5E1] text-red-600 hover:bg-red-50 hover:border-red-200'
                   }`}
-                  title="Eliminar esta lista"
+                  title="Eliminar esta colección"
                 >
                   <Trash2 className="w-3 h-3" />
-                  <span className="hidden sm:inline">Borrar Lista</span>
+                  <span className="hidden sm:inline">Borrar</span>
                 </button>
               )}
+
               <button
                 type="button"
-                onClick={() => setSelectedListId(null)}
-                className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer ${
-                  isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-black'
+                onClick={handleBackToCollections}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  isAdmin
+                    ? isDark ? 'text-slate-400 hover:text-white bg-[#0A0A0C] border border-[#1E1E24]' : 'text-slate-600 hover:text-black bg-white border border-[#CBD5E1]'
+                    : 'bg-[#0066FF] text-white hover:bg-[#0052FF] shadow-xs'
                 }`}
-                title="Quitar filtro de lista"
+                title={isAdmin ? 'Ver todas las publicaciones' : 'Volver a la vista de Colecciones'}
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Todas</span>
+                <span>{isAdmin ? 'Todas' : 'Colecciones'}</span>
               </button>
             </div>
           </motion.div>
@@ -414,10 +458,10 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={
               activeTabMode === 'collections'
-                ? 'Buscar en las listas y colecciones...'
+                ? 'Buscar entre las colecciones...'
                 : activeList
                 ? `Buscar dentro de "${activeList.name}"...`
-                : 'Buscar en el directorio privado...'
+                : 'Buscar en todas las publicaciones...'
             }
             className={`w-full rounded-xl pl-10 pr-4 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-[#0066FF]/30 focus:border-[#0066FF] border ${
               isDark
@@ -436,19 +480,21 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             <div className="flex items-center justify-between px-1">
               <div>
                 <h3 className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                  Listas Creadas por el Administrador
+                  {isAdmin ? 'Gestión de Colecciones' : 'Colecciones Temáticas'}
                 </h3>
                 <p className={`text-[11px] ${isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}`}>
-                  Los usuarios pueden explorar las publicaciones organizadas por temas exclusivos
+                  {isAdmin
+                    ? 'Crea, edita o elimina colecciones para organizar las publicaciones que verán los usuarios.'
+                    : 'Explora el material y las publicaciones organizadas exclusivamente por temas.'}
                 </p>
               </div>
-              {currentUser.role === 'admin' && onOpenAdminCreateList && (
+              {isAdmin && onOpenAdminCreateList && (
                 <button
                   onClick={onOpenAdminCreateList}
                   className="px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                 >
                   <FolderPlus className="w-3.5 h-3.5" />
-                  <span>+ Crear Lista</span>
+                  <span>+ Crear Colección</span>
                 </button>
               )}
             </div>
@@ -461,20 +507,20 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                   <FolderClosed className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold">No hay listas creadas aún</h4>
+                  <h4 className="text-sm font-bold">No hay colecciones creadas aún</h4>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
-                    {currentUser.role === 'admin'
-                      ? 'Como Administrador, puedes crear listas para clasificar las publicaciones y que los usuarios las vean organizadas.'
-                      : 'El administrador aún no ha configurado listas de publicaciones.'}
+                    {isAdmin
+                      ? 'Como Administrador, puedes crear colecciones temáticas para clasificar las publicaciones y que los usuarios las vean organizadas.'
+                      : 'El administrador aún no ha configurado colecciones de publicaciones disponibles.'}
                   </p>
                 </div>
-                {currentUser.role === 'admin' && onOpenAdminCreateList && (
+                {isAdmin && onOpenAdminCreateList && (
                   <button
                     onClick={onOpenAdminCreateList}
                     className="px-4 py-2 rounded-xl bg-[#0066FF] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-md"
                   >
                     <FolderPlus className="w-4 h-4" />
-                    <span>Crear Primera Lista</span>
+                    <span>Crear Primera Colección</span>
                   </button>
                 )}
               </div>
@@ -521,7 +567,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                                 {listItems.length} {listItems.length === 1 ? 'publicación' : 'publicaciones'}
                               </span>
 
-                              {currentUser.role === 'admin' && onOpenAdminEditList && (
+                              {isAdmin && onOpenAdminEditList && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -533,13 +579,13 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                                       ? 'text-slate-400 hover:text-white hover:bg-[#121216]'
                                       : 'text-slate-500 hover:text-black hover:bg-slate-100'
                                   }`}
-                                  title="Editar Lista"
+                                  title="Editar Colección"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                               )}
 
-                              {currentUser.role === 'admin' && onDeleteList && (
+                              {isAdmin && onDeleteList && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -551,7 +597,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                                       ? 'text-slate-400 hover:text-red-400 hover:bg-red-500/10'
                                       : 'text-slate-500 hover:text-red-600 hover:bg-red-50'
                                   }`}
-                                  title="Eliminar Lista"
+                                  title="Eliminar Colección"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -620,18 +666,18 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
               </h4>
               <p className={`text-xs leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
                 {activeList
-                  ? currentUser.role === 'admin'
-                    ? 'Esta lista no tiene publicaciones asociadas. Puedes editar la lista para incluir publicaciones existentes o subir nuevo material.'
-                    : 'El administrador aún no ha asignado publicaciones a esta lista.'
-                  : currentUser.role === 'admin'
+                  ? isAdmin
+                    ? 'Esta colección no tiene publicaciones asociadas. Puedes editar la colección para incluir publicaciones existentes o subir nuevo material.'
+                    : 'El administrador aún no ha asignado publicaciones a esta colección.'
+                  : isAdmin
                   ? 'La bóveda se encuentra vacía. Como Administrador tienes permiso exclusivo para subir y alojar nuevo material.'
-                  : 'Actualmente no hay publicaciones en el servidor. Solo el Administrador puede publicar nuevo contenido exclusivo.'}
+                  : 'Actualmente no hay publicaciones disponibles.'}
               </p>
             </div>
 
             {activeList ? (
               <div className="flex items-center gap-2 pt-2">
-                {currentUser.role === 'admin' && onOpenAdminEditList && (
+                {isAdmin && onOpenAdminEditList && (
                   <motion.button
                     onClick={() => onOpenAdminEditList(activeList)}
                     whileHover={{ scale: 1.04 }}
@@ -643,13 +689,13 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                   </motion.button>
                 )}
                 <button
-                  onClick={() => setSelectedListId(null)}
+                  onClick={handleBackToCollections}
                   className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/10 text-xs font-semibold cursor-pointer"
                 >
-                  Ver Todas
+                  {isAdmin ? 'Ver Todas' : 'Volver a Colecciones'}
                 </button>
               </div>
-            ) : currentUser.role === 'admin' ? (
+            ) : isAdmin ? (
               <motion.button
                 id="empty-state-admin-upload-btn"
                 onClick={onOpenAdminUpload}
@@ -662,16 +708,12 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 <span>Publicar Primer Recurso (Admin)</span>
               </motion.button>
             ) : (
-              <div
-                className={`mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] border ${
-                  isDark
-                    ? 'bg-black border-[#1E1E24] text-[#5A5A62]'
-                    : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#64748B]'
-                }`}
+              <button
+                onClick={handleBackToCollections}
+                className="mt-2 px-4 py-2 rounded-xl bg-[#0066FF] text-white text-xs font-bold cursor-pointer shadow-md"
               >
-                <Lock className="w-3.5 h-3.5 text-[#0066FF]" />
-                <span>En espera de publicaciones del Administrador</span>
-              </div>
+                Volver a Colecciones
+              </button>
             )}
           </motion.div>
         ) : isGridView ? (
