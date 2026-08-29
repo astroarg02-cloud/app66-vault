@@ -805,6 +805,8 @@ export const firebaseService = {
               });
             });
             callback(lists);
+          } else {
+            callback([]);
           }
         },
         (error) => {

@@ -26,6 +26,34 @@ import {
   Layers
 } from 'lucide-react';
 
+// Helper to manage deleted list IDs in localStorage to prevent deleted lists from resurfacing
+const getDeletedListIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem('vault_deleted_list_ids');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr.map(String));
+    }
+  } catch (e) {}
+  return new Set<string>();
+};
+
+const addDeletedListId = (id: string) => {
+  try {
+    const current = getDeletedListIds();
+    current.add(id);
+    localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(current)));
+  } catch (e) {}
+};
+
+const unmarkDeletedListId = (id: string) => {
+  try {
+    const current = getDeletedListIds();
+    current.delete(id);
+    localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(current)));
+  } catch (e) {}
+};
+
 function AppContent() {
   const [items, setItems] = useState<VaultItem[]>(() => {
     const local = supabaseService.getLocalVaultItems();
@@ -34,11 +62,15 @@ function AppContent() {
 
   const [lists, setLists] = useState<VaultList[]>(() => {
     try {
+      const deletedIds = getDeletedListIds();
       const saved = localStorage.getItem('vault_lists_cache');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((l) => l && l.id && !deletedIds.has(l.id));
+        }
       }
+      return INITIAL_VAULT_LISTS.filter((l) => l && l.id && !deletedIds.has(l.id));
     } catch (e) {}
     return INITIAL_VAULT_LISTS;
   });
@@ -74,22 +106,25 @@ function AppContent() {
     });
   }, []);
 
-  // Helper to merge lists
+  // Helper to merge lists with strict deleted lists exclusion
   const mergeVaultLists = useCallback((incoming: VaultList[]) => {
-    if (!Array.isArray(incoming) || incoming.length === 0) return;
+    if (!Array.isArray(incoming)) return;
+    const deletedIds = getDeletedListIds();
+    const activeIncoming = incoming.filter((l) => l && l.id && !deletedIds.has(l.id));
+
     setLists((prev) => {
       const map = new Map<string, VaultList>();
-      // First populate with incoming
-      incoming.forEach((l) => {
-        if (l && l.id) map.set(l.id, l);
+      // First populate with incoming active items
+      activeIncoming.forEach((l) => {
+        if (l && l.id && !deletedIds.has(l.id)) map.set(l.id, l);
       });
-      // Merge with previous
+      // Merge with previous non-deleted items
       prev.forEach((l) => {
-        if (l && l.id && !map.has(l.id)) {
+        if (l && l.id && !deletedIds.has(l.id) && !map.has(l.id)) {
           map.set(l.id, l);
         }
       });
-      const merged = Array.from(map.values());
+      const merged = Array.from(map.values()).filter((l) => !deletedIds.has(l.id));
       try {
         localStorage.setItem('vault_lists_cache', JSON.stringify(merged));
       } catch (e) {}
@@ -414,6 +449,8 @@ function AppContent() {
   // Create or Update Vault List (Admin)
   const handleSaveList = async (listData: Partial<VaultList>) => {
     const listId = listData.id || `list_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    unmarkDeletedListId(listId);
+
     const fullList: VaultList = {
       id: listId,
       name: listData.name?.trim() || 'Nueva Colección',
@@ -461,7 +498,12 @@ function AppContent() {
 
   // Delete Vault List (Admin)
   const handleDeleteList = async (listId: string) => {
-    // Optimistic UI
+    if (!listId) return;
+
+    // 1. Mark in persistent client-side deleted blacklist
+    addDeletedListId(listId);
+
+    // 2. Optimistic UI
     setLists((prev) => {
       const next = prev.filter((l) => l.id !== listId);
       try {
@@ -470,14 +512,14 @@ function AppContent() {
       return next;
     });
 
-    // 1. Server API
+    // 3. Server API
     try {
-      await fetch(`/api/vault/lists/${listId}`, { method: 'DELETE' });
+      await fetch(`/api/vault/lists/${encodeURIComponent(listId)}`, { method: 'DELETE' });
     } catch (e) {
       console.warn('Error deleting list from server:', e);
     }
 
-    // 2. Firestore
+    // 4. Firestore
     try {
       await firebaseService.deleteVaultListFromFirestore(listId);
     } catch (e) {

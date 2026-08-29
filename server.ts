@@ -15,6 +15,7 @@ const DATA_DIR = path.join(process.cwd(), 'server_data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const VAULT_FILE = path.join(DATA_DIR, 'vault_items.json');
 const VAULT_LISTS_FILE = path.join(DATA_DIR, 'vault_lists.json');
+const DELETED_LISTS_FILE = path.join(DATA_DIR, 'deleted_lists.json');
 
 // Ensure storage directories exist
 if (!fs.existsSync(DATA_DIR)) {
@@ -22,6 +23,40 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Helper to track deleted list IDs across reboots and cache syncs
+function readDeletedListIds(): Set<string> {
+  try {
+    if (fs.existsSync(DELETED_LISTS_FILE)) {
+      const raw = fs.readFileSync(DELETED_LISTS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.map(String));
+      }
+    }
+  } catch (err) {
+    console.error('Error reading deleted list ids:', err);
+  }
+  return new Set<string>();
+}
+
+function addDeletedListId(id: string): void {
+  try {
+    const current = readDeletedListIds();
+    current.add(id);
+    fs.writeFileSync(DELETED_LISTS_FILE, JSON.stringify(Array.from(current), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error recording deleted list id:', err);
+  }
+}
+
+function removeDeletedListId(id: string): void {
+  try {
+    const current = readDeletedListIds();
+    current.delete(id);
+    fs.writeFileSync(DELETED_LISTS_FILE, JSON.stringify(Array.from(current), null, 2), 'utf-8');
+  } catch (err) {}
 }
 
 // Initial seed if file does not exist
@@ -54,14 +89,15 @@ if (!fs.existsSync(VAULT_LISTS_FILE)) {
   fs.writeFileSync(VAULT_LISTS_FILE, JSON.stringify(defaultLists, null, 2), 'utf-8');
 }
 
-// Helper to read lists safely
+// Helper to read lists safely (always filtering out deleted lists)
 function readVaultLists(): any[] {
   try {
+    const deletedSet = readDeletedListIds();
     if (fs.existsSync(VAULT_LISTS_FILE)) {
       const raw = fs.readFileSync(VAULT_LISTS_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.filter((l) => l && l.id && l.name);
+        return parsed.filter((l) => l && l.id && l.name && !deletedSet.has(l.id));
       }
     }
   } catch (err) {
@@ -602,27 +638,27 @@ app.delete('/api/vault/items/:id', async (req, res) => {
 // GET /api/vault/lists - Fetch all lists created by Admin
 app.get('/api/vault/lists', async (req, res) => {
   try {
+    const deletedSet = readDeletedListIds();
     const localLists = readVaultLists();
     const firestoreLists = await fetchAllListsFromFirestoreREST();
 
     const listMap = new Map<string, any>();
     localLists.forEach((l) => {
-      if (l && l.id) listMap.set(l.id, l);
+      if (l && l.id && !deletedSet.has(l.id)) listMap.set(l.id, l);
     });
     firestoreLists.forEach((l) => {
-      if (l && l.id) {
+      if (l && l.id && !deletedSet.has(l.id)) {
         const existing = listMap.get(l.id);
         listMap.set(l.id, { ...existing, ...l });
       }
     });
 
-    const merged = Array.from(listMap.values());
-    if (merged.length > 0) {
-      writeVaultLists(merged);
-    }
+    const merged = Array.from(listMap.values()).filter((l) => !deletedSet.has(l.id));
+    writeVaultLists(merged);
     return res.json({ success: true, lists: merged });
   } catch (err: any) {
-    const localLists = readVaultLists();
+    const deletedSet = readDeletedListIds();
+    const localLists = readVaultLists().filter((l) => !deletedSet.has(l.id));
     return res.json({ success: true, lists: localLists });
   }
 });
@@ -644,6 +680,9 @@ app.post('/api/vault/lists', async (req, res) => {
     if (!newList.createdAt) {
       newList.createdAt = new Date().toISOString().split('T')[0];
     }
+
+    // Unmark as deleted if recreated
+    removeDeletedListId(newList.id);
 
     const currentLists = readVaultLists();
     const existingIndex = currentLists.findIndex((l) => l.id === newList.id);
@@ -674,11 +713,22 @@ app.post('/api/vault/lists', async (req, res) => {
 app.delete('/api/vault/lists/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'ID requerido' });
+    }
+
+    // 1. Mark as permanently deleted in deleted lists tracker
+    addDeletedListId(id);
+
+    // 2. Remove from local JSON storage
     const lists = readVaultLists();
     const updated = lists.filter((l) => l.id !== id);
     writeVaultLists(updated);
+
+    // 3. Remove from Firestore REST
     await deleteListFromFirestoreREST(id);
-    return res.json({ success: true, lists: updated });
+
+    return res.json({ success: true, lists: updated, deletedId: id });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
