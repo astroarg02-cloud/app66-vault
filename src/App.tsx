@@ -772,6 +772,7 @@ function AppContent() {
                     setEditingList(list);
                     setShowAdminListModal(true);
                   }}
+                  onDeleteList={handleDeleteList}
                   onDeleteItem={handleDeleteItem}
                 />
               </motion.div>

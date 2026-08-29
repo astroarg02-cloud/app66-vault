@@ -12,9 +12,12 @@ import { VerifiedBadge } from '../VerifiedBadge';
 interface AdminListModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaveList: (list: VaultList) => Promise<any> | void;
+  onSave?: (list: VaultList) => Promise<any> | void;
+  onSaveList?: (list: VaultList) => Promise<any> | void;
+  onDelete?: (listId: string) => Promise<any> | void;
   onDeleteList?: (listId: string) => Promise<any> | void;
   editingList?: VaultList | null;
+  initialList?: VaultList | null;
   items: VaultItem[];
   currentUser?: UserProfile | null;
 }
@@ -47,12 +50,19 @@ const AVAILABLE_COLORS = [
 export const AdminListModal: React.FC<AdminListModalProps> = ({
   isOpen,
   onClose,
+  onSave,
   onSaveList,
+  onDelete,
   onDeleteList,
-  editingList,
+  editingList: propEditingList,
+  initialList,
   items,
   currentUser,
 }) => {
+  const activeEditingList = propEditingList || initialList || null;
+  const saveHandler = onSaveList || onSave;
+  const deleteHandler = onDeleteList || onDelete;
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [icon, setIcon] = useState('folder');
@@ -66,12 +76,12 @@ export const AdminListModal: React.FC<AdminListModalProps> = ({
 
   // Populate form when editingList changes
   useEffect(() => {
-    if (editingList) {
-      setName(editingList.name || '');
-      setDescription(editingList.description || '');
-      setIcon(editingList.icon || 'folder');
-      setColor(editingList.color || '#0066FF');
-      setSelectedItemIds(Array.isArray(editingList.itemIds) ? [...editingList.itemIds] : []);
+    if (activeEditingList) {
+      setName(activeEditingList.name || '');
+      setDescription(activeEditingList.description || '');
+      setIcon(activeEditingList.icon || 'folder');
+      setColor(activeEditingList.color || '#0066FF');
+      setSelectedItemIds(Array.isArray(activeEditingList.itemIds) ? [...activeEditingList.itemIds] : []);
     } else {
       setName('');
       setDescription('');
@@ -81,7 +91,7 @@ export const AdminListModal: React.FC<AdminListModalProps> = ({
     }
     setShowDeleteConfirm(false);
     setItemSearchQuery('');
-  }, [editingList, isOpen]);
+  }, [activeEditingList, isOpen]);
 
   if (!isOpen) return null;
 
@@ -110,22 +120,22 @@ export const AdminListModal: React.FC<AdminListModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || isSubmitting) return;
+    if (!name.trim() || isSubmitting || !saveHandler) return;
 
     setIsSubmitting(true);
     try {
       const listToSave: VaultList = {
-        id: editingList?.id || `list-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        id: activeEditingList?.id || `list-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         name: name.trim(),
         description: description.trim(),
         icon,
         color,
         itemIds: selectedItemIds,
-        createdAt: editingList?.createdAt || new Date().toISOString().split('T')[0],
+        createdAt: activeEditingList?.createdAt || new Date().toISOString().split('T')[0],
         createdBy: currentUser?.uid || 'admin_master_astro',
       };
 
-      await onSaveList(listToSave);
+      await saveHandler(listToSave);
       onClose();
     } catch (err) {
       console.error('Error saving list:', err);
@@ -135,10 +145,10 @@ export const AdminListModal: React.FC<AdminListModalProps> = ({
   };
 
   const handleDelete = async () => {
-    if (!editingList || !onDeleteList || isDeleting) return;
+    if (!activeEditingList || !deleteHandler || isDeleting) return;
     setIsDeleting(true);
     try {
-      await onDeleteList(editingList.id);
+      await deleteHandler(activeEditingList.id);
       onClose();
     } catch (err) {
       console.error('Error deleting list:', err);
@@ -184,7 +194,7 @@ export const AdminListModal: React.FC<AdminListModalProps> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <h3 className={`text-sm sm:text-base font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                  {editingList ? 'Editar Lista de Publicaciones' : 'Crear Nueva Lista'}
+                  {activeEditingList ? 'Editar Lista de Publicaciones' : 'Crear Nueva Lista'}
                 </h3>
                 <VerifiedBadge className="w-3.5 h-3.5" />
               </div>
@@ -405,13 +415,13 @@ export const AdminListModal: React.FC<AdminListModalProps> = ({
           </div>
 
           {/* Delete section if editing */}
-          {editingList && onDeleteList && (
+          {activeEditingList && deleteHandler && (
             <div className="pt-2 border-t border-slate-200 dark:border-[#1E1E24]">
               {showDeleteConfirm ? (
                 <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 space-y-2">
                   <div className="flex items-center gap-2 text-red-500 text-xs font-bold">
                     <AlertTriangle className="w-4 h-4" />
-                    <span>¿Confirmas eliminar la lista "{editingList.name}"?</span>
+                    <span>¿Confirmas eliminar la lista "{activeEditingList.name}"?</span>
                   </div>
                   <p className="text-[11px] text-slate-400">
                     Las publicaciones NO se borrarán, solo se eliminará esta agrupación.
@@ -479,7 +489,7 @@ export const AdminListModal: React.FC<AdminListModalProps> = ({
               ) : (
                 <>
                   <FolderPlus className="w-4 h-4" />
-                  <span>{editingList ? 'Actualizar Lista' : 'Crear Lista'}</span>
+                  <span>{activeEditingList ? 'Actualizar Lista' : 'Crear Lista'}</span>
                 </>
               )}
             </motion.button>

@@ -18,6 +18,7 @@ interface VaultScreenProps {
   onOpenAdminUpload: () => void;
   onOpenAdminCreateList?: () => void;
   onOpenAdminEditList?: (list: VaultList) => void;
+  onDeleteList?: (listId: string) => Promise<any> | void;
   onDeleteItem?: (itemId: string) => void;
 }
 
@@ -29,6 +30,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   onOpenAdminUpload,
   onOpenAdminCreateList,
   onOpenAdminEditList,
+  onDeleteList,
   onDeleteItem,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,7 +38,9 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [activeTabMode, setActiveTabMode] = useState<'items' | 'collections'>('items');
   const [itemToDelete, setItemToDelete] = useState<VaultItem | null>(null);
+  const [listToDelete, setListToDelete] = useState<VaultList | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingList, setIsDeletingList] = useState(false);
   const { isDark } = useTheme();
 
   // Active selected list object
@@ -74,6 +78,22 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
       console.error('Error deleting item from list:', err);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmDeleteList = async () => {
+    if (!listToDelete || !onDeleteList || isDeletingList) return;
+    setIsDeletingList(true);
+    try {
+      if (selectedListId === listToDelete.id) {
+        setSelectedListId(null);
+      }
+      await onDeleteList(listToDelete.id);
+      setListToDelete(null);
+    } catch (err) {
+      console.error('Error deleting list:', err);
+    } finally {
+      setIsDeletingList(false);
     }
   };
 
@@ -350,6 +370,21 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                   <span className="hidden sm:inline">Editar</span>
                 </button>
               )}
+              {currentUser.role === 'admin' && onDeleteList && (
+                <button
+                  type="button"
+                  onClick={() => setListToDelete(activeList)}
+                  className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-red-400 hover:bg-red-500/15 hover:border-red-500/30'
+                      : 'bg-white border-[#CBD5E1] text-red-600 hover:bg-red-50 hover:border-red-200'
+                  }`}
+                  title="Eliminar esta lista"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span className="hidden sm:inline">Borrar Lista</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setSelectedListId(null)}
@@ -501,6 +536,24 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                                   title="Editar Lista"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {currentUser.role === 'admin' && onDeleteList && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setListToDelete(list);
+                                  }}
+                                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                    isDark
+                                      ? 'text-slate-400 hover:text-red-400 hover:bg-red-500/10'
+                                      : 'text-slate-500 hover:text-red-600 hover:bg-red-50'
+                                  }`}
+                                  title="Eliminar Lista"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
@@ -877,7 +930,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
         )}
       </div>
 
-      {/* Admin Delete Confirmation Dialog Modal */}
+      {/* Admin Delete Item Confirmation Dialog Modal */}
       <AnimatePresence>
         {itemToDelete && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -924,6 +977,69 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 <motion.button
                   onClick={() => setItemToDelete(null)}
                   disabled={isDeleting}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold border cursor-pointer ${
+                    isDark
+                      ? 'border-[#1E1E24] text-[#8E8E93] hover:text-white'
+                      : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Cancelar
+                </motion.button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Admin Delete List Confirmation Dialog Modal */}
+      <AnimatePresence>
+        {listToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              id="vault-delete-list-confirm-modal"
+              initial={{ opacity: 0, scale: 0.92, y: 14 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 14 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+              className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl border ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    ¿Eliminar Lista "{listToDelete.name}"?
+                  </h4>
+                  <p className={`text-xs mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    Esta acción eliminará únicamente la lista de agrupación. Todas las publicaciones permanecerán guardadas intactas en la bóveda.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <motion.button
+                  id="confirm-delete-list-btn"
+                  onClick={handleConfirmDeleteList}
+                  disabled={isDeletingList}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-red-600/30 cursor-pointer"
+                >
+                  {isDeletingList ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span>{isDeletingList ? 'Borrando...' : 'Sí, Eliminar Lista'}</span>
+                </motion.button>
+                <motion.button
+                  onClick={() => setListToDelete(null)}
+                  disabled={isDeletingList}
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                   className={`px-4 py-2.5 rounded-xl text-xs font-semibold border cursor-pointer ${
