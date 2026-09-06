@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { VaultItem } from '../types';
+import { getFileFromIndexedDB } from './indexedDBStorage';
 
 /**
  * Helper to determine clean file extension and MIME type from item data
@@ -79,19 +80,75 @@ function resolveItemFileDetails(item: VaultItem): { filename: string; mimeType: 
 export async function downloadVaultItemResource(item: VaultItem): Promise<boolean> {
   try {
     const { filename, mimeType, isZip } = resolveItemFileDetails(item);
+    const targetFilename = item.fileName || filename;
 
-    // Case 1: If we have a direct raw File/Blob instance uploaded in session
+    // Case 1: Direct in-memory raw File/Blob from upload session
     if (item.rawFileBlob) {
-      saveAs(item.rawFileBlob, item.fileName || filename);
+      saveAs(item.rawFileBlob, targetFilename);
       return true;
     }
 
-    // Case 2: If downloadUrl contains a valid Blob URL, Data URL, server endpoint, or external link
+    // Case 2: IndexedDB local persistent cache (preserves 100% real files across reloads)
+    try {
+      const localCached = await getFileFromIndexedDB(item.id);
+      if (localCached && localCached.blob) {
+        saveAs(localCached.blob, targetFilename);
+        return true;
+      }
+    } catch (idbErr) {
+      console.warn('IndexedDB retrieval error:', idbErr);
+    }
+
+    // Case 3: Server disk permanent storage endpoint (/api/vault/download/:id)
+    if (item.id) {
+      try {
+        const serverUrl = `/api/vault/download/${encodeURIComponent(item.id)}`;
+        const headCheck = await fetch(serverUrl, { method: 'HEAD' });
+        if (headCheck.ok) {
+          // Trigger native browser download stream
+          const link = document.createElement('a');
+          link.href = serverUrl;
+          link.download = targetFilename;
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            if (document.body.contains(link)) {
+              document.body.removeChild(link);
+            }
+          }, 400);
+          return true;
+        }
+      } catch (srvErr) {
+        console.warn('Server endpoint download check failed:', srvErr);
+      }
+    }
+
+    // Case 4: Explicit downloadUrl (Cloud storage, S3, or API link)
     if (item.downloadUrl) {
-      if (
+      if (item.downloadUrl.startsWith('/api/vault/download/')) {
+        try {
+          const headCheck = await fetch(item.downloadUrl, { method: 'HEAD' });
+          if (headCheck.ok) {
+            const link = document.createElement('a');
+            link.href = item.downloadUrl;
+            link.download = targetFilename;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => {
+              if (document.body.contains(link)) {
+                document.body.removeChild(link);
+              }
+            }, 400);
+            return true;
+          }
+        } catch (e) {
+          console.warn('Could not download from downloadUrl endpoint:', e);
+        }
+      } else if (
         item.downloadUrl.startsWith('blob:') ||
         item.downloadUrl.startsWith('data:') ||
-        item.downloadUrl.startsWith('/api/') ||
         item.downloadUrl.startsWith('http://') ||
         item.downloadUrl.startsWith('https://')
       ) {
@@ -99,30 +156,36 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
           const response = await fetch(item.downloadUrl);
           if (response.ok) {
             const blob = await response.blob();
-            saveAs(blob, item.fileName || filename);
+            saveAs(blob, targetFilename);
             return true;
           }
         } catch (err) {
-          console.warn('Could not download directly from URL, generating authentic fallback:', err);
+          console.warn('Could not download directly from downloadUrl:', err);
         }
       }
     }
 
-    // Case 3: If we have raw base64 or text data stored
+    // Case 5: Embedded base64 or text data
     if (item.fileData) {
       if (item.fileData.startsWith('data:')) {
         const response = await fetch(item.fileData);
         const blob = await response.blob();
-        saveAs(blob, item.fileName || filename);
+        saveAs(blob, targetFilename);
         return true;
       } else {
         const blob = new Blob([item.fileData], { type: mimeType });
-        saveAs(blob, item.fileName || filename);
+        saveAs(blob, targetFilename);
         return true;
       }
     }
 
-    // Case 4: Category-specific authentic file generation (keeps original format exactly)
+    // If this item was created with a real uploaded file (has fileName) but the physical file is not on server
+    if (item.fileName) {
+      console.warn(`Original physical file "${item.fileName}" is not currently available on the server.`);
+      return false;
+    }
+
+    // Case 6: Category-specific authentic file generation for textual content without uploaded file
     if (!isZip) {
       // PDF Document
       if (filename.endsWith('.pdf')) {

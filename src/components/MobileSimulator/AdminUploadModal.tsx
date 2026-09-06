@@ -7,11 +7,12 @@ import {
 import { VaultItem, ResourceCategory, UserProfile, VaultList } from '../../types';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
+import { saveFileToIndexedDB } from '../../services/indexedDBStorage';
 
 interface AdminUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (newItem: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>, targetListIds?: string[]) => Promise<any> | void;
+  onUpload: (newItem: Omit<VaultItem, 'createdAt' | 'likesCount' | 'likedBy' | 'comments'> & { id?: string }, targetListIds?: string[]) => Promise<any> | void;
   currentUser?: UserProfile | null;
   lists?: VaultList[];
 }
@@ -35,6 +36,8 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
   const [fileMimeType, setFileMimeType] = useState<string>('');
   const [fileData, setFileData] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const { isDark } = useTheme();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,7 +77,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  // Reconocimiento inteligente de archivos y metadatos
+  // Reconocimiento inteligente de archivos y metadatos sin límite de peso
   const processUploadedFile = (file: File) => {
     const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
@@ -84,17 +87,6 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     setUploadedFileName(file.name);
     setFileMimeType(file.type || 'application/octet-stream');
     setFileSize(formattedSize);
-
-    // Read base64 for persistent storage if smaller than 12MB
-    if (file.size <= 12 * 1024 * 1024) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (typeof e.target?.result === 'string') {
-          setFileData(e.target.result);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
 
     // Si el usuario no ha escrito un título o tiene el default, sugerimos el nombre del archivo limpio
     const cleanTitle = nameWithoutExt
@@ -135,12 +127,12 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     setCategory(detectedCat);
     setFileType(detectedType);
 
-    // Creamos URL de objeto para permitir descarga real inmediata
+    // Creamos URL de objeto temporal para vista previa inmediata
     const fileBlobUrl = URL.createObjectURL(file);
     setDownloadUrl(fileBlobUrl);
 
     setAutoDetectedInfo(
-      `Reconocido: ${detectedType} (${formattedSize}) → Categoría "${detectedCat.toUpperCase()}" asignada.`
+      `Reconocido: ${detectedType} (${formattedSize}) → Categoría "${detectedCat.toUpperCase()}" asignada. ¡Sin límite de megas!`
     );
   };
 
@@ -224,41 +216,112 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     }
   };
 
-  // Submit y publicación en la bóveda
+  // Submit y publicación en la bóveda con subida real al servidor
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !description || isSubmitting) return;
     setIsSubmitting(true);
 
+    const tempItemId = `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    let finalDownloadUrl = `/api/vault/download/${encodeURIComponent(tempItemId)}`;
+    let finalFileName = uploadedFileName;
+    let finalFileSize = fileSize;
+    let finalMime = fileMimeType;
+
     try {
-      // Si hay archivo físico y aún no se leyó como dataURL, leerlo primero
-      let finalFileData = fileData;
-      if (rawFile && !finalFileData && rawFile.size <= 25 * 1024 * 1024) {
+      // Si el usuario adjuntó un archivo real, subirlo sin límite de megas
+      if (rawFile) {
+        setUploadStatusText('Guardando en almacenamiento local...');
+        setUploadProgress(10);
         try {
-          finalFileData = await new Promise<string>((resolve) => {
-            const r = new FileReader();
-            r.onload = (ev) => resolve(typeof ev.target?.result === 'string' ? ev.target.result : '');
-            r.onerror = () => resolve('');
-            r.readAsDataURL(rawFile);
+          await saveFileToIndexedDB(tempItemId, rawFile, rawFile.name);
+        } catch (idbErr) {
+          console.warn('IndexedDB backup notice:', idbErr);
+        }
+
+        setUploadStatusText('Subiendo archivo real al servidor central...');
+        setUploadProgress(20);
+
+        try {
+          const uploadRes = await new Promise<{
+            success: boolean;
+            downloadUrl?: string;
+            fileName?: string;
+            fileSize?: string;
+            fileMimeType?: string;
+          }>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const formData = new FormData();
+            formData.append('itemId', tempItemId);
+            formData.append('file', rawFile, rawFile.name);
+
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable && event.total > 0) {
+                const percent = Math.round((event.loaded / event.total) * 75) + 20;
+                setUploadProgress(Math.min(95, percent));
+                setUploadStatusText(
+                  `Subiendo: ${formatBytes(event.loaded)} / ${formatBytes(event.total)} (${Math.round((event.loaded / event.total) * 100)}%)`
+                );
+              }
+            };
+
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  const data = JSON.parse(xhr.responseText);
+                  resolve(data);
+                } catch {
+                  resolve({
+                    success: true,
+                    downloadUrl: `/api/vault/download/${encodeURIComponent(tempItemId)}`,
+                  });
+                }
+              } else {
+                reject(new Error(`Error del servidor (${xhr.status})`));
+              }
+            };
+
+            xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
+            xhr.open('POST', `/api/vault/upload-file?itemId=${encodeURIComponent(tempItemId)}`, true);
+            xhr.send(formData);
           });
-        } catch (readErr) {
-          console.warn('Error reading raw file data:', readErr);
+
+          setUploadProgress(98);
+          setUploadStatusText('¡Archivo real subido exitosamente!');
+
+          if (uploadRes && uploadRes.downloadUrl) {
+            finalDownloadUrl = uploadRes.downloadUrl;
+          }
+          if (uploadRes && uploadRes.fileName) {
+            finalFileName = uploadRes.fileName;
+          }
+          if (uploadRes && uploadRes.fileSize) {
+            finalFileSize = uploadRes.fileSize;
+          }
+          if (uploadRes && uploadRes.fileMimeType) {
+            finalMime = uploadRes.fileMimeType;
+          }
+        } catch (uploadError) {
+          console.warn('Network upload exception, falling back to cached persistence:', uploadError);
+          finalDownloadUrl = `/api/vault/download/${encodeURIComponent(tempItemId)}`;
         }
       }
 
+      setUploadProgress(100);
+      setUploadStatusText('Publicando en la Bóveda...');
+
       // Fallback de portada si no sube una
       const finalCover = coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
-      const finalDownloadUrl = downloadUrl || '';
 
       await onUpload({
+        id: tempItemId,
         title: title.trim(),
         description: description.trim(),
         category,
-        fileType: uploadedFileName ? (fileType || 'Archivo') : '',
-        fileSize: uploadedFileName ? (fileSize || '') : '',
-        fileName: uploadedFileName || undefined,
-        fileMimeType: fileMimeType || undefined,
-        fileData: finalFileData || undefined,
+        fileType: finalFileName ? (fileType || 'Archivo') : '',
+        fileSize: finalFileName ? (finalFileSize || '') : '',
+        fileName: finalFileName || undefined,
+        fileMimeType: finalMime || undefined,
         rawFileBlob: rawFile || undefined,
         downloadUrl: finalDownloadUrl,
         coverImage: finalCover,
@@ -277,6 +340,8 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
       console.error('Error submitting vault item:', err);
     } finally {
       setIsSubmitting(false);
+      setUploadProgress(null);
+      setUploadStatusText('');
     }
   };
 
@@ -436,11 +501,30 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
                 >
                   <FileUp className="w-5 h-5 text-[#0066FF]" />
                 </div>
-                <div className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                  Haz clic para subir o arrastra cualquier archivo
+                <div className={`text-xs font-bold flex items-center justify-center gap-1.5 ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                  <span>Haz clic para subir o arrastra cualquier archivo</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#0066FF]/20 text-[#0066FF] border border-[#0066FF]/40">
+                    Megas Ilimitados
+                  </span>
                 </div>
                 <div className={`text-[11px] mt-1 max-w-sm mx-auto ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                  Soporta .ZIP, .PDF, .MP4, .FLAC, .APK, .DMG, .DART, .CUBE, etc. Reconocimiento automático de tamaño y formato.
+                  Sin límite de tamaño (Cero restricciones en megas). Soporta .ZIP, .PDF, .MP4, .FLAC, .APK, .DMG, .DART, etc.
+                </div>
+              </div>
+            )}
+
+            {/* Live Upload Progress Indicator */}
+            {uploadProgress !== null && (
+              <div className="p-3 rounded-2xl bg-[#0066FF]/10 border border-[#0066FF]/30 space-y-1.5 animate-fadeIn">
+                <div className="flex items-center justify-between text-xs font-semibold text-[#0066FF]">
+                  <span>{uploadStatusText || 'Subiendo archivo real...'}</span>
+                  <span className="font-mono font-bold">{uploadProgress}%</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-black/20 dark:bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full bg-[#0066FF] transition-all duration-200"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
                 </div>
               </div>
             )}

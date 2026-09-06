@@ -7,6 +7,9 @@ export function hasVaultItemFile(item?: VaultItem | null): boolean {
   if (!item) return false;
   if (item.rawFileBlob) return true;
   if (item.fileData && item.fileData.trim().length > 0) return true;
+  if (item.fileName && item.fileName.trim().length > 0) return true;
+  if (item.fileType && item.fileType.trim().length > 0) return true;
+  if (item.fileSize && item.fileSize.trim().length > 0) return true;
   if (
     item.downloadUrl &&
     item.downloadUrl.trim().length > 0 &&

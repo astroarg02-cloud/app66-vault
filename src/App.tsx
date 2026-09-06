@@ -162,6 +162,36 @@ function AppContent() {
 
     const loadData = async () => {
       try {
+        // 0. Fetch permanently deleted list IDs from server so deleted lists NEVER resurrect on reload
+        try {
+          const resDeleted = await fetch('/api/vault/deleted-lists');
+          if (resDeleted.ok) {
+            const jsonDel = await resDeleted.json();
+            if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
+              const currentDeleted = getDeletedListIds();
+              jsonDel.deletedIds.forEach((id: string) => currentDeleted.add(id));
+              localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(currentDeleted)));
+              
+              // Purge deleted lists from local cache
+              try {
+                const cached = localStorage.getItem('vault_lists_cache');
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  if (Array.isArray(parsed)) {
+                    const filtered = parsed.filter((l: any) => !currentDeleted.has(l.id));
+                    localStorage.setItem('vault_lists_cache', JSON.stringify(filtered));
+                  }
+                }
+              } catch (e) {}
+
+              // Purge immediately from state
+              setLists((prev) => prev.filter((l) => !currentDeleted.has(l.id)));
+            }
+          }
+        } catch (delErr) {
+          console.warn('Error syncing deleted list IDs from server:', delErr);
+        }
+
         // 1. Fetch Items from Central Express Server API
         const resItems = await fetch('/api/vault/items');
         if (resItems.ok) {
@@ -207,6 +237,20 @@ function AppContent() {
     // Background poll every 30 seconds
     const interval = setInterval(async () => {
       try {
+        // Sync deleted lists first
+        try {
+          const resDel = await fetch('/api/vault/deleted-lists');
+          if (resDel.ok) {
+            const jsonDel = await resDel.json();
+            if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
+              const currentDeleted = getDeletedListIds();
+              jsonDel.deletedIds.forEach((id: string) => currentDeleted.add(id));
+              localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(currentDeleted)));
+              setLists((prev) => prev.filter((l) => !currentDeleted.has(l.id)));
+            }
+          }
+        } catch (e) {}
+
         const resItems = await fetch('/api/vault/items');
         if (resItems.ok) {
           const json = await resItems.json();
@@ -330,10 +374,10 @@ function AppContent() {
 
   // Upload new vault item (Admin exclusively) with optional list assignments
   const handleUploadItem = async (
-    newItemData: Omit<VaultItem, 'id' | 'createdAt' | 'likesCount' | 'likedBy' | 'comments'>,
+    newItemData: Omit<VaultItem, 'createdAt' | 'likesCount' | 'likedBy' | 'comments'> & { id?: string },
     targetListIds: string[] = []
   ) => {
-    const newItemId = `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const newItemId = newItemData.id || `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newItem: VaultItem = {
       ...newItemData,
       id: newItemId,
@@ -409,6 +453,16 @@ function AppContent() {
         }
       });
     }
+  };
+
+  // Update vault item (e.g., after re-uploading file)
+  const handleUpdateItem = (updatedItem: VaultItem) => {
+    setItems((prev) => {
+      const updated = prev.map((i) => (i.id === updatedItem.id ? updatedItem : i));
+      supabaseService.saveLocalVaultItems(updated);
+      return updated;
+    });
+    setSelectedItem(updatedItem);
   };
 
   // Delete vault item (Admin exclusively)
@@ -674,8 +728,14 @@ function AppContent() {
                   transition={{ type: 'spring', stiffness: 450, damping: 32 }}
                 />
               )}
-              <FolderClosed className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">Bóveda</span>
+              {currentUser?.role === 'admin' ? (
+                <FolderClosed className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              ) : (
+                <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              )}
+              <span className="hidden xs:inline">
+                {currentUser?.role === 'admin' ? 'Bóveda / Publicaciones' : 'Colecciones'}
+              </span>
             </button>
 
             <button
@@ -865,6 +925,7 @@ function AppContent() {
             onToggleLike={handleToggleLike}
             onAddComment={handleAddComment}
             onDeleteItem={handleDeleteItem}
+            onUpdateItem={handleUpdateItem}
             lists={lists}
             onToggleItemInList={handleToggleItemInList}
           />

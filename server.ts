@@ -1,14 +1,16 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import rawFirebaseConfig from './firebase-applet-config.json';
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// High body limits for API payloads
+app.use(express.json({ limit: '2048mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2048mb' }));
 
 // Storage directory for persistent server-side vault items and uploads
 const DATA_DIR = path.join(process.cwd(), 'server_data');
@@ -24,6 +26,43 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
+
+// Helper to format bytes
+function formatFileBytes(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+// Multer disk storage for streaming files directly to disk without memory limits
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const rawId = req.query?.itemId || req.body?.itemId || `vault-res-${Date.now()}`;
+    const safeId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, '');
+    let originalName = 'file';
+    try {
+      originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    } catch {
+      originalName = file.originalname;
+    }
+    const safeFileName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${safeId}_${safeFileName}`);
+  },
+});
+
+// Configure multer: strictly unlimited file size (sin límite de megas)
+const uploadMiddleware = multer({
+  storage,
+  limits: {
+    fileSize: Infinity, // Unlimited file size
+    fieldSize: 100 * 1024 * 1024,
+  },
+});
 
 // Helper to track deleted list IDs across reboots and cache syncs
 function readDeletedListIds(): Set<string> {
@@ -437,6 +476,88 @@ app.get('/api/vault/items', async (req, res) => {
   }
 });
 
+// POST /api/vault/upload-file - Dedicated endpoint for streaming files of ANY size directly to disk (NO MB LIMIT)
+app.post('/api/vault/upload-file', uploadMiddleware.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'No se recibió ningún archivo' });
+    }
+
+    const rawId = req.body?.itemId || req.query?.itemId || `vault-res-${Date.now()}`;
+    const itemId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, '');
+
+    let originalName = 'archivo';
+    try {
+      originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    } catch {
+      originalName = file.originalname;
+    }
+
+    const formattedSize = formatFileBytes(file.size);
+    const downloadUrl = `/api/vault/download/${encodeURIComponent(itemId)}`;
+
+    console.log(`[VAULT Storage] File saved to disk: "${originalName}" (${formattedSize}) for item ${itemId}`);
+
+    // If item already exists in server vault, update its file metadata
+    const currentItems = readVaultItems();
+    const existingIndex = currentItems.findIndex((i) => i.id === itemId);
+    if (existingIndex >= 0) {
+      currentItems[existingIndex] = {
+        ...currentItems[existingIndex],
+        fileName: originalName,
+        fileSize: formattedSize,
+        fileMimeType: file.mimetype || 'application/octet-stream',
+        downloadUrl,
+      };
+      writeVaultItems(currentItems);
+      await saveToFirestoreREST(currentItems[existingIndex]);
+    }
+
+    return res.json({
+      success: true,
+      itemId,
+      fileName: originalName,
+      fileSize: formattedSize,
+      fileMimeType: file.mimetype,
+      downloadUrl,
+      bytes: file.size,
+    });
+  } catch (err: any) {
+    console.error('Error uploading file to server disk:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/vault/check-file/:id - Check if a physical file exists on disk for this item
+app.get('/api/vault/check-file/:id', (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.json({ exists: false });
+
+  if (fs.existsSync(UPLOADS_DIR)) {
+    const files = fs.readdirSync(UPLOADS_DIR);
+    const matchedFile = files.find((f) => f.startsWith(`${id}_`));
+    if (matchedFile) {
+      const filePath = path.join(UPLOADS_DIR, matchedFile);
+      const stat = fs.statSync(filePath);
+      return res.json({
+        exists: true,
+        fileName: matchedFile.replace(`${id}_`, ''),
+        fileSize: stat.size,
+        formattedSize: formatFileBytes(stat.size),
+      });
+    }
+  }
+
+  const items = readVaultItems();
+  const item = items.find((i) => i.id === id);
+  if (item && item.fileData) {
+    return res.json({ exists: true, fileName: item.fileName, isBase64: true });
+  }
+
+  return res.json({ exists: false });
+});
+
 // POST /api/vault/upload - Add or update a vault item (Guaranteed Firebase Firestore + Server storage)
 app.post('/api/vault/upload', async (req, res) => {
   try {
@@ -447,6 +568,18 @@ app.post('/api/vault/upload', async (req, res) => {
 
     if (!newItem.id) {
       newItem.id = `vault-res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+
+    // Check if a physical file already exists in UPLOADS_DIR for this item
+    if (fs.existsSync(UPLOADS_DIR)) {
+      const files = fs.readdirSync(UPLOADS_DIR);
+      const matchedFile = files.find((f) => f.startsWith(`${newItem.id}_`));
+      if (matchedFile) {
+        newItem.downloadUrl = `/api/vault/download/${encodeURIComponent(newItem.id)}`;
+        if (!newItem.fileName) {
+          newItem.fileName = matchedFile.replace(`${newItem.id}_`, '');
+        }
+      }
     }
 
     // If file data is provided as base64, save to uploads directory
@@ -464,6 +597,11 @@ app.post('/api/vault/upload', async (req, res) => {
       } catch (fileErr) {
         console.warn('Could not save raw file to server uploads disk:', fileErr);
       }
+    }
+
+    // If item has fileName/fileType and no downloadUrl, point to server download endpoint
+    if (!newItem.downloadUrl && (newItem.fileName || newItem.fileType)) {
+      newItem.downloadUrl = `/api/vault/download/${encodeURIComponent(newItem.id)}`;
     }
 
     // Save locally
@@ -496,30 +634,94 @@ app.post('/api/vault/upload', async (req, res) => {
   }
 });
 
-// GET /api/vault/download/:id - Direct download of stored file
-app.get('/api/vault/download/:id', (req, res) => {
+// HEAD and GET /api/vault/download/:id - Direct download of stored file with UTF-8 support
+const handleFileDownload = (req: express.Request, res: express.Response) => {
   const { id } = req.params;
   const items = readVaultItems();
-  const item = items.find((i) => i.id === id);
+  let item = items.find((i) => i.id === id);
+  if (!item) {
+    item = items.find((i) => i.downloadUrl && (i.downloadUrl.includes(`/${id}`) || i.downloadUrl.includes(encodeURIComponent(id))));
+  }
 
-  // Check in uploads dir
+  // 1. Check in uploads dir
   if (fs.existsSync(UPLOADS_DIR)) {
     const files = fs.readdirSync(UPLOADS_DIR);
-    const matchedFile = files.find((f) => f.startsWith(`${id}_`));
+    let matchedFile = files.find((f) => f.startsWith(`${id}_`));
+
+    // Also check if item.downloadUrl points to a different uploaded id
+    if (!matchedFile && item?.downloadUrl && item.downloadUrl.includes('/api/vault/download/')) {
+      const parts = item.downloadUrl.split('/api/vault/download/');
+      const altId = decodeURIComponent(parts[1] || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      if (altId) {
+        matchedFile = files.find((f) => f.startsWith(`${altId}_`));
+      }
+    }
+
+    // Also check if any file in UPLOADS_DIR matches item.fileName
+    if (!matchedFile && item?.fileName) {
+      const cleanTarget = item.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      matchedFile = files.find((f) => {
+        return f.endsWith(`_${item.fileName}`) || f.endsWith(`_${cleanTarget}`) || f === item.fileName || f === cleanTarget;
+      });
+    }
+
     if (matchedFile) {
       const filePath = path.join(UPLOADS_DIR, matchedFile);
-      const downloadName = item?.fileName || matchedFile.replace(`${id}_`, '');
+      const downloadName = item?.fileName || matchedFile.replace(/^[a-zA-Z0-9_-]+_/, '');
+      
+      if (req.method === 'HEAD') {
+        const stat = fs.statSync(filePath);
+        res.setHeader('Content-Length', stat.size);
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
+        return res.status(200).end();
+      }
+
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
       return res.download(filePath, downloadName);
     }
   }
 
-  // Fallback to item downloadUrl if external
+  // 2. Check if item has stored fileData (data URL or base64)
+  if (item && item.fileData && typeof item.fileData === 'string' && item.fileData.startsWith('data:')) {
+    try {
+      const matches = item.fileData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        const mime = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        const filename = item.fileName || `${item.title || 'recurso'}.${mime.split('/')[1] || 'bin'}`;
+        
+        // Save to disk for faster future access
+        const safeFilename = `${id}_${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, safeFilename), buffer);
+
+        if (req.method === 'HEAD') {
+          res.setHeader('Content-Length', buffer.length);
+          res.setHeader('Content-Type', mime);
+          return res.status(200).end();
+        }
+
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+        res.setHeader('Content-Type', mime);
+        return res.send(buffer);
+      }
+    } catch (e) {
+      console.warn('Error reading base64 fileData on download:', e);
+    }
+  }
+
+  // 3. Fallback to external downloadUrl
   if (item && item.downloadUrl && item.downloadUrl.startsWith('http')) {
     return res.redirect(item.downloadUrl);
   }
 
-  return res.status(404).send('Archivo no encontrado');
-});
+  if (req.method === 'HEAD') {
+    return res.status(404).end();
+  }
+  return res.status(404).send('Archivo no encontrado en el servidor');
+};
+
+app.head('/api/vault/download/:id', handleFileDownload);
+app.get('/api/vault/download/:id', handleFileDownload);
 
 // POST /api/vault/sync - Batch sync items from admin client
 app.post('/api/vault/sync', async (req, res) => {
@@ -633,6 +835,12 @@ app.delete('/api/vault/items/:id', async (req, res) => {
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// GET /api/vault/deleted-lists - Return list IDs deleted by admin so all clients purge them immediately
+app.get('/api/vault/deleted-lists', (_req, res) => {
+  const deletedSet = readDeletedListIds();
+  return res.json({ success: true, deletedIds: Array.from(deletedSet) });
 });
 
 // GET /api/vault/lists - Fetch all lists created by Admin

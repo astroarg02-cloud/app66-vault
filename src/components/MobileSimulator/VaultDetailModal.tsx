@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, Share2, Download, Heart, MessageSquare, 
-  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2, Info, FolderPlus, FolderCheck
+  CheckCircle2, Send, Shield, Copy, Check, HardDrive, X, Trash2, Info, FolderPlus, FolderCheck,
+  UploadCloud, AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VaultItem, UserProfile, VaultList } from '../../types';
@@ -19,6 +20,7 @@ interface VaultDetailModalProps {
   onToggleLike: (itemId: string) => void;
   onAddComment: (itemId: string, text: string) => void;
   onDeleteItem?: (itemId: string) => void;
+  onUpdateItem?: (updatedItem: VaultItem) => void;
   lists?: VaultList[];
   onToggleItemInList?: (listId: string, itemId: string) => void;
 }
@@ -30,12 +32,18 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   onToggleLike,
   onAddComment,
   onDeleteItem,
+  onUpdateItem,
   lists = [],
   onToggleItemInList,
 }) => {
   const isLiked = Array.isArray(item.likedBy) && item.likedBy.includes(currentUser.uid);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [isDownloaded, setIsDownloaded] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [isReuploading, setIsReuploading] = useState(false);
+  const [reuploadProgress, setReuploadProgress] = useState<number | null>(null);
+  const [reuploadSuccess, setReuploadSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [commentText, setCommentText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -55,6 +63,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
   const handleDownload = async () => {
     if (downloadProgress !== null || isDownloaded) return;
     setDownloadProgress(25);
+    setDownloadError(null);
 
     try {
       setDownloadProgress(65);
@@ -74,13 +83,105 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
         setTimeout(() => {
           onClose();
         }, 1200);
+      } else {
+        setDownloadError(
+          item.fileName
+            ? `El archivo físico original ("${item.fileName}") no se encuentra en el servidor.${currentUser.role === 'admin' ? ' Puedes adjuntarlo con el botón "Re-subir archivo real" a continuación.' : ' Contacta al administrador.'}`
+            : 'No hay archivo descargable disponible para esta publicación.'
+        );
       }
     } catch (err) {
       console.error('Error during item download:', err);
+      setDownloadError('Ocurrió un error al descargar el archivo.');
     } finally {
       setTimeout(() => {
         setDownloadProgress(null);
       }, 1000);
+    }
+  };
+
+  // Re-upload / attach real file handler (Admin)
+  const handleReuploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsReuploading(true);
+    setReuploadProgress(15);
+    setDownloadError(null);
+    setReuploadSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('itemId', item.id);
+      formData.append('file', file, file.name);
+
+      const uploadRes = await new Promise<{
+        success: boolean;
+        downloadUrl?: string;
+        fileName?: string;
+        fileSize?: string;
+        fileMimeType?: string;
+      }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) {
+            const percent = Math.round((event.loaded / event.total) * 75) + 20;
+            setReuploadProgress(percent);
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch {
+              resolve({
+                success: true,
+                downloadUrl: `/api/vault/download/${encodeURIComponent(item.id)}`,
+              });
+            }
+          } else {
+            reject(new Error(`Error del servidor (${xhr.status})`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
+        xhr.open('POST', `/api/vault/upload-file?itemId=${encodeURIComponent(item.id)}`, true);
+        xhr.send(formData);
+      });
+
+      setReuploadProgress(100);
+
+      const updatedItem: VaultItem = {
+        ...item,
+        fileName: uploadRes.fileName || file.name,
+        fileSize: uploadRes.fileSize || `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+        fileType: file.name.split('.').pop()?.toUpperCase() || item.fileType || 'Archivo',
+        fileMimeType: uploadRes.fileMimeType || file.type,
+        downloadUrl: uploadRes.downloadUrl || `/api/vault/download/${encodeURIComponent(item.id)}`,
+        rawFileBlob: file,
+      };
+
+      if (onUpdateItem) {
+        onUpdateItem(updatedItem);
+      }
+
+      // Persist to server
+      try {
+        await fetch('/api/vault/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedItem),
+        });
+      } catch (e) {}
+
+      setIsReuploading(false);
+      setReuploadProgress(null);
+      setReuploadSuccess(true);
+      setTimeout(() => setReuploadSuccess(false), 3000);
+    } catch (err: any) {
+      console.error('Error re-uploading file:', err);
+      setIsReuploading(false);
+      setReuploadProgress(null);
+      setDownloadError(`Error al subir archivo: ${err.message}`);
     }
   };
 
@@ -505,6 +606,72 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
               </div>
             </div>
           ) : null}
+
+          {/* Download Error Banner */}
+          {downloadError && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 text-xs flex items-start gap-2"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+              <div className="flex-1">
+                <p className="font-semibold">{downloadError}</p>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Re-upload Success Banner */}
+          {reuploadSuccess && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs flex items-center gap-2"
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              <span>¡Archivo real subido y vinculado a la publicación exitosamente!</span>
+            </motion.div>
+          )}
+
+          {/* Admin Fast Re-Upload / Attach Real File (Sin límite de tamaño) */}
+          {currentUser.role === 'admin' && (
+            <div className={`p-3 rounded-xl border ${isDark ? 'bg-[#121216] border-[#1E1E24]' : 'bg-slate-50 border-slate-200'}`}>
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleReuploadFile}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs">
+                  <span className={`font-bold block ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                    {hasFile ? 'Actualizar Archivo Real' : 'Adjuntar Archivo Real a la Publicación'}
+                  </span>
+                  <span className={`text-[11px] ${isDark ? 'text-[#8E8E93]' : 'text-slate-500'}`}>
+                    Almacenamiento en servidor • Sin límite de megas
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isReuploading}
+                  className="px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#0052FF] disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>{isReuploading ? `Subiendo (${reuploadProgress || 0}%)` : hasFile ? 'Re-subir archivo' : 'Subir archivo'}</span>
+                </button>
+              </div>
+
+              {isReuploading && (
+                <div className="mt-2 w-full bg-black/20 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-[#0066FF] h-full transition-all duration-200"
+                    style={{ width: `${reuploadProgress || 0}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Private Forum / Comments Section */}
           <div

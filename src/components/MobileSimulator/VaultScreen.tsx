@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   FolderClosed, Lock, Search, Heart, MessageSquare, 
@@ -45,6 +45,13 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeletingList, setIsDeletingList] = useState(false);
   const { isDark } = useTheme();
+
+  // Enforce non-admins to always stay in collections view when no list is selected
+  useEffect(() => {
+    if (!isAdmin && !selectedListId) {
+      setActiveTabMode('collections');
+    }
+  }, [isAdmin, selectedListId]);
 
   // Active selected list object
   const activeList = selectedListId ? lists.find((l) => l.id === selectedListId) || null : null;
