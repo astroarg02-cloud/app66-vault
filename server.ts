@@ -18,6 +18,8 @@ const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const VAULT_FILE = path.join(DATA_DIR, 'vault_items.json');
 const VAULT_LISTS_FILE = path.join(DATA_DIR, 'vault_lists.json');
 const DELETED_LISTS_FILE = path.join(DATA_DIR, 'deleted_lists.json');
+const MAINTENANCE_FILE = path.join(DATA_DIR, 'maintenance.json');
+const ADMIN_SECURITY_KEY = '360';
 
 // Ensure storage directories exist
 if (!fs.existsSync(DATA_DIR)) {
@@ -97,6 +99,52 @@ function removeDeletedListId(id: string): void {
     fs.writeFileSync(DELETED_LISTS_FILE, JSON.stringify(Array.from(current), null, 2), 'utf-8');
   } catch (err) {}
 }
+
+// Maintenance state persistence
+interface MaintenanceState {
+  isMaintenance: boolean;
+  message: string;
+  updatedAt: string;
+}
+
+function readMaintenanceState(): MaintenanceState {
+  try {
+    if (fs.existsSync(MAINTENANCE_FILE)) {
+      const raw = fs.readFileSync(MAINTENANCE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          isMaintenance: typeof parsed.isMaintenance === 'boolean' ? parsed.isMaintenance : true,
+          message:
+            parsed.message ||
+            'El sistema se encuentra en labores de mantenimiento programado. El acceso está temporalmente restringido únicamente a administradores con Key.',
+          updatedAt: parsed.updatedAt || new Date().toISOString(),
+        };
+      }
+    }
+  } catch (err) {
+    console.error('Error reading maintenance file:', err);
+  }
+  const defaultState: MaintenanceState = {
+    isMaintenance: true,
+    message:
+      'El sistema se encuentra en labores de mantenimiento programado. El acceso está temporalmente restringido únicamente a administradores con Key.',
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    fs.writeFileSync(MAINTENANCE_FILE, JSON.stringify(defaultState, null, 2), 'utf-8');
+  } catch (e) {}
+  return defaultState;
+}
+
+function writeMaintenanceState(state: MaintenanceState): void {
+  try {
+    fs.writeFileSync(MAINTENANCE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error writing maintenance file:', err);
+  }
+}
+
 
 // Initial seed if file does not exist
 if (!fs.existsSync(VAULT_FILE)) {
@@ -445,6 +493,33 @@ async function fetchAllFromFirestoreREST(): Promise<any[]> {
 // API Routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// GET /api/maintenance - Fetch current maintenance mode status
+app.get('/api/maintenance', (req, res) => {
+  const state = readMaintenanceState();
+  res.json({ success: true, ...state });
+});
+
+// POST /api/maintenance - Update maintenance mode (Admin only with key or admin session)
+app.post('/api/maintenance', (req, res) => {
+  try {
+    const { isMaintenance, message, adminKey } = req.body;
+    if (adminKey && adminKey.trim() !== ADMIN_SECURITY_KEY) {
+      return res.status(403).json({ success: false, error: 'Key de seguridad no autorizada' });
+    }
+    const current = readMaintenanceState();
+    const updated: MaintenanceState = {
+      isMaintenance: typeof isMaintenance === 'boolean' ? isMaintenance : current.isMaintenance,
+      message: typeof message === 'string' ? message : current.message,
+      updatedAt: new Date().toISOString(),
+    };
+    writeMaintenanceState(updated);
+    console.log(`[Maintenance Mode Updated] isMaintenance: ${updated.isMaintenance}`);
+    return res.json({ success: true, ...updated });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // GET /api/vault/items - Fetch all items from Firestore + Server Store

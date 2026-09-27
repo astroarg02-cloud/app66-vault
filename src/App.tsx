@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS, INITIAL_VAULT_LISTS } from './data/initialVaultData';
+import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS, INITIAL_VAULT_LISTS, ADMIN_SECURITY_KEY } from './data/initialVaultData';
 import { VaultItem, UserProfile, VaultComment, VaultList } from './types';
 import { AuthScreen } from './components/MobileSimulator/AuthScreen';
 import { VaultScreen } from './components/MobileSimulator/VaultScreen';
@@ -9,6 +9,8 @@ import { MembershipScreen } from './components/MobileSimulator/MembershipScreen'
 import { ProfileScreen } from './components/MobileSimulator/ProfileScreen';
 import { AdminUploadModal } from './components/MobileSimulator/AdminUploadModal';
 import { AdminListModal } from './components/MobileSimulator/AdminListModal';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { AdminMaintenanceModal } from './components/AdminMaintenanceModal';
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { firebaseService } from './services/firebaseService';
@@ -23,7 +25,8 @@ import {
   ShieldCheck, 
   Database,
   Flame,
-  Layers
+  Layers,
+  Wrench
 } from 'lucide-react';
 
 // Helper to manage deleted list IDs in localStorage to prevent deleted lists from resurfacing
@@ -82,6 +85,17 @@ function AppContent() {
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const [showAdminListModal, setShowAdminListModal] = useState(false);
   const [editingList, setEditingList] = useState<VaultList | null>(null);
+  const [isMaintenanceActive, setIsMaintenanceActive] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('vault_maintenance_active');
+      if (cached !== null) return cached === 'true';
+    } catch (e) {}
+    return true; // Default to true so people see "en mantenimiento" upon entry
+  });
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string>(
+    'Estamos realizando labores de mantenimiento y optimización en la plataforma. Volveremos muy pronto.'
+  );
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
   // Helper to merge incoming items with existing state preserving custom user uploads
@@ -227,6 +241,23 @@ function AppContent() {
         if (localItems && localItems.length > 0) {
           mergeVaultItems(localItems);
         }
+
+        // 6. Check Maintenance Mode status
+        try {
+          const resMaint = await fetch('/api/maintenance');
+          if (resMaint.ok) {
+            const dataMaint = await resMaint.json();
+            if (typeof dataMaint.isMaintenance === 'boolean') {
+              setIsMaintenanceActive(dataMaint.isMaintenance);
+              localStorage.setItem('vault_maintenance_active', String(dataMaint.isMaintenance));
+            }
+            if (dataMaint.message) {
+              setMaintenanceMessage(dataMaint.message);
+            }
+          }
+        } catch (mErr) {
+          console.warn('Error fetching maintenance status:', mErr);
+        }
       } catch (err) {
         console.warn('Error loading initial vault data:', err);
       }
@@ -261,6 +292,21 @@ function AppContent() {
           const jsonLists = await resLists.json();
           if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
         }
+
+        // Sync maintenance status
+        try {
+          const resM = await fetch('/api/maintenance');
+          if (resM.ok) {
+            const dM = await resM.json();
+            if (typeof dM.isMaintenance === 'boolean') {
+              setIsMaintenanceActive(dM.isMaintenance);
+              localStorage.setItem('vault_maintenance_active', String(dM.isMaintenance));
+            }
+            if (dM.message) {
+              setMaintenanceMessage(dM.message);
+            }
+          }
+        } catch (e) {}
       } catch (e) {}
     }, 30000);
 
@@ -281,6 +327,30 @@ function AppContent() {
   const handleLogout = async () => {
     await firebaseService.signOut();
     setCurrentUser(null);
+  };
+
+  const handleSaveMaintenance = async (newStatus: boolean, newMessage: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/maintenance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isMaintenance: newStatus,
+          message: newMessage,
+          adminKey: ADMIN_SECURITY_KEY,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsMaintenanceActive(data.isMaintenance);
+        if (data.message) setMaintenanceMessage(data.message);
+        localStorage.setItem('vault_maintenance_active', String(data.isMaintenance));
+        return true;
+      }
+    } catch (err) {
+      console.error('Error updating maintenance status:', err);
+    }
+    return false;
   };
 
   // Toggle Like (optimistic state + sync to Firestore and Supabase)
@@ -641,7 +711,17 @@ function AppContent() {
     );
   }
 
-  // Unauthenticated view -> Mandatory AuthScreen
+  // Priority 1: When maintenance mode is active, block everything for non-admins and display MaintenanceScreen
+  if (isMaintenanceActive && (!currentUser || currentUser.role !== 'admin')) {
+    return (
+      <MaintenanceScreen
+        onAdminLogin={handleLogin}
+        customMessage={maintenanceMessage}
+      />
+    );
+  }
+
+  // Priority 2: Unauthenticated view -> Mandatory AuthScreen
   if (!currentUser) {
     return (
       <div className={`h-[100dvh] w-full flex items-center justify-center p-3 sm:p-4 overflow-y-auto transition-colors duration-300 ${
@@ -785,6 +865,27 @@ function AppContent() {
 
           {/* Right Controls: User info, Theme & Logout */}
           <div className="flex items-center gap-1.5 sm:gap-2.5">
+            {/* Admin Maintenance Control Button */}
+            {currentUser.role === 'admin' && (
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setShowMaintenanceModal(true)}
+                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
+                  isMaintenanceActive
+                    ? 'bg-amber-500/15 border-amber-500/35 text-amber-500 dark:text-amber-400 hover:bg-amber-500/25 shadow-sm'
+                    : 'bg-black/5 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                }`}
+                title="Configurar Modo Mantenimiento"
+              >
+                <Wrench className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Mantenimiento:</span>
+                <span className={isMaintenanceActive ? 'font-black text-amber-500 dark:text-amber-400' : 'font-semibold text-slate-400'}>
+                  {isMaintenanceActive ? 'ACTIVO' : 'OFF'}
+                </span>
+              </motion.button>
+            )}
+
             {/* User badge */}
             <div className={`hidden md:flex items-center gap-2 px-2.5 py-1 rounded-xl border text-xs font-semibold ${
               isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
@@ -958,6 +1059,19 @@ function AppContent() {
             onDelete={handleDeleteList}
             initialList={editingList}
             items={items}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Admin Maintenance Mode Configuration Modal */}
+      <AnimatePresence>
+        {showMaintenanceModal && (
+          <AdminMaintenanceModal
+            isOpen={showMaintenanceModal}
+            onClose={() => setShowMaintenanceModal(false)}
+            isMaintenance={isMaintenanceActive}
+            maintenanceMessage={maintenanceMessage}
+            onSave={handleSaveMaintenance}
           />
         )}
       </AnimatePresence>
