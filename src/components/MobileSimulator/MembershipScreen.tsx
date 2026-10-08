@@ -1,68 +1,1086 @@
-import React from 'react';
-import { motion } from 'motion/react';
-import { Clock } from 'lucide-react';
-import { UserProfile } from '../../types';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Check, Sparkles, Shield, Zap, Crown, 
+  HelpCircle, ChevronDown, CheckCircle2, ArrowRight, Download, 
+  FileText, AlertCircle, X, ShieldCheck, HeartHandshake,
+  MessageCircle, ExternalLink, Copy, CheckCheck
+} from 'lucide-react';
+import confetti from 'canvas-confetti';
+import { UserProfile, MembershipPlanType } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { firebaseService } from '../../services/firebaseService';
+
+// WhatsApp contact constant
+export const WHATSAPP_CONTACT_PHONE = '+54 9 11 6554-6038';
+export const WHATSAPP_PHONE_RAW = '5491165546038';
 
 interface MembershipScreenProps {
   currentUser: UserProfile;
+  onUpdateUser?: (updated: UserProfile) => void;
+  onNavigateToVault?: () => void;
+  onNavigateToReceipts?: () => void;
 }
 
-export const MembershipScreen: React.FC<MembershipScreenProps> = () => {
+export const MembershipScreen: React.FC<MembershipScreenProps> = ({
+  currentUser,
+  onUpdateUser,
+  onNavigateToVault,
+  onNavigateToReceipts,
+}) => {
   const { isDark } = useTheme();
+
+  // Active billing cycle view: 'monthly' | 'annual'
+  const [selectedBillingTab, setSelectedBillingTab] = useState<MembershipPlanType>(
+    currentUser.membershipPlan || 'monthly'
+  );
+
+  // Modals state
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [targetPlan, setTargetPlan] = useState<MembershipPlanType>('monthly');
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState(false);
+  const [copiedMsg, setCopiedMsg] = useState(false);
+  const [notificationMsg, setNotificationMsg] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
+
+  // FAQ open states
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
+
+  // Membership status checks
+  const isSubscribed = currentUser.membershipStatus === 'active' || (currentUser.membershipPlan && currentUser.membershipStatus !== 'cancelled');
+  const activePlan = currentUser.membershipPlan || (isSubscribed ? 'monthly' : null);
+
+  // Calculate formatted dates
+  const getNextBillingDate = (monthsAhead: number = 1): string => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + monthsAhead);
+    return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
+  };
+
+  const currentRenewalDate = currentUser.membershipExpiresAt || (
+    activePlan === 'annual' ? getNextBillingDate(12) : getNextBillingDate(1)
+  );
+
+  const showNotification = (text: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setNotificationMsg({ type, text });
+    setTimeout(() => {
+      setNotificationMsg(null);
+    }, 4500);
+  };
+
+  const getWhatsAppMessage = (plan: MembershipPlanType): string => {
+    const planName = plan === 'monthly' ? 'MENSUAL (1$ AL MES)' : 'ANUAL (12$ AL AÑO)';
+    const priceText = plan === 'monthly' ? '1$ USD al mes' : '12$ USD al año';
+    const userName = currentUser.displayName || 'Usuario VIP';
+    const userEmail = currentUser.email || 'No registrado';
+    const userId = currentUser.uid ? currentUser.uid.slice(0, 8).toUpperCase() : 'VIP';
+
+    return `¡Hola! 👋 Quiero activar mi membresía ${planName} por ${priceText} en la Bóveda App 66.
+    
+📌 Datos de mi cuenta:
+• Nombre: ${userName}
+• Email: ${userEmail}
+• ID de Usuario: #${userId}
+
+Por favor, envíame los medios de pago para coordinar la activación inmediata. ¡Muchas gracias!`;
+  };
+
+  const getWhatsAppUrl = (plan: MembershipPlanType): string => {
+    const text = encodeURIComponent(getWhatsAppMessage(plan));
+    return `https://wa.me/${WHATSAPP_PHONE_RAW}?text=${text}`;
+  };
+
+  const handleOpenWhatsAppDirect = (plan: MembershipPlanType, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const url = getWhatsAppUrl(plan);
+    // Open WhatsApp in new tab/app
+    const win = window.open(url, '_blank');
+    if (!win) {
+      window.location.href = url;
+    }
+  };
+
+  const handleOpenCheckout = (plan: MembershipPlanType) => {
+    setTargetPlan(plan);
+    setShowCheckoutModal(true);
+  };
+
+  const triggerConfetti = () => {
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#25D366', '#0066FF', '#F59E0B', '#10B981'],
+      });
+    } catch {
+      // safe fallback
+    }
+  };
+
+  const handleCopyPhone = () => {
+    navigator.clipboard.writeText(WHATSAPP_CONTACT_PHONE);
+    setCopiedPhone(true);
+    setTimeout(() => setCopiedPhone(false), 2000);
+  };
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(getWhatsAppMessage(targetPlan));
+    setCopiedMsg(true);
+    setTimeout(() => setCopiedMsg(false), 2000);
+  };
+
+  const handleConfirmCancel = async () => {
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      membershipStatus: 'cancelled',
+    };
+
+    try {
+      await firebaseService.updateUserProfile(updatedUser);
+    } catch {
+      firebaseService.saveSession(updatedUser);
+    }
+
+    if (onUpdateUser) {
+      onUpdateUser(updatedUser);
+    }
+
+    setShowCancelModal(false);
+    showNotification(
+      'Tu suscripción ha sido cancelada. Mantendrás tu acceso VIP hasta el final del periodo ya pagado.',
+      'info'
+    );
+  };
 
   return (
     <div
-      className={`h-full flex flex-col items-center justify-center p-6 relative overflow-hidden select-none transition-colors duration-300 ${
+      className={`h-full flex flex-col overflow-y-auto custom-scrollbar transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >
-      {/* Subtle Background Glow in Vibrant Blue */}
-      <motion.div 
-        animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }}
-        transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-        className="absolute w-64 h-64 bg-[#0066FF] rounded-full blur-3xl pointer-events-none -top-12 left-1/2 -translate-x-1/2" 
-      />
-      <div className="absolute w-48 h-48 bg-[#0066FF]/5 rounded-full blur-2xl pointer-events-none bottom-10 left-1/2 -translate-x-1/2" />
-
-      <motion.div 
-        initial={{ opacity: 0, y: 16, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: 'spring', stiffness: 350, damping: 26 }}
-        className="relative z-10 flex flex-col items-center text-center space-y-6 max-w-xs"
-      >
-        {/* Minimalist Icon Badge */}
-        <motion.div
-          animate={{ y: [0, -6, 0] }}
-          transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-          className={`w-16 h-16 rounded-2xl flex items-center justify-center border transition-colors ${
-            isDark
-              ? 'bg-[#0A0A0C] border-[#1E1E24] shadow-[0_0_30px_-5px_rgba(0,102,255,0.35)]'
-              : 'bg-white border-blue-100 shadow-lg shadow-blue-500/10'
-          }`}
-        >
-          <Clock className="w-8 h-8 text-[#0066FF]" />
-        </motion.div>
-
-        {/* PRÓXIMAMENTE en Mayúsculas y Alto Contraste */}
-        <div className="space-y-2">
-          <h1
-            className={`text-3xl sm:text-4xl font-black tracking-[0.25em] uppercase transition-colors ${
-              isDark
-                ? 'text-white drop-shadow-[0_0_20px_rgba(0,102,255,0.4)]'
-                : 'text-[#0F172A] drop-shadow-sm'
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {notificationMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl border text-sm font-semibold max-w-md w-[90%] backdrop-blur-md ${
+              notificationMsg.type === 'success'
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                : notificationMsg.type === 'error'
+                ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                : 'bg-[#0066FF]/15 border-[#0066FF]/40 text-[#0066FF]'
             }`}
           >
-            PRÓXIMAMENTE
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <span className="flex-1">{notificationMsg.text}</span>
+            <button
+              onClick={() => setNotificationMsg(null)}
+              className="p-1 hover:opacity-75 transition-opacity"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 md:p-8 space-y-8">
+        
+        {/* Header Section */}
+        <div className="text-center space-y-3 relative">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-32 bg-emerald-500/15 blur-3xl rounded-full pointer-events-none -z-10" />
+
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black tracking-[0.2em] uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            <Crown className="w-3.5 h-3.5" />
+            MEMBRESÍA VIP
+          </div>
+
+          <h1 className="text-2xl sm:text-4xl font-black tracking-tight">
+            Acceso Ilimitado a la Bóveda
           </h1>
-          <motion.div 
-            initial={{ width: 0 }}
-            animate={{ width: 48 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="h-1 bg-[#0066FF] rounded-full mx-auto" 
-          />
+
+          <p className={`text-xs sm:text-sm max-w-xl mx-auto ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+            Disfruta de descargas sin restricciones, servidores de alta velocidad, insignias exclusivas y nuevos recursos semanales con precios accesibles.
+          </p>
+
+          {/* WhatsApp Direct Contact Banner */}
+          <div className="pt-2 flex justify-center">
+            <a
+              href={`https://wa.me/${WHATSAPP_PHONE_RAW}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/40 text-[#25D366] transition-all hover:scale-[1.02] shadow-sm cursor-pointer"
+            >
+              <MessageCircle className="w-4 h-4 shrink-0 fill-current" />
+              <span>Pago directo por WhatsApp: <strong>{WHATSAPP_CONTACT_PHONE}</strong></span>
+              <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" />
+            </a>
+          </div>
+
+          {/* Billing Selector Toggle */}
+          <div className="pt-3 flex justify-center">
+            <div className={`p-1 rounded-2xl border flex items-center gap-1 ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setSelectedBillingTab('monthly')}
+                className={`relative px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  selectedBillingTab === 'monthly'
+                    ? 'text-white'
+                    : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
+                }`}
+              >
+                {selectedBillingTab === 'monthly' && (
+                  <motion.div
+                    layoutId="billingTabPill"
+                    className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">Plan Mensual (1$)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedBillingTab('annual')}
+                className={`relative px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedBillingTab === 'annual'
+                    ? 'text-white'
+                    : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
+                }`}
+              >
+                {selectedBillingTab === 'annual' && (
+                  <motion.div
+                    layoutId="billingTabPill"
+                    className="absolute inset-0 bg-amber-500 rounded-xl shadow-md shadow-amber-500/30"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">Plan Anual (12$)</span>
+                <span className="relative z-10 text-[10px] px-1.5 py-0.5 rounded-full font-black bg-amber-400 text-black shadow-sm">
+                  365 DÍAS
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
-      </motion.div>
+
+        {/* CURRENT SUBSCRIBED USER DASHBOARD BANNER */}
+        {isSubscribed && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`p-5 sm:p-6 rounded-3xl border relative overflow-hidden backdrop-blur-md ${
+              isDark
+                ? 'bg-gradient-to-r from-emerald-950/40 via-[#0A0A0C] to-emerald-950/20 border-emerald-500/30 shadow-lg shadow-emerald-500/5'
+                : 'bg-emerald-50 border-emerald-200 shadow-sm'
+            }`}
+          >
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      Membresía Activa
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                      {activePlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'}
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold mt-0.5">
+                    {activePlan === 'annual' ? 'Suscripción Anual ($12 / año)' : 'Suscripción Mensual ($1 / mes)'}
+                  </h3>
+                  <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                    Próxima renovación:{' '}
+                    <span className="font-semibold text-emerald-400">{currentRenewalDate}</span>
+                    {currentUser.membershipStatus === 'cancelled' && ' (Cancelación programada)'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowInvoiceModal(true)}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isDark
+                      ? 'border-[#1E1E24] bg-neutral-900 hover:bg-neutral-800 text-neutral-300'
+                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Ver Comprobante
+                </button>
+
+                {onNavigateToVault && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToVault}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#0066FF] hover:bg-blue-600 text-white flex items-center gap-1.5 shadow-md shadow-[#0066FF]/20 transition-all cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Ir a la Bóveda
+                  </button>
+                )}
+
+                {currentUser.membershipStatus !== 'cancelled' ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    className="px-2.5 py-2 rounded-xl text-xs font-bold text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCheckout(activePlan || 'monthly')}
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-emerald-400 hover:bg-emerald-500/10 border border-emerald-500/20 transition-colors cursor-pointer"
+                  >
+                    Reactivar
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Pricing Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
+          
+          {/* PLAN MENSUAL CARD */}
+          <motion.div
+            whileHover={{ y: -4 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+            className={`p-6 sm:p-7 rounded-3xl border flex flex-col justify-between relative transition-all duration-300 ${
+              selectedBillingTab === 'monthly'
+                ? isDark
+                  ? 'bg-[#0E0E14] border-[#0066FF]/50 shadow-[0_0_35px_-10px_rgba(0,102,255,0.3)] ring-1 ring-[#0066FF]/40'
+                  : 'bg-white border-blue-400 shadow-xl shadow-blue-500/10 ring-1 ring-blue-300'
+                : isDark
+                ? 'bg-[#0A0A0C] border-[#1E1E24] opacity-90 hover:opacity-100'
+                : 'bg-white border-slate-200 shadow-sm opacity-90 hover:opacity-100'
+            }`}
+          >
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-[#0066FF]/15 border border-[#0066FF]/30 flex items-center justify-center text-[#0066FF]">
+                  <Zap className="w-5 h-5" />
+                </div>
+                {activePlan === 'monthly' && isSubscribed && (
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Tu Plan Actual
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Plan Mensual</h2>
+                <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                  Flexibilidad total mes a mes, cancela cuando quieras
+                </p>
+              </div>
+
+              {/* Price Tag */}
+              <div className="pt-1 pb-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-4xl sm:text-5xl font-black tracking-tight text-[#0066FF]">
+                    1$
+                  </span>
+                  <span className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    AL MES
+                  </span>
+                </div>
+                <div className="text-[11px] font-medium text-neutral-400 mt-1">
+                  Facturación mensual de $1.00 USD
+                </div>
+              </div>
+
+              {/* Feature List */}
+              <div className={`space-y-3 pt-3 border-t text-xs sm:text-sm ${isDark ? 'border-[#1E1E24]' : 'border-slate-100'}`}>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-[#0066FF] shrink-0 mt-0.5" />
+                  <span>Acceso total e ilimitado a toda la Bóveda</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-[#0066FF] shrink-0 mt-0.5" />
+                  <span>Descargas directas en formato original y máxima velocidad</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-[#0066FF] shrink-0 mt-0.5" />
+                  <span>Insignia <strong className="text-[#0066FF]">Acceso VIP</strong> en tu perfil</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-[#0066FF] shrink-0 mt-0.5" />
+                  <span>Atención directa y activación por WhatsApp</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-[#0066FF] shrink-0 mt-0.5" />
+                  <span>Sin permanencia obligatoria, cancela en cualquier momento</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons: Primary WhatsApp & Details */}
+            <div className="pt-6 space-y-2">
+              <button
+                type="button"
+                onClick={() => handleOpenCheckout('monthly')}
+                disabled={activePlan === 'monthly' && isSubscribed}
+                className={`w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  activePlan === 'monthly' && isSubscribed
+                    ? 'bg-neutral-800 text-neutral-400 cursor-default'
+                    : 'bg-[#25D366] hover:bg-[#20ba5a] text-black shadow-lg shadow-[#25D366]/25 hover:shadow-[#25D366]/40'
+                }`}
+              >
+                {activePlan === 'monthly' && isSubscribed ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Plan Actual Activo
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="w-4 h-4 fill-black" />
+                    <span>Pagar por WhatsApp (1$ al mes)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => handleOpenWhatsAppDirect('monthly', e)}
+                className={`w-full py-2 px-3 rounded-xl text-[11px] font-semibold text-center transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
+                }`}
+              >
+                <span>Ir directo a chat: +54 9 11 6554-6038</span>
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            </div>
+          </motion.div>
+
+          {/* PLAN ANUAL CARD */}
+          <motion.div
+            whileHover={{ y: -4 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+            className={`p-6 sm:p-7 rounded-3xl border flex flex-col justify-between relative transition-all duration-300 ${
+              selectedBillingTab === 'annual'
+                ? isDark
+                  ? 'bg-gradient-to-b from-[#14141F] to-[#0A0A0C] border-amber-500/50 shadow-[0_0_40px_-10px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/40'
+                  : 'bg-white border-amber-400 shadow-xl shadow-amber-500/10 ring-1 ring-amber-300'
+                : isDark
+                ? 'bg-[#0A0A0C] border-[#1E1E24] opacity-90 hover:opacity-100'
+                : 'bg-white border-slate-200 shadow-sm opacity-90 hover:opacity-100'
+            }`}
+          >
+            {/* Best Value Badge */}
+            <div className="absolute -top-3 right-6">
+              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-400 to-amber-500 text-black shadow-md flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                12 MESES COMPLETOS
+              </span>
+            </div>
+
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-400">
+                  <Crown className="w-5 h-5" />
+                </div>
+                {activePlan === 'annual' && isSubscribed && (
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Tu Plan Actual
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold tracking-tight">Plan Anual</h2>
+                <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                  Tranquilidad y acceso ininterrumpido durante 365 días
+                </p>
+              </div>
+
+              {/* Price Tag */}
+              <div className="pt-1 pb-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-4xl sm:text-5xl font-black tracking-tight text-amber-400">
+                    12$
+                  </span>
+                  <span className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    AL AÑO
+                  </span>
+                </div>
+                <div className="text-[11px] font-medium text-amber-400/80 mt-1 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Equivale a solo 1$ al mes sin preocuparte por renovaciones
+                </div>
+              </div>
+
+              {/* Feature List */}
+              <div className={`space-y-3 pt-3 border-t text-xs sm:text-sm ${isDark ? 'border-[#1E1E24]' : 'border-slate-100'}`}>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span><strong>Todo lo incluido</strong> en el Plan Mensual</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>Acceso garantizado de 365 días sin interrupciones</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>Insignia exclusiva de <strong className="text-amber-400">Miembro VIP Dorado</strong></span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>Acceso anticipado prioritario a nuevos paquetes añadidos</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>Canal de soporte preferente y atención directa por WhatsApp</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons: Primary WhatsApp & Details */}
+            <div className="pt-6 space-y-2">
+              <button
+                type="button"
+                onClick={() => handleOpenCheckout('annual')}
+                disabled={activePlan === 'annual' && isSubscribed}
+                className={`w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  activePlan === 'annual' && isSubscribed
+                    ? 'bg-neutral-800 text-neutral-400 cursor-default'
+                    : 'bg-[#25D366] hover:bg-[#20ba5a] text-black font-black shadow-lg shadow-[#25D366]/25 hover:shadow-[#25D366]/40'
+                }`}
+              >
+                {activePlan === 'annual' && isSubscribed ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Plan Actual Activo
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="w-4 h-4 fill-black" />
+                    <span>Pagar por WhatsApp (12$ al año)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => handleOpenWhatsAppDirect('annual', e)}
+                className={`w-full py-2 px-3 rounded-xl text-[11px] font-semibold text-center transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
+                }`}
+              >
+                <span>Ir directo a chat: +54 9 11 6554-6038</span>
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Banner para subir comprobante de pago */}
+        <div className={`p-4 sm:p-5 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${
+          isDark 
+            ? 'bg-gradient-to-r from-blue-950/30 via-[#0E0E12] to-blue-900/10 border-[#0066FF]/30' 
+            : 'bg-gradient-to-r from-blue-50 via-white to-blue-50/50 border-blue-200'
+        }`}>
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[#0066FF]/20 border border-[#0066FF]/40 text-[#0066FF] flex items-center justify-center shrink-0">
+              <FileText className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-[#0066FF]">
+                ¿Ya realizaste tu transferencia o pago?
+              </p>
+              <h4 className="text-sm font-bold mt-0.5">
+                Sube tu comprobante de pago para validación inmediata
+              </h4>
+              <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                Verificamos tu comprobante en la home bar y activamos tus accesos VIP rápidamente.
+              </p>
+            </div>
+          </div>
+
+          {onNavigateToReceipts && (
+            <button
+              type="button"
+              onClick={onNavigateToReceipts}
+              className="px-4 py-2.5 rounded-xl text-xs font-extrabold bg-[#0066FF] hover:bg-[#0055D4] text-white shadow-lg shadow-[#0066FF]/25 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Subir Comprobante Ahora</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Benefits Detail Grid */}
+        <div className="space-y-4 pt-4">
+          <div className="text-center space-y-1">
+            <h3 className="text-lg sm:text-xl font-bold tracking-tight">
+              ¿Por qué unirte a la Membresía VIP?
+            </h3>
+            <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              Diseñado para creadores, profesionales y entusiastas que necesitan recursos premium al instante.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className={`p-4 rounded-2xl border transition-colors ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-slate-200'
+            }`}>
+              <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-3">
+                <Download className="w-4 h-4" />
+              </div>
+              <h4 className="text-sm font-bold">Descargas Ilimitadas</h4>
+              <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                Baja cualquier archivo cuantas veces quieras sin cuotas diarias ni tiempos de espera.
+              </p>
+            </div>
+
+            <div className={`p-4 rounded-2xl border transition-colors ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-slate-200'
+            }`}>
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-3">
+                <Zap className="w-4 h-4" />
+              </div>
+              <h4 className="text-sm font-bold">Velocidad Extrema</h4>
+              <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                Conexión directa a servidores en la nube con entrega rápida de archivos pesados.
+              </p>
+            </div>
+
+            <div className={`p-4 rounded-2xl border transition-colors ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-slate-200'
+            }`}>
+              <div className="w-8 h-8 rounded-xl bg-[#25D366]/10 text-[#25D366] flex items-center justify-center mb-3">
+                <MessageCircle className="w-4 h-4" />
+              </div>
+              <h4 className="text-sm font-bold">Atención por WhatsApp</h4>
+              <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                Contacto personal e instantáneo para medios de pago y soporte técnico directo.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Security & WhatsApp Seal */}
+        <div className={`p-4 rounded-2xl border flex items-center justify-center gap-6 text-xs text-center flex-wrap ${
+          isDark ? 'bg-[#0A0A0C] border-[#1E1E24] text-neutral-400' : 'bg-slate-100 border-slate-200 text-slate-600'
+        }`}>
+          <div className="flex items-center gap-1.5 font-medium">
+            <MessageCircle className="w-4 h-4 text-[#25D366]" />
+            <span>WhatsApp Oficial: +54 9 11 6554-6038</span>
+          </div>
+          <div className="flex items-center gap-1.5 font-medium">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Activación 100% Segura y Personal</span>
+          </div>
+          <div className="flex items-center gap-1.5 font-medium">
+            <HeartHandshake className="w-4 h-4 text-amber-400" />
+            <span>Cancela cuando quieras con 1 clic</span>
+          </div>
+        </div>
+
+        {/* FAQ Section */}
+        <div className="space-y-3 pt-2">
+          <div className="text-center mb-2">
+            <h3 className="text-base sm:text-lg font-bold">Preguntas Frecuentes</h3>
+            <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              Respuestas a las dudas más comunes sobre la membresía y el método de pago
+            </p>
+          </div>
+
+          {[
+            {
+              q: '¿Cómo funciona el método de pago por WhatsApp?',
+              a: 'Al hacer clic en el botón de pago, serás redirigido directamente a mi WhatsApp oficial (+54 9 11 6554-6038) con un mensaje preparado que incluye tu ID de usuario y el plan elegido (1$ mensual o 12$ anual). Allí te proporciono las opciones de pago disponibles (transferencia, billeteras virtuales, etc.) y activo tu membresía en minutos.',
+            },
+            {
+              q: '¿Cuáles son los precios exactos?',
+              a: 'El Plan Mensual cuesta exactamente 1$ al mes ($1.00 USD / mes). El Plan Anual cuesta 12$ al año ($12.00 USD / año) por 365 días ininterrumpidos de acceso a la bóveda.',
+            },
+            {
+              q: '¿Puedo cancelar en cualquier momento?',
+              a: 'Sí, totalmente. Puedes cancelar la membresía con un solo clic directamente desde esta pantalla o solicitándolo por WhatsApp en cualquier momento.',
+            },
+            {
+              q: '¿Qué sucede con los archivos que ya descargué si cancelo?',
+              a: 'Todos los recursos y archivos que hayas descargado son tuyos permanentemente. No perderás ningún recurso guardado en tu equipo.',
+            },
+          ].map((faq, idx) => {
+            const isOpen = openFaqIndex === idx;
+            return (
+              <div
+                key={idx}
+                className={`rounded-2xl border transition-colors overflow-hidden ${
+                  isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-slate-200'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
+                  className="w-full p-4 text-left flex items-center justify-between gap-3 text-xs sm:text-sm font-bold cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <HelpCircle className="w-4 h-4 text-[#0066FF] shrink-0" />
+                    {faq.q}
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform duration-200 shrink-0 ${
+                      isOpen ? 'rotate-180 text-[#0066FF]' : isDark ? 'text-neutral-500' : 'text-slate-400'
+                    }`}
+                  />
+                </button>
+                <AnimatePresence>
+                  {isOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className={`px-4 pb-4 text-xs leading-relaxed ${
+                        isDark ? 'text-neutral-400' : 'text-neutral-600'
+                      }`}
+                    >
+                      {faq.a}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+
+      </div>
+
+      {/* WHATSAPP PAYMENT MODAL */}
+      <AnimatePresence>
+        {showCheckoutModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 15 }}
+              transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+              className={`w-full max-w-md rounded-3xl border shadow-2xl overflow-hidden my-auto ${
+                isDark ? 'bg-[#0D0D12] border-[#22222E]' : 'bg-white border-slate-200'
+              }`}
+            >
+              {/* Modal Header */}
+              <div className={`p-4 sm:p-5 border-b flex items-center justify-between ${
+                isDark ? 'border-[#1E1E24]' : 'border-slate-100'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-[#25D366]/15 text-[#25D366] flex items-center justify-center">
+                    <MessageCircle className="w-5 h-5 fill-current" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-bold">Método de Pago por WhatsApp</h3>
+                    <p className={`text-[11px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                      {targetPlan === 'monthly' ? 'Plan Mensual (1$ / mes)' : 'Plan Anual (12$ / año)'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCheckoutModal(false)}
+                  className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+                    isDark
+                      ? 'border-[#1E1E24] hover:bg-neutral-800 text-neutral-400'
+                      : 'border-slate-200 hover:bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-4 sm:p-5 space-y-4">
+                
+                {/* Plan Summary Bar */}
+                <div className={`p-3.5 rounded-2xl border flex items-center justify-between ${
+                  targetPlan === 'annual'
+                    ? isDark ? 'bg-amber-500/10 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+                    : isDark ? 'bg-[#0066FF]/10 border-[#0066FF]/30' : 'bg-blue-50 border-blue-200'
+                }`}>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
+                      Monto a Abonar
+                    </div>
+                    <div className="text-xl font-black">
+                      {targetPlan === 'monthly' ? '$1.00 USD' : '$12.00 USD'}
+                    </div>
+                    <div className="text-[11px] text-neutral-500">
+                      {targetPlan === 'monthly' ? '1$ AL MES' : '12$ AL AÑO (365 días)'}
+                    </div>
+                  </div>
+
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-black uppercase ${
+                    targetPlan === 'annual'
+                      ? 'bg-amber-400/20 text-amber-400 border border-amber-400/40'
+                      : 'bg-[#0066FF]/20 text-[#0066FF] border border-[#0066FF]/40'
+                  }`}>
+                    {targetPlan === 'monthly' ? '1$ / Mes' : '12$ / Año'}
+                  </span>
+                </div>
+
+                {/* WhatsApp Contact Box */}
+                <div className={`p-4 rounded-2xl border space-y-3 ${
+                  isDark ? 'bg-[#121218] border-[#20202A]' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
+                      Número de Contacto
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyPhone}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#25D366] hover:underline cursor-pointer"
+                    >
+                      {copiedPhone ? (
+                        <>
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>¡Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copiar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#25D366]/20 text-[#25D366] flex items-center justify-center shrink-0">
+                      <MessageCircle className="w-5 h-5 fill-current" />
+                    </div>
+                    <div className="overflow-hidden">
+                      <div className="text-base font-black font-mono tracking-tight text-white">
+                        {WHATSAPP_CONTACT_PHONE}
+                      </div>
+                      <div className="text-[11px] text-neutral-400 truncate">
+                        Atención directa con el creador
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Message preview snippet */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
+                      Mensaje Automático Listo
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleCopyMessage}
+                      className="text-[10px] font-bold text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedMsg ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedMsg ? 'Mensaje copiado' : 'Copiar texto'}</span>
+                    </button>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border text-[11px] font-mono leading-relaxed line-clamp-3 select-all ${
+                    isDark ? 'bg-black/40 border-[#1E1E24] text-neutral-300' : 'bg-white border-slate-200 text-slate-700'
+                  }`}>
+                    {getWhatsAppMessage(targetPlan)}
+                  </div>
+                </div>
+
+                {/* Steps instructions */}
+                <div className={`p-3 rounded-xl border space-y-1.5 text-xs ${
+                  isDark ? 'bg-[#121218]/50 border-[#1E1E24] text-neutral-300' : 'bg-slate-50 border-slate-200 text-slate-600'
+                }`}>
+                  <div className="font-bold flex items-center gap-1.5 text-[#25D366]">
+                    <Check className="w-3.5 h-3.5" />
+                    Pasos sencillos:
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 text-[11px] text-neutral-400">
+                    <li>Haz clic en el botón verde para abrir el chat en WhatsApp.</li>
+                    <li>Envía el mensaje con tus datos y el plan deseado.</li>
+                    <li>Recibe las instrucciones de pago y tu activación VIP al instante.</li>
+                  </ol>
+                </div>
+
+                {/* Primary Button: Open WhatsApp */}
+                <div className="pt-2">
+                  <a
+                    href={getWhatsAppUrl(targetPlan)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#25D366] hover:bg-[#20ba5a] text-black shadow-lg shadow-[#25D366]/30 cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-black" />
+                    <span>Abrir Chat en WhatsApp y Coordinar Pago</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* CANCEL CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {showCancelModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={`w-full max-w-sm rounded-3xl border p-5 space-y-4 shadow-2xl ${
+                isDark ? 'bg-[#0D0D12] border-[#22222E]' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="w-10 h-10 rounded-2xl bg-red-500/15 text-red-400 flex items-center justify-center">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold">¿Cancelar suscripción?</h3>
+                <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                  No se realizarán cobros futuros. Mantendrás todos los beneficios VIP hasta el final de tu periodo actual (<strong>{currentRenewalDate}</strong>).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCancelModal(false)}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                    isDark ? 'border-[#1E1E24] hover:bg-neutral-800 text-neutral-300' : 'border-slate-200 hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  Mantener Activa
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCancel}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-red-500 hover:bg-red-600 text-white transition-colors cursor-pointer"
+                >
+                  Confirmar Cancelación
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* INVOICE / RECEIPT MODAL */}
+      <AnimatePresence>
+        {showInvoiceModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={`w-full max-w-md rounded-3xl border shadow-2xl overflow-hidden ${
+                isDark ? 'bg-[#0D0D12] border-[#22222E]' : 'bg-white border-slate-200'
+              }`}
+            >
+              {/* Receipt Header */}
+              <div className={`p-4 sm:p-5 border-b flex items-center justify-between ${
+                isDark ? 'border-[#1E1E24]' : 'border-slate-100'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#0066FF]" />
+                  <h3 className="text-sm sm:text-base font-bold">Comprobante Oficial de Pago</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowInvoiceModal(false)}
+                  className="p-1 text-neutral-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Receipt Details */}
+              <div className="p-5 space-y-4 text-xs font-mono">
+                <div className="flex justify-between items-center border-b pb-3 border-dashed border-neutral-700">
+                  <div>
+                    <div className="font-bold text-sm font-sans">App 66 — Bóveda Exclusiva</div>
+                    <div className="text-[11px] text-neutral-400 font-sans">Factura digital certificada</div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-sans font-black bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    PAGADO
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 text-neutral-300">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">ID Transacción:</span>
+                    <span>#INV-66-{(currentUser.uid || 'VIP').slice(0, 8).toUpperCase()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Cliente:</span>
+                    <span>{currentUser.displayName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Email:</span>
+                    <span>{currentUser.email}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Concepto:</span>
+                    <span>Membresía VIP ({activePlan === 'annual' ? 'Anual' : 'Mensual'})</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Método de Pago:</span>
+                    <span className="text-[#25D366]">WhatsApp Oficial ({WHATSAPP_CONTACT_PHONE})</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Fecha de Alta:</span>
+                    <span>{currentUser.subscribedAt || 'Hoy'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Vigencia hasta:</span>
+                    <span>{currentRenewalDate}</span>
+                  </div>
+                </div>
+
+                <div className="border-t pt-3 flex justify-between items-baseline font-bold text-sm font-sans border-neutral-700">
+                  <span>Monto Total Cobrado:</span>
+                  <span className="text-base text-emerald-400">
+                    {activePlan === 'annual' ? '$12.00 USD' : '$1.00 USD'}
+                  </span>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.print();
+                    }}
+                    className="w-full py-2.5 rounded-xl border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-white font-sans text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Imprimir / Guardar Comprobante
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 };

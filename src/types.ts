@@ -1,5 +1,8 @@
 export type UserRole = 'admin' | 'vip_member';
 
+export type MembershipPlanType = 'monthly' | 'annual';
+export type MembershipStatusType = 'active' | 'cancelled' | 'none';
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -8,6 +11,15 @@ export interface UserProfile {
   avatarUrl?: string;
   joinedAt: string;
   tier: 'Bóveda Diamante' | 'Acceso VIP' | 'Invitado';
+  membershipPlan?: MembershipPlanType;
+  membershipStatus?: MembershipStatusType;
+  membershipExpiresAt?: string;
+  subscribedAt?: string;
+  lastPaymentAmount?: number;
+  bio?: string;
+  phone?: string;
+  instagram?: string;
+  customStatus?: string;
 }
 
 export type ResourceCategory = 'video' | 'document' | 'audio' | 'preset' | 'code';
@@ -68,3 +80,48 @@ export interface SupabaseConfigState {
   supabaseAnonKey: string;
   isConnected: boolean;
 }
+
+export interface StoreProduct {
+  id: string;
+  name: string;
+  description: string;
+  category: 'smartphones' | 'audio' | 'accessories' | 'gaming' | string;
+  price: number;
+  originalPrice?: number;
+  badge?: string;
+  image: string;
+  gallery?: string[];
+  rating: number;
+  reviewsCount: number;
+  stock: number;
+  stockText?: string;
+  shipping: string;
+  features: string[];
+  specs?: Record<string, string>;
+  isPopular?: boolean;
+}
+
+export type ReceiptStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PaymentReceipt {
+  id: string;
+  userId: string;
+  userDisplayName: string;
+  userEmail: string;
+  userAvatar?: string;
+  plan: MembershipPlanType;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+  referenceCode: string;
+  receiptImageUrl: string;
+  receiptFileName?: string;
+  notes?: string;
+  whatsappContact?: string;
+  status: ReceiptStatus;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  adminNote?: string;
+}
+

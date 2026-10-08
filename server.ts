@@ -19,6 +19,7 @@ const VAULT_FILE = path.join(DATA_DIR, 'vault_items.json');
 const VAULT_LISTS_FILE = path.join(DATA_DIR, 'vault_lists.json');
 const DELETED_LISTS_FILE = path.join(DATA_DIR, 'deleted_lists.json');
 const MAINTENANCE_FILE = path.join(DATA_DIR, 'maintenance.json');
+const RECEIPTS_FILE = path.join(DATA_DIR, 'receipts.json');
 const ADMIN_SECURITY_KEY = '360';
 
 // Ensure storage directories exist
@@ -1046,6 +1047,114 @@ app.post('/api/vault/lists/:id/toggle-item', async (req, res) => {
     await saveListToFirestoreREST(targetList);
 
     return res.json({ success: true, list: targetList, isInside: !isInside });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Helper to read payment receipts safely
+function readReceipts(): any[] {
+  try {
+    if (fs.existsSync(RECEIPTS_FILE)) {
+      const raw = fs.readFileSync(RECEIPTS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (err) {
+    console.error('Error reading receipts from file:', err);
+  }
+  return [];
+}
+
+// Helper to write payment receipts safely
+function writeReceipts(receipts: any[]): boolean {
+  try {
+    fs.writeFileSync(RECEIPTS_FILE, JSON.stringify(receipts, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('Error writing receipts to file:', err);
+    return false;
+  }
+}
+
+// GET /api/vault/receipts - Fetch all payment receipts
+app.get('/api/vault/receipts', (_req, res) => {
+  try {
+    const receipts = readReceipts();
+    return res.json({ success: true, receipts });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/vault/receipts - Create or update a payment receipt
+app.post('/api/vault/receipts', (req, res) => {
+  try {
+    const newReceipt = req.body;
+    if (!newReceipt || !newReceipt.id || !newReceipt.userId) {
+      return res.status(400).json({ success: false, error: 'Datos de comprobante incompletos' });
+    }
+
+    const currentReceipts = readReceipts();
+    const existingIndex = currentReceipts.findIndex((r) => r.id === newReceipt.id);
+    let updatedReceipts: any[];
+
+    if (existingIndex >= 0) {
+      updatedReceipts = [...currentReceipts];
+      updatedReceipts[existingIndex] = { ...updatedReceipts[existingIndex], ...newReceipt };
+    } else {
+      updatedReceipts = [newReceipt, ...currentReceipts];
+    }
+
+    writeReceipts(updatedReceipts);
+    return res.json({ success: true, receipt: newReceipt, receipts: updatedReceipts });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /api/vault/receipts/:id/status - Update approval status (Admin)
+app.patch('/api/vault/receipts/:id/status', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNote, reviewerName } = req.body;
+
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Estado de comprobante inválido' });
+    }
+
+    const currentReceipts = readReceipts();
+    const targetIndex = currentReceipts.findIndex((r) => r.id === id);
+
+    if (targetIndex < 0) {
+      return res.status(404).json({ success: false, error: 'Comprobante no encontrado' });
+    }
+
+    const updated = {
+      ...currentReceipts[targetIndex],
+      status,
+      adminNote: adminNote !== undefined ? adminNote : currentReceipts[targetIndex].adminNote,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: reviewerName || 'Administrador',
+    };
+
+    currentReceipts[targetIndex] = updated;
+    writeReceipts(currentReceipts);
+
+    return res.json({ success: true, receipt: updated });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/vault/receipts/:id - Delete receipt
+app.delete('/api/vault/receipts/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const currentReceipts = readReceipts();
+    const updated = currentReceipts.filter((r) => r.id !== id);
+    writeReceipts(updated);
+    return res.json({ success: true, deletedId: id });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }

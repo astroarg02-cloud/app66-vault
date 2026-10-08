@@ -23,8 +23,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
-import { UserProfile, VaultItem, VaultList } from '../types';
-import { isAuthorizedAdminEmail, isAuthorizedAdminKey, INITIAL_ADMIN_USER, INITIAL_VAULT_LISTS } from '../data/initialVaultData';
+import { UserProfile, VaultItem, VaultList, MembershipPlanType } from '../types';
+import { isAuthorizedAdminEmail, isAuthorizedAdminKey, INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, ADMIN_SECURITY_KEY, INITIAL_VAULT_LISTS } from '../data/initialVaultData';
 
 // Configuración de Firebase que prioriza las variables de Vercel/Vite y usa el config local de respaldo
 const firebaseConfig = {
@@ -45,26 +45,48 @@ export const googleAuthProvider = new GoogleAuthProvider();
 const LOCAL_STORAGE_SESSION_KEY = 'vault_firebase_session_v1';
 const LOCAL_STORAGE_REGISTERED_USERS_KEY = 'vault_registered_accounts_v1';
 
-interface RegisteredAccountRecord {
+export interface RegisteredAccountRecord {
   email: string;
   password: string;
   profile: UserProfile;
   registeredAt: string;
 }
 
-function getStoredRegisteredAccounts(): Record<string, RegisteredAccountRecord> {
+export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountRecord> {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        return parsed;
+      }
     }
   } catch (e) {
     console.warn('Could not read registered accounts store:', e);
   }
-  return {};
+
+  // Cuentas iniciales independientes preconfiguradas para que cada usuario tenga su perfil diferente
+  const initialSeeds: Record<string, RegisteredAccountRecord> = {
+    [INITIAL_ADMIN_USER.email.toLowerCase()]: {
+      email: INITIAL_ADMIN_USER.email.toLowerCase(),
+      password: ADMIN_SECURITY_KEY,
+      profile: {
+        ...INITIAL_ADMIN_USER,
+        bio: 'Administrador central de Bóveda App 66. Gestión de contenidos y verificaciones.',
+        phone: '+54 9 11 6554-6038',
+        customStatus: '🛡️ En línea - Modo Administrador',
+      },
+      registeredAt: '2025-01-01T00:00:00.000Z',
+    },
+  };
+
+  try {
+    localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(initialSeeds));
+  } catch (e) {}
+  return initialSeeds;
 }
 
-function storeRegisteredAccount(record: RegisteredAccountRecord): void {
+export function storeRegisteredAccount(record: RegisteredAccountRecord): void {
   try {
     const accounts = getStoredRegisteredAccounts();
     accounts[record.email.toLowerCase().trim()] = record;
@@ -86,6 +108,186 @@ export const firebaseService = {
     } catch (e) {
       console.warn('LocalStorage save error:', e);
     }
+  },
+
+  // Obtener todas las cuentas registradas en el dispositivo
+  getRegisteredAccounts(): Record<string, RegisteredAccountRecord> {
+    return getStoredRegisteredAccounts();
+  },
+
+  // Obtener array de todos los perfiles registrados
+  getAllRegisteredUsers(): UserProfile[] {
+    const accounts = getStoredRegisteredAccounts();
+    return Object.values(accounts).map((acc) => acc.profile);
+  },
+
+  // Cambiar rápidamente entre cuentas registradas para probar diferentes perfiles
+  switchAccount(email: string): UserProfile | null {
+    const accounts = getStoredRegisteredAccounts();
+    const normalized = email.toLowerCase().trim();
+    const record = accounts[normalized];
+    if (record && record.profile) {
+      this.saveSession(record.profile);
+      window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: record.profile } }));
+      return record.profile;
+    }
+    return null;
+  },
+
+  // Actualizar perfil de un usuario garantizando persistencia local e individual
+  async updateUserProfile(profile: UserProfile): Promise<void> {
+    this.saveSession(profile);
+
+    // Persistir de forma individual en el registro de cuentas
+    try {
+      const accounts = getStoredRegisteredAccounts();
+      const emailKey = profile.email.toLowerCase().trim();
+      let matchedKey: string | null = null;
+
+      if (accounts[emailKey]) {
+        matchedKey = emailKey;
+      } else {
+        for (const [key, record] of Object.entries(accounts)) {
+          if (record.profile?.uid === profile.uid) {
+            matchedKey = key;
+            break;
+          }
+        }
+      }
+
+      if (matchedKey && accounts[matchedKey]) {
+        accounts[matchedKey].profile = { ...accounts[matchedKey].profile, ...profile };
+        localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+      } else if (emailKey) {
+        // Si no existía, crear la entrada para este usuario
+        accounts[emailKey] = {
+          email: emailKey,
+          password: 'password123',
+          profile: { ...profile },
+          registeredAt: new Date().toISOString(),
+        };
+        localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+      }
+    } catch (e) {
+      console.warn('Local account store update error:', e);
+    }
+
+    // Notificar reactivamente a la UI
+    window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile } }));
+
+    // Persistir en Firestore si la conexión está disponible
+    try {
+      if (profile.uid) {
+        const userDocRef = doc(db, 'users', profile.uid);
+        await setDoc(userDocRef, {
+          displayName: profile.displayName,
+          role: profile.role,
+          tier: profile.tier,
+          avatarUrl: profile.avatarUrl || null,
+          bio: profile.bio || null,
+          phone: profile.phone || null,
+          customStatus: profile.customStatus || null,
+          instagram: profile.instagram || null,
+          membershipPlan: profile.membershipPlan || null,
+          membershipStatus: profile.membershipStatus || null,
+          membershipExpiresAt: profile.membershipExpiresAt || null,
+          subscribedAt: profile.subscribedAt || null,
+          lastPaymentAmount: profile.lastPaymentAmount || null,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+    } catch (e) {
+      console.warn('Firestore update profile fallback:', e);
+    }
+  },
+
+  // Activar o mejorar la membresía de un usuario por su UID o Email
+  upgradeUserMembershipByUidOrEmail(
+    uid: string, 
+    email?: string, 
+    plan: MembershipPlanType = 'monthly'
+  ): UserProfile | null {
+    const accounts = getStoredRegisteredAccounts();
+    let foundKey: string | null = null;
+
+    if (email && accounts[email.toLowerCase().trim()]) {
+      foundKey = email.toLowerCase().trim();
+    } else {
+      for (const [key, record] of Object.entries(accounts)) {
+        if (record.profile?.uid === uid) {
+          foundKey = key;
+          break;
+        }
+      }
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + (plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString();
+
+    if (foundKey && accounts[foundKey]) {
+      const updatedProf: UserProfile = {
+        ...accounts[foundKey].profile,
+        membershipPlan: plan,
+        membershipStatus: 'active',
+        tier: 'Acceso VIP',
+        subscribedAt: now.toISOString(),
+        membershipExpiresAt: expiresAt,
+        lastPaymentAmount: plan === 'annual' ? 12 : 1,
+      };
+      accounts[foundKey].profile = updatedProf;
+      localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+
+      const currentSession = this.getLocalSession();
+      if (currentSession && (currentSession.uid === uid || currentSession.email.toLowerCase() === accounts[foundKey].email.toLowerCase())) {
+        this.saveSession(updatedProf);
+        window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: updatedProf } }));
+      }
+      return updatedProf;
+    }
+    return null;
+  },
+
+  // Denegar o revocar membresía de un usuario
+  denyOrRevokeUserMembershipByUidOrEmail(
+    uid: string,
+    email?: string,
+    reason?: string
+  ): UserProfile | null {
+    const accounts = getStoredRegisteredAccounts();
+    let foundKey: string | null = null;
+
+    if (email && accounts[email.toLowerCase().trim()]) {
+      foundKey = email.toLowerCase().trim();
+    } else {
+      for (const [key, record] of Object.entries(accounts)) {
+        if (record.profile?.uid === uid) {
+          foundKey = key;
+          break;
+        }
+      }
+    }
+
+    if (foundKey && accounts[foundKey]) {
+      const isUserAdmin = accounts[foundKey].profile.role === 'admin';
+      const updatedProf: UserProfile = {
+        ...accounts[foundKey].profile,
+        membershipPlan: undefined,
+        membershipStatus: 'none',
+        tier: isUserAdmin ? 'Bóveda Diamante' : 'Invitado',
+        membershipExpiresAt: undefined,
+        customStatus: reason ? `Membresía no aprobada: ${reason}` : undefined,
+      };
+      accounts[foundKey].profile = updatedProf;
+      localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+
+      const currentSession = this.getLocalSession();
+      if (currentSession && (currentSession.uid === uid || currentSession.email.toLowerCase() === accounts[foundKey].email.toLowerCase())) {
+        this.saveSession(updatedProf);
+        window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: updatedProf } }));
+      }
+      return updatedProf;
+    }
+    return null;
   },
 
   getLocalSession(): UserProfile | null {
@@ -119,6 +321,21 @@ export const firebaseService = {
       tier,
     };
 
+    // Check local profile first to retain customizations
+    const localAccounts = getStoredRegisteredAccounts();
+    const localMatch = localAccounts[email.toLowerCase()];
+    if (localMatch && localMatch.profile) {
+      if (localMatch.profile.avatarUrl) profile.avatarUrl = localMatch.profile.avatarUrl;
+      if (localMatch.profile.displayName) profile.displayName = localMatch.profile.displayName;
+      if (localMatch.profile.bio) profile.bio = localMatch.profile.bio;
+      if (localMatch.profile.phone) profile.phone = localMatch.profile.phone;
+      if (localMatch.profile.customStatus) profile.customStatus = localMatch.profile.customStatus;
+      if (localMatch.profile.instagram) profile.instagram = localMatch.profile.instagram;
+      if (localMatch.profile.membershipPlan) profile.membershipPlan = localMatch.profile.membershipPlan;
+      if (localMatch.profile.membershipStatus) profile.membershipStatus = localMatch.profile.membershipStatus;
+      if (localMatch.profile.membershipExpiresAt) profile.membershipExpiresAt = localMatch.profile.membershipExpiresAt;
+    }
+
     // Non-blocking firestore sync with timeout to prevent loading hangs
     const firestoreSyncPromise = (async () => {
       try {
@@ -130,6 +347,16 @@ export const firebaseService = {
           const data = snap.data();
           if (data.tier) profile.tier = data.tier;
           if (data.displayName) profile.displayName = data.displayName;
+          if (data.avatarUrl) profile.avatarUrl = data.avatarUrl;
+          if (data.bio) profile.bio = data.bio;
+          if (data.phone) profile.phone = data.phone;
+          if (data.customStatus) profile.customStatus = data.customStatus;
+          if (data.instagram) profile.instagram = data.instagram;
+          if (data.membershipPlan) profile.membershipPlan = data.membershipPlan;
+          if (data.membershipStatus) profile.membershipStatus = data.membershipStatus;
+          if (data.membershipExpiresAt) profile.membershipExpiresAt = data.membershipExpiresAt;
+          if (data.subscribedAt) profile.subscribedAt = data.subscribedAt;
+          if (data.lastPaymentAmount) profile.lastPaymentAmount = data.lastPaymentAmount;
         } else {
           await setDoc(userDocRef, {
             uid: fbUser.uid,
@@ -138,6 +365,9 @@ export const firebaseService = {
             role: isAdmin ? 'admin' : 'vip_member',
             tier: profile.tier,
             avatarUrl: profile.avatarUrl,
+            bio: profile.bio || null,
+            phone: profile.phone || null,
+            customStatus: profile.customStatus || null,
             createdAt: serverTimestamp(),
             lastLoginAt: serverTimestamp(),
           });

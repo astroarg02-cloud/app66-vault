@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { 
   FolderClosed, FolderOpen, ShieldCheck, ShieldAlert, Clock,
-  User, UserCheck, Wifi, Battery, Signal, Smartphone, Lock, CheckCircle2, XCircle
+  User, UserCheck, Wifi, Battery, Signal, Smartphone, Lock, CheckCircle2, XCircle,
+  Crown, FileText
 } from 'lucide-react';
 import { VaultItem, UserProfile } from '../../types';
 import { AuthScreen } from './AuthScreen';
 import { VaultScreen } from './VaultScreen';
 import { VaultDetailModal } from './VaultDetailModal';
 import { MembershipScreen } from './MembershipScreen';
+import { ReceiptsScreen } from './ReceiptsScreen';
 import { ProfileScreen } from './ProfileScreen';
 import { AdminUploadModal } from './AdminUploadModal';
 import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER } from '../../data/initialVaultData';
@@ -34,7 +36,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
   onUploadItem,
 }) => {
   const [deviceOS, setDeviceOS] = useState<'iphone' | 'android'>('iphone');
-  const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'profile'>('vault');
+  const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'receipts' | 'profile'>('vault');
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const { isDark } = useTheme();
@@ -175,7 +177,18 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
                     />
                   )}
                   {currentTab === 'membership' && (
-                    <MembershipScreen currentUser={currentUser} />
+                    <MembershipScreen 
+                      currentUser={currentUser}
+                      onNavigateToVault={() => setCurrentTab('vault')}
+                      onNavigateToReceipts={() => setCurrentTab('receipts')}
+                    />
+                  )}
+                  {currentTab === 'receipts' && (
+                    <ReceiptsScreen 
+                      currentUser={currentUser}
+                      onNavigateToMembership={() => setCurrentTab('membership')}
+                      onNavigateToVault={() => setCurrentTab('vault')}
+                    />
                   )}
                   {currentTab === 'profile' && (
                     <ProfileScreen
@@ -211,11 +224,11 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
             )}
           </div>
 
-          {/* Bottom Navigation Bar (Only if user is authenticated) */}
+          {/* Bottom Navigation Bar (Home Bar / Barra de Navegación) */}
           {currentUser && (
             <div 
               id="mobile-bottom-nav"
-              className={`h-16 px-6 flex items-center justify-around z-20 shrink-0 border-t transition-colors duration-300 ${
+              className={`h-16 px-4 flex items-center justify-around z-20 shrink-0 border-t transition-colors duration-300 ${
                 isDark
                   ? 'bg-black border-[#1E1E24]'
                   : 'bg-white border-[#E2E8F0] shadow-sm'
@@ -230,7 +243,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
                 }}
                 className={`flex flex-col items-center gap-1 transition-colors ${
                   currentTab === 'vault'
-                    ? 'text-[#0066FF]'
+                    ? 'text-[#0066FF] font-bold'
                     : isDark
                     ? 'text-[#5A5A62] hover:text-[#8E8E93]'
                     : 'text-[#94A3B8] hover:text-[#64748B]'
@@ -244,7 +257,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
                 <span className="text-[10px] font-semibold">Bóveda</span>
               </button>
 
-              {/* Tab 2: Próximamente */}
+              {/* Tab 2: Membresía */}
               <button
                 id="nav-tab-membership"
                 onClick={() => {
@@ -253,17 +266,41 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
                 }}
                 className={`flex flex-col items-center gap-1 transition-colors ${
                   currentTab === 'membership'
-                    ? 'text-[#0066FF]'
+                    ? 'text-[#0066FF] font-bold'
                     : isDark
                     ? 'text-[#5A5A62] hover:text-[#8E8E93]'
                     : 'text-[#94A3B8] hover:text-[#64748B]'
                 }`}
               >
-                <Clock className="w-5 h-5" />
-                <span className="text-[10px] font-semibold">Próximamente</span>
+                <Crown className="w-5 h-5" />
+                <span className="text-[10px] font-semibold">Membresía</span>
               </button>
 
-              {/* Tab 3: Perfil */}
+              {/* Tab 3: Subir Comprobante */}
+              <button
+                id="nav-tab-receipts"
+                onClick={() => {
+                  setSelectedItem(null);
+                  setCurrentTab('receipts');
+                }}
+                className={`flex flex-col items-center gap-1 transition-colors relative ${
+                  currentTab === 'receipts'
+                    ? 'text-[#0066FF] font-black'
+                    : isDark
+                    ? 'text-[#5A5A62] hover:text-[#8E8E93]'
+                    : 'text-[#94A3B8] hover:text-[#64748B]'
+                }`}
+              >
+                <div className="relative">
+                  <FileText className="w-5 h-5" />
+                  {currentTab !== 'receipts' && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400" />
+                  )}
+                </div>
+                <span className="text-[10px] font-semibold">Comprobantes</span>
+              </button>
+
+              {/* Tab 4: Perfil */}
               <button
                 id="nav-tab-profile"
                 onClick={() => {
@@ -272,7 +309,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
                 }}
                 className={`flex flex-col items-center gap-1 transition-colors ${
                   currentTab === 'profile'
-                    ? 'text-[#0066FF]'
+                    ? 'text-[#0066FF] font-bold'
                     : isDark
                     ? 'text-[#5A5A62] hover:text-[#8E8E93]'
                     : 'text-[#94A3B8] hover:text-[#64748B]'

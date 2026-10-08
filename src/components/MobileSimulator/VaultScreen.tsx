@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  FolderClosed, Lock, Search, Heart, MessageSquare, 
+  FolderClosed, Lock, Heart, MessageSquare, 
   Plus, ChevronRight, LayoutGrid, List as ListIcon, HardDrive, Trash2, 
-  AlertTriangle, FolderPlus, Edit3, ArrowLeft, Layers, Sparkles
+  AlertTriangle, FolderPlus, Edit3, ArrowLeft, Layers, Sparkles,
+  Crown, FileText
 } from 'lucide-react';
 import { VaultItem, VaultList, UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
@@ -20,6 +21,12 @@ interface VaultScreenProps {
   onOpenAdminEditList?: (list: VaultList) => void;
   onDeleteList?: (listId: string) => Promise<any> | void;
   onDeleteItem?: (itemId: string) => void;
+  onNavigateToReceipts?: () => void;
+  onNavigateToMembership?: () => void;
+  activeTabMode?: 'items' | 'collections';
+  onTabModeChange?: (mode: 'items' | 'collections') => void;
+  selectedListId?: string | null;
+  onSelectedListChange?: (listId: string | null) => void;
 }
 
 export const VaultScreen: React.FC<VaultScreenProps> = ({
@@ -32,26 +39,37 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   onOpenAdminEditList,
   onDeleteList,
   onDeleteItem,
+  onNavigateToReceipts,
+  onNavigateToMembership,
+  activeTabMode: externalActiveTabMode,
+  onTabModeChange,
+  selectedListId: externalSelectedListId,
+  onSelectedListChange,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [isGridView, setIsGridView] = useState(false);
-  const [selectedListId, setSelectedListId] = useState<string | null>(null);
-  const [activeTabMode, setActiveTabMode] = useState<'items' | 'collections'>(
+  const [internalSelectedListId, setInternalSelectedListId] = useState<string | null>(null);
+  const [internalActiveTabMode, setInternalActiveTabMode] = useState<'items' | 'collections'>(
     isAdmin ? 'items' : 'collections'
   );
+
+  const activeTabMode = externalActiveTabMode !== undefined ? externalActiveTabMode : internalActiveTabMode;
+  const setActiveTabMode = (mode: 'items' | 'collections') => {
+    setInternalActiveTabMode(mode);
+    onTabModeChange?.(mode);
+  };
+
+  const selectedListId = externalSelectedListId !== undefined ? externalSelectedListId : internalSelectedListId;
+  const setSelectedListId = (id: string | null) => {
+    setInternalSelectedListId(id);
+    onSelectedListChange?.(id);
+  };
   const [itemToDelete, setItemToDelete] = useState<VaultItem | null>(null);
   const [listToDelete, setListToDelete] = useState<VaultList | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeletingList, setIsDeletingList] = useState(false);
   const { isDark } = useTheme();
-
-  // Enforce non-admins to always stay in collections view when no list is selected
-  useEffect(() => {
-    if (!isAdmin && !selectedListId) {
-      setActiveTabMode('collections');
-    }
-  }, [isAdmin, selectedListId]);
 
   // Active selected list object
   const activeList = selectedListId ? lists.find((l) => l.id === selectedListId) || null : null;
@@ -120,9 +138,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
 
   const handleBackToCollections = () => {
     setSelectedListId(null);
-    if (!isAdmin) {
-      setActiveTabMode('collections');
-    }
+    setActiveTabMode('collections');
   };
 
   return (
@@ -215,141 +231,6 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             )}
           </div>
         </div>
-
-        {/* View Mode Switcher: ONLY VISIBLE FOR ADMINS */}
-        {isAdmin && (
-          <div className="flex items-center justify-between gap-2 mb-2.5">
-            <div className="flex items-center p-1 rounded-xl bg-black/5 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-semibold">
-              <button
-                onClick={() => {
-                  setActiveTabMode('items');
-                }}
-                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                  activeTabMode === 'items'
-                    ? 'bg-[#0066FF] text-white shadow-xs'
-                    : isDark
-                    ? 'text-[#8E8E93] hover:text-white'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                Publicaciones ({items.length})
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTabMode('collections');
-                  setSelectedListId(null);
-                }}
-                className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                  activeTabMode === 'collections'
-                    ? 'bg-[#0066FF] text-white shadow-xs'
-                    : isDark
-                    ? 'text-[#8E8E93] hover:text-white'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                <Layers className="w-3 h-3" />
-                <span>Colecciones ({lists.length})</span>
-              </button>
-            </div>
-
-            {/* Grid/List switch in admin items mode */}
-            {activeTabMode === 'items' && (
-              <motion.button
-                onClick={() => setIsGridView(!isGridView)}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
-                  isDark
-                    ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
-                    : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
-                }`}
-                title="Cambiar vista Lista/Cuadrícula"
-              >
-                {isGridView ? <ListIcon className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-              </motion.button>
-            )}
-          </div>
-        )}
-
-        {/* ADMIN ONLY: LISTS FILTER CAROUSEL / PILL BAR (When in items view) */}
-        {isAdmin && activeTabMode === 'items' && (
-          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1.5 pt-0.5 -mx-1 px-1">
-            {/* All Publications pill */}
-            <button
-              id="filter-all-items-btn"
-              onClick={() => setSelectedListId(null)}
-              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
-                selectedListId === null
-                  ? 'bg-[#0066FF] border-[#0066FF] text-white shadow-sm shadow-[#0066FF]/30'
-                  : isDark
-                  ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white hover:border-[#2A2A34]'
-                  : 'bg-white border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] shadow-2xs'
-              }`}
-            >
-              <FolderClosed className="w-3.5 h-3.5" />
-              <span>Todas</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                selectedListId === null ? 'bg-white/20 text-white' : 'bg-black/10 dark:bg-white/10'
-              }`}>
-                {items.length}
-              </span>
-            </button>
-
-            {/* Admin Created Lists */}
-            {lists.map((list) => {
-              const isSelected = selectedListId === list.id;
-              const ListIconComp = getListIcon(list.icon);
-              const listCount = items.filter((it) => 
-                (Array.isArray(list.itemIds) && list.itemIds.includes(it.id)) ||
-                (Array.isArray(it.listIds) && it.listIds.includes(list.id))
-              ).length;
-
-              return (
-                <button
-                  key={list.id}
-                  id={`filter-list-btn-${list.id}`}
-                  onClick={() => setSelectedListId(isSelected ? null : list.id)}
-                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
-                    isSelected
-                      ? 'text-white border-transparent shadow-sm'
-                      : isDark
-                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white hover:border-[#2A2A34]'
-                      : 'bg-white border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] shadow-2xs'
-                  }`}
-                  style={isSelected ? { backgroundColor: list.color || '#0066FF' } : {}}
-                >
-                  <ListIconComp
-                    className="w-3.5 h-3.5"
-                    style={{ color: isSelected ? '#FFFFFF' : list.color || '#0066FF' }}
-                  />
-                  <span>{list.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                    isSelected ? 'bg-white/25 text-white' : 'bg-black/10 dark:bg-white/10'
-                  }`}>
-                    {listCount}
-                  </span>
-                </button>
-              );
-            })}
-
-            {/* Admin Quick Add List in bar */}
-            {onOpenAdminCreateList && (
-              <button
-                onClick={onOpenAdminCreateList}
-                className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-dashed transition-all cursor-pointer ${
-                  isDark
-                    ? 'border-[#2A2A34] text-[#8E8E93] hover:text-white hover:border-[#0066FF]'
-                    : 'border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A] hover:border-[#0066FF]'
-                }`}
-                title="Crear nueva colección de publicaciones"
-              >
-                <Plus className="w-3 h-3 text-[#0066FF]" />
-                <span>Nueva Colección</span>
-              </button>
-            )}
-          </div>
-        )}
 
         {/* ACTIVE LIST / COLLECTION BANNER (When viewing inside a specific list) */}
         {activeTabMode === 'items' && activeList && (
@@ -451,32 +332,6 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
           </motion.div>
         )}
 
-        {/* Search input */}
-        <div className="relative mt-2">
-          <Search
-            className={`w-4 h-4 absolute left-3.5 top-2.5 transition-colors ${
-              isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
-            }`}
-          />
-          <input
-            id="vault-search-input"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={
-              activeTabMode === 'collections'
-                ? 'Buscar entre las colecciones...'
-                : activeList
-                ? `Buscar dentro de "${activeList.name}"...`
-                : 'Buscar en todas las publicaciones...'
-            }
-            className={`w-full rounded-xl pl-10 pr-4 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-[#0066FF]/30 focus:border-[#0066FF] border ${
-              isDark
-                ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-[#5A5A62]'
-                : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#0F172A] placeholder-[#94A3B8]'
-            }`}
-          />
-        </div>
       </div>
 
       {/* Directory Content List */}

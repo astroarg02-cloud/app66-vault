@@ -1,27 +1,155 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserProfile } from '../../types';
+import { UserProfile, VaultItem, PaymentReceipt } from '../../types';
 import { 
   ShieldCheck, LogOut, Key, User, Calendar, Database, 
-  CheckCircle2, XCircle, Moon, Sun, Palette, Shield, Sparkles, AlertCircle
+  CheckCircle2, XCircle, Moon, Sun, Palette, Shield, Sparkles, AlertCircle,
+  Edit3, Camera, Phone, Heart, FileText, Crown, Users, Check,
+  ChevronRight, ArrowRight, ExternalLink, RefreshCw, Upload, Image as ImageIcon
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 import { isAuthorizedAdminKey, ADMIN_SECURITY_KEY } from '../../data/initialVaultData';
-import { firebaseService } from '../../services/firebaseService';
+import { firebaseService, getStoredRegisteredAccounts } from '../../services/firebaseService';
+import { receiptService } from '../../services/receiptService';
+
+// Galería de avatares predeterminados para elegir
+const AVATAR_PRESETS = [
+  { id: 'admin-astro', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80', label: 'Astro' },
+  { id: 'vip-alex', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80', label: 'Alex' },
+  { id: 'user-neo', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80', label: 'Neo' },
+  { id: 'user-luna', url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80', label: 'Luna' },
+  { id: 'user-cyber', url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80', label: 'Cyber' },
+  { id: 'user-maya', url: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80', label: 'Maya' },
+  { id: 'bot-blue', url: 'https://api.dicebear.com/7.x/bottts/svg?seed=BlueBot', label: 'Bot Blue' },
+  { id: 'bot-gold', url: 'https://api.dicebear.com/7.x/bottts/svg?seed=GoldenVIP', label: 'Bot VIP' },
+];
 
 interface ProfileScreenProps {
   currentUser: UserProfile;
   onLogout: () => void;
   onUpdateUser?: (updated: UserProfile) => void;
+  items?: VaultItem[];
+  onSelectItem?: (item: VaultItem) => void;
+  onNavigateToMembership?: () => void;
+  onNavigateToReceipts?: () => void;
+  onNavigateToVault?: () => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLogout, onUpdateUser }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ 
+  currentUser, 
+  onLogout, 
+  onUpdateUser,
+  items = [],
+  onSelectItem,
+  onNavigateToMembership,
+  onNavigateToReceipts,
+  onNavigateToVault,
+}) => {
   const { setTheme, isDark } = useTheme();
+  
+  // Tabs internas del perfil
+  const [activeProfileTab, setActiveProfileTab] = useState<'info' | 'activity' | 'security'>('info');
+
+  // Modal de Edición de Perfil
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState(currentUser.displayName || '');
+  const [editBio, setEditBio] = useState(currentUser.bio || '');
+  const [editPhone, setEditPhone] = useState(currentUser.phone || '');
+  const [editCustomStatus, setEditCustomStatus] = useState(currentUser.customStatus || '');
+  const [editAvatarUrl, setEditAvatarUrl] = useState(currentUser.avatarUrl || '');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [saveToast, setSaveToast] = useState<string | null>(null);
+
+  // Activación con Clave de Administrador
   const [adminKeyInput, setAdminKeyInput] = useState('');
   const [keyError, setKeyError] = useState<string | null>(null);
   const [keySuccess, setKeySuccess] = useState<string | null>(null);
 
+  // Comprobantes del usuario
+  const [userReceipts, setUserReceipts] = useState<PaymentReceipt[]>(() => {
+    return receiptService.getReceiptsByUser(currentUser.uid);
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sincronizar comprobantes cuando cambien
+  useEffect(() => {
+    const handleReceiptsUpdate = () => {
+      setUserReceipts(receiptService.getReceiptsByUser(currentUser.uid));
+    };
+    window.addEventListener('vault_receipts_changed', handleReceiptsUpdate);
+    return () => window.removeEventListener('vault_receipts_changed', handleReceiptsUpdate);
+  }, [currentUser.uid]);
+
+  // Publicaciones favoritas (guardadas por este usuario)
+  const userFavoriteItems = items.filter((item) => 
+    Array.isArray(item.likedBy) && item.likedBy.includes(currentUser.uid)
+  );
+
+  // Manejar apertura del modal de edición
+  const handleOpenEdit = () => {
+    setEditDisplayName(currentUser.displayName || '');
+    setEditBio(currentUser.bio || '');
+    setEditPhone(currentUser.phone || '');
+    setEditCustomStatus(currentUser.customStatus || '');
+    setEditAvatarUrl(currentUser.avatarUrl || '');
+    setShowEditModal(true);
+  };
+
+  // Subir imagen personalizada para avatar
+  const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('La imagen no debe superar los 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setEditAvatarUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Guardar cambios en el perfil individual
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editDisplayName.trim()) return;
+
+    setIsSavingProfile(true);
+
+    const updatedProfile: UserProfile = {
+      ...currentUser,
+      displayName: editDisplayName.trim(),
+      avatarUrl: editAvatarUrl || currentUser.avatarUrl,
+      bio: editBio.trim(),
+      phone: editPhone.trim(),
+      customStatus: editCustomStatus.trim(),
+    };
+
+    try {
+      await firebaseService.updateUserProfile(updatedProfile);
+      if (onUpdateUser) {
+        onUpdateUser(updatedProfile);
+      }
+      setShowEditModal(false);
+      setSaveToast('¡Tu perfil ha sido actualizado y guardado exitosamente!');
+      confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+      setTimeout(() => setSaveToast(null), 4000);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  // Elevar a Admin con Key 360
   const handleElevateToAdmin = () => {
     setKeyError(null);
     setKeySuccess(null);
@@ -37,7 +165,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
       displayName: currentUser.displayName.includes('Admin') ? currentUser.displayName : `${currentUser.displayName} (Admin)`,
     };
 
-    firebaseService.saveSession(elevatedUser);
+    firebaseService.updateUserProfile(elevatedUser);
     if (onUpdateUser) {
       onUpdateUser(elevatedUser);
     }
@@ -51,87 +179,119 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className={`h-full flex flex-col overflow-y-auto custom-scrollbar p-5 space-y-5 transition-colors duration-300 ${
+      className={`h-full flex flex-col overflow-y-auto custom-scrollbar p-3.5 sm:p-5 space-y-4 transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {saveToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#0066FF] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-semibold"
+          >
+            <CheckCircle2 className="w-4 h-4 text-white" />
+            <span>{saveToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
-      <div>
-        <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
-          CREDENCIALES & AJUSTES
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
+            PERFIL PERSONAL & AJUSTES
+          </div>
+          <h2 className={`text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+            Mi Cuenta
+          </h2>
         </div>
-        <h2
-          className={`text-xl font-bold tracking-tight ${
-            isDark ? 'text-white' : 'text-[#0F172A]'
-          }`}
+
+        <motion.button
+          onClick={handleOpenEdit}
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.96 }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold shadow-md shadow-[#0066FF]/20 cursor-pointer transition-all"
         >
-          Perfil de Cuenta
-        </h2>
+          <Edit3 className="w-3.5 h-3.5" />
+          <span>Editar Perfil</span>
+        </motion.button>
       </div>
 
-      {/* User Card */}
+      {/* Tarjeta Principal de Perfil Único del Usuario */}
       <motion.div
-        whileHover={{ scale: 1.01 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-        className={`p-4 rounded-2xl border transition-all ${
+        className={`p-4 sm:p-5 rounded-2xl border transition-all relative overflow-hidden ${
           currentUser.role === 'admin'
             ? isDark
-              ? 'bg-[#0066FF]/10 border-[#0066FF]/40 shadow-lg shadow-[#0066FF]/10'
-              : 'bg-blue-50 border-blue-200 shadow-sm'
+              ? 'bg-gradient-to-br from-[#0066FF]/15 via-[#0A0A0C] to-black border-[#0066FF]/40 shadow-lg shadow-[#0066FF]/10'
+              : 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-sm'
             : isDark
-            ? 'bg-[#0A0A0C] border-[#1E1E24]'
+            ? 'bg-gradient-to-br from-[#0A0A0C] to-[#121216] border-[#1E1E24]'
             : 'bg-white border-[#E2E8F0] shadow-sm'
         }`}
       >
-        <div className="flex items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          {/* Avatar con botón de edición rápida */}
+          <div className="relative shrink-0 self-start sm:self-center">
             {currentUser.avatarUrl ? (
               <img
                 src={currentUser.avatarUrl}
                 alt={currentUser.displayName}
-                className="w-12 h-12 rounded-full object-cover border-2 border-[#0066FF]"
+                className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl object-cover border-2 border-[#0066FF] shadow-md shadow-[#0066FF]/20"
               />
             ) : (
-              <div className="w-12 h-12 rounded-full bg-[#0066FF]/20 flex items-center justify-center text-lg font-bold text-[#0066FF]">
-                {currentUser.displayName.charAt(0).toUpperCase()}
+              <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl bg-gradient-to-br from-[#0066FF] to-blue-700 flex items-center justify-center text-2xl font-black text-white shadow-md shadow-[#0066FF]/20">
+                {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
               </div>
             )}
-            <div className="absolute -bottom-1 -right-1">
-              {currentUser.role === 'admin' ? (
-                <div className="bg-[#0066FF] rounded-full p-0.5 shadow-md">
-                  <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                </div>
-              ) : (
-                <div className="bg-emerald-500 rounded-full p-0.5 shadow-md">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                </div>
-              )}
-            </div>
+            
+            <button
+              onClick={handleOpenEdit}
+              title="Cambiar foto de perfil"
+              className="absolute -bottom-1 -right-1 bg-[#0066FF] hover:bg-[#0052FF] text-white p-1 rounded-full shadow-lg border-2 border-black cursor-pointer transition-transform hover:scale-110"
+            >
+              <Camera className="w-3 h-3" />
+            </button>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`text-sm font-bold truncate ${
-                  isDark ? 'text-white' : 'text-[#0F172A]'
-                }`}
-              >
+          {/* Información del usuario */}
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-base sm:text-lg font-black truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
                 {currentUser.displayName}
               </span>
-              {currentUser.role === 'admin' && <VerifiedBadge className="w-3.5 h-3.5 shrink-0" />}
+              {currentUser.role === 'admin' ? (
+                <VerifiedBadge className="w-4 h-4 shrink-0" />
+              ) : (
+                <span className="bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Verificado
+                </span>
+              )}
             </div>
 
-            <span
-              className={`text-xs block truncate ${
-                isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'
-              }`}
-            >
+            <p className={`text-xs truncate ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
               {currentUser.email}
-            </span>
+            </p>
 
-            <div className="flex items-center gap-2 mt-1">
+            {/* Estado personalizado / Biografía */}
+            {currentUser.customStatus && (
+              <p className={`text-xs italic font-medium ${isDark ? 'text-blue-300' : 'text-[#0066FF]'}`}>
+                "{currentUser.customStatus}"
+              </p>
+            )}
+
+            {currentUser.bio && (
+              <p className={`text-xs line-clamp-2 ${isDark ? 'text-[#A1A1AA]' : 'text-[#475569]'}`}>
+                {currentUser.bio}
+              </p>
+            )}
+
+            {/* Badges y Plan */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1">
               <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                   currentUser.role === 'admin'
                     ? 'bg-[#0066FF] text-white shadow-sm'
                     : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
@@ -140,241 +300,589 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
                 {currentUser.role === 'admin' ? 'ADMINISTRADOR ROOT' : 'MIEMBRO VIP'}
               </span>
 
-              <span className={`text-[10px] ${isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'}`}>
-                {currentUser.tier}
-              </span>
+              {currentUser.membershipPlan && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-blue-500/15 text-[#0066FF] border border-[#0066FF]/30 flex items-center gap-1">
+                  <Crown className="w-3 h-3" />
+                  {currentUser.membershipPlan === 'annual' ? 'Plan Anual ($12/año)' : 'Plan Mensual ($1/mes)'}
+                </span>
+              )}
+
+              {currentUser.phone && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                  isDark ? 'bg-white/5 border-white/10 text-[#8E8E93]' : 'bg-slate-100 border-slate-200 text-slate-600'
+                }`}>
+                  <Phone className="w-2.5 h-2.5 text-emerald-500" />
+                  {currentUser.phone}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Barra de Estadísticas Propias de Este Usuario */}
+        <div className={`grid grid-cols-3 gap-2 mt-4 pt-3 border-t text-center ${
+          isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'
+        }`}>
+          <div 
+            onClick={() => setActiveProfileTab('activity')}
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
+              isDark ? 'hover:bg-white/5' : 'hover:bg-slate-100'
+            }`}
+          >
+            <div className="text-base sm:text-lg font-black text-[#0066FF]">
+              {userFavoriteItems.length}
+            </div>
+            <div className={`text-[10px] font-semibold flex items-center justify-center gap-1 ${
+              isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'
+            }`}>
+              <Heart className="w-3 h-3 text-red-400" /> Favoritos
+            </div>
+          </div>
+
+          <div 
+            onClick={() => setActiveProfileTab('activity')}
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
+              isDark ? 'hover:bg-white/5' : 'hover:bg-slate-100'
+            }`}
+          >
+            <div className="text-base sm:text-lg font-black text-emerald-500">
+              {userReceipts.length}
+            </div>
+            <div className={`text-[10px] font-semibold flex items-center justify-center gap-1 ${
+              isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'
+            }`}>
+              <FileText className="w-3 h-3 text-emerald-500" /> Comprobantes
+            </div>
+          </div>
+
+          <div 
+            onClick={onNavigateToMembership}
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
+              isDark ? 'hover:bg-white/5' : 'hover:bg-slate-100'
+            }`}
+          >
+            <div className="text-base sm:text-lg font-black text-amber-500">
+              {currentUser.role === 'admin' ? 'Ilimitado' : currentUser.membershipPlan ? 'VIP Activo' : 'Básico'}
+            </div>
+            <div className={`text-[10px] font-semibold flex items-center justify-center gap-1 ${
+              isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'
+            }`}>
+              <Crown className="w-3 h-3 text-amber-500" /> Membresía
             </div>
           </div>
         </div>
       </motion.div>
 
-      {/* App Theme Switcher Section (Dark / Light) */}
-      <div
-        className={`p-4 rounded-2xl border transition-colors ${
-          isDark
-            ? 'bg-[#0A0A0C] border-[#1E1E24]'
-            : 'bg-white border-[#E2E8F0] shadow-sm'
-        }`}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
-              <Palette className="w-4 h-4" />
-            </div>
-            <div>
-              <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                Tema de Visualización
-              </span>
-              <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                {isDark ? 'Modo Oscuro (#000000)' : 'Modo Claro'}
-              </p>
-            </div>
-          </div>
-
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0066FF]/15 text-[#0066FF]">
-            {isDark ? 'Oscuro' : 'Claro'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <motion.button
-            id="theme-dark-select-btn"
-            onClick={() => setTheme('dark')}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer ${
-              isDark
-                ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
-                : 'bg-[#F1F5F9] text-[#64748B] border-[#E2E8F0] hover:text-[#0F172A]'
-            }`}
-          >
-            <Moon className="w-3.5 h-3.5" />
-            <span>Modo Oscuro</span>
-          </motion.button>
-
-          <motion.button
-            id="theme-light-select-btn"
-            onClick={() => setTheme('light')}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer ${
-              !isDark
-                ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
-                : 'bg-[#121216] text-[#8E8E93] border-[#1E1E24] hover:text-white'
-            }`}
-          >
-            <Sun className="w-3.5 h-3.5" />
-            <span>Modo Claro</span>
-          </motion.button>
-        </div>
-      </div>
-
-      {/* Role-Based Permissions Matrix */}
-      <div className="space-y-2">
-        <div className={`text-[11px] font-bold tracking-wider uppercase ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-          Matriz de Permisos (RBAC)
-        </div>
-        <div
-          className={`border rounded-xl p-3 text-xs space-y-2.5 transition-colors ${
-            isDark
-              ? 'bg-[#0A0A0C] border-[#1E1E24]'
-              : 'bg-white border-[#E2E8F0] shadow-sm'
+      {/* Tabs de Navegación del Perfil */}
+      <div className={`flex items-center gap-1 p-1 rounded-2xl border ${
+        isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'
+      }`}>
+        <button
+          onClick={() => setActiveProfileTab('info')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeProfileTab === 'info'
+              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/20'
+              : isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'
           }`}
         >
-          <div className={`flex items-center justify-between pb-2 border-b ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
-            <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Subir material / Publicar</span>
-            {currentUser.role === 'admin' ? (
-              <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Exclusivo Admin
-              </span>
-            ) : (
-              <span className="text-red-500 font-bold flex items-center gap-1 text-[11px]">
-                <XCircle className="w-3.5 h-3.5" /> Bloqueado a usuarios
-              </span>
-            )}
-          </div>
+          <User className="w-3.5 h-3.5" />
+          <span>Información</span>
+        </button>
 
-          <div className={`flex items-center justify-between pb-2 border-b ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
-            <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Descargar archivos completos</span>
-            <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Permitido
-            </span>
-          </div>
-
-          <div className={`flex items-center justify-between pb-2 border-b ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
-            <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Dar Me Gusta a publicaciones</span>
-            <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Permitido
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Comentar en Foro Privado</span>
-            <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Permitido
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Admin Key Activation for full upload access */}
-      {currentUser.role !== 'admin' && (
-        <div
-          className={`p-4 rounded-2xl border transition-colors ${
-            isDark
-              ? 'bg-[#0A0A0C] border-[#1E1E24]'
-              : 'bg-white border-[#E2E8F0] shadow-sm'
+        <button
+          onClick={() => setActiveProfileTab('activity')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeProfileTab === 'activity'
+              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/20'
+              : isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'
           }`}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-lg bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
-              <Key className="w-4 h-4" />
+          <Heart className="w-3.5 h-3.5" />
+          <span>Mis Actividades</span>
+        </button>
+
+        <button
+          onClick={() => setActiveProfileTab('security')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeProfileTab === 'security'
+              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/20'
+              : isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'
+          }`}
+        >
+          <Shield className="w-3.5 h-3.5" />
+          <span>Ajustes</span>
+        </button>
+      </div>
+
+      {/* CONTENIDO DE CADA TAB */}
+
+      {/* TAB 1: INFORMACIÓN DETALLADA */}
+      {activeProfileTab === 'info' && (
+        <div className="space-y-3">
+          {/* Tarjeta de Membresía Actual */}
+          <div className={`p-4 rounded-2xl border transition-colors ${
+            isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+          }`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-500">
+                  <Crown className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    Estado de la Membresía
+                  </h4>
+                  <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    {currentUser.role === 'admin'
+                      ? 'Acceso Total Ilimitado (Administrador ROOT)'
+                      : currentUser.membershipPlan
+                      ? `Suscripción Activa (${currentUser.membershipPlan === 'annual' ? 'Plan Anual $12' : 'Plan Mensual $1'})`
+                      : 'Sin membresía VIP activa'}
+                  </p>
+                </div>
+              </div>
+
+              {onNavigateToMembership && (
+                <button
+                  onClick={onNavigateToMembership}
+                  className="px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-all"
+                >
+                  <span>{currentUser.membershipPlan ? 'Ver Plan' : 'Adquirir VIP'}</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-            <div>
-              <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                Activar Acceso Administrador ROOT
-              </span>
-              <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                Ingresa la clave de seguridad maestra (360) para desbloquear la subida de publicaciones
-              </p>
-            </div>
+
+            {currentUser.membershipExpiresAt && (
+              <div className={`p-2.5 rounded-xl flex items-center justify-between text-xs ${
+                isDark ? 'bg-[#121216]' : 'bg-slate-50'
+              }`}>
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha de Renovación:</span>
+                <span className="font-bold text-[#0066FF]">
+                  {new Date(currentUser.membershipExpiresAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+            )}
           </div>
 
-          <div className="flex gap-2 mt-3">
-            <input
-              type="password"
-              value={adminKeyInput}
-              onChange={(e) => setAdminKeyInput(e.target.value)}
-              placeholder="Ingresa clave 360"
-              className={`flex-1 rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] ${
-                isDark
-                  ? 'bg-[#121216] border-[#1E1E24] text-white'
-                  : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
-              }`}
-            />
-            <motion.button
-              onClick={handleElevateToAdmin}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/20 cursor-pointer"
-            >
-              Activar
-            </motion.button>
+          {/* Tarjeta de Biografía & Datos de Contacto */}
+          <div className={`p-4 rounded-2xl border transition-colors space-y-3 ${
+            isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+          }`}>
+            <div className="flex items-center justify-between">
+              <h4 className={`text-xs font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                <User className="w-3.5 h-3.5 text-[#0066FF]" />
+                <span>Sobre mí & Contacto</span>
+              </h4>
+              <button
+                onClick={handleOpenEdit}
+                className="text-[11px] font-bold text-[#0066FF] hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <Edit3 className="w-3 h-3" /> Editar
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className={`p-2.5 rounded-xl ${isDark ? 'bg-[#121216]' : 'bg-slate-50'}`}>
+                <div className={`text-[10px] font-semibold mb-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  Biografía Personal:
+                </div>
+                <div className={isDark ? 'text-white' : 'text-[#0F172A]'}>
+                  {currentUser.bio || 'Sin biografía añadida todavía. Haz clic en "Editar Perfil" para presentarte ante la comunidad.'}
+                </div>
+              </div>
+
+              <div className={`p-2.5 rounded-xl flex items-center justify-between ${isDark ? 'bg-[#121216]' : 'bg-slate-50'}`}>
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>WhatsApp / Teléfono:</span>
+                <span className="font-semibold text-emerald-500">
+                  {currentUser.phone || 'No configurado'}
+                </span>
+              </div>
+
+              <div className={`p-2.5 rounded-xl flex items-center justify-between ${isDark ? 'bg-[#121216]' : 'bg-slate-50'}`}>
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha de Registro:</span>
+                <span className={isDark ? 'text-white' : 'text-[#0F172A]'}>
+                  {currentUser.joinedAt}
+                </span>
+              </div>
+            </div>
           </div>
-
-          <AnimatePresence>
-            {keyError && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="flex items-center gap-1.5 text-[11px] text-red-400 mt-2"
-              >
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{keyError}</span>
-              </motion.div>
-            )}
-
-            {keySuccess && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="flex items-center gap-1.5 text-[11px] text-emerald-400 mt-2"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span>{keySuccess}</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       )}
 
-      {/* Security & Access Info */}
-      <div className="space-y-2">
-        <div className={`text-[11px] font-bold tracking-wider uppercase ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-          Metadatos de Conexión
+      {/* TAB 2: ACTIVIDAD PERSONAL (Favoritos y Comprobantes) */}
+      {activeProfileTab === 'activity' && (
+        <div className="space-y-4">
+          {/* Publicaciones que este usuario ha marcado como Me Gusta */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className={`text-xs font-bold flex items-center gap-1.5 ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                <Heart className="w-3.5 h-3.5 text-red-500" />
+                <span>Mis Publicaciones Favoritas ({userFavoriteItems.length})</span>
+              </h4>
+              {onNavigateToVault && (
+                <button
+                  onClick={onNavigateToVault}
+                  className="text-[11px] font-bold text-[#0066FF] hover:underline cursor-pointer"
+                >
+                  Explorar Bóveda
+                </button>
+              )}
+            </div>
+
+            {userFavoriteItems.length === 0 ? (
+              <div className={`p-6 rounded-2xl border text-center ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+              }`}>
+                <Heart className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
+                <p className={`text-xs font-medium ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  Aún no has guardado ninguna publicación en tus favoritos.
+                </p>
+                {onNavigateToVault && (
+                  <button
+                    onClick={onNavigateToVault}
+                    className="mt-3 px-3.5 py-1.5 rounded-xl bg-[#0066FF] text-white text-xs font-bold cursor-pointer"
+                  >
+                    Ver Publicaciones
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {userFavoriteItems.map((item) => (
+                  <motion.div
+                    key={item.id}
+                    whileHover={{ scale: 1.01 }}
+                    onClick={() => onSelectItem && onSelectItem(item)}
+                    className={`p-2.5 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                      isDark ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/50' : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]'
+                    }`}
+                  >
+                    <img
+                      src={item.coverImage}
+                      alt={item.title}
+                      className="w-12 h-12 rounded-lg object-cover shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h5 className={`text-xs font-bold truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                        {item.title}
+                      </h5>
+                      <span className="text-[10px] text-emerald-500 font-semibold block uppercase">
+                        {item.category}
+                      </span>
+                    </div>
+                    <Heart className="w-4 h-4 text-red-500 fill-red-500 shrink-0" />
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Mis Comprobantes Subidos */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className={`text-xs font-bold flex items-center gap-1.5 ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Mis Comprobantes de Pago ({userReceipts.length})</span>
+              </h4>
+              {onNavigateToReceipts && (
+                <button
+                  onClick={onNavigateToReceipts}
+                  className="text-[11px] font-bold text-emerald-500 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Upload className="w-3 h-3" /> Subir Comprobante
+                </button>
+              )}
+            </div>
+
+            {userReceipts.length === 0 ? (
+              <div className={`p-6 rounded-2xl border text-center ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+              }`}>
+                <FileText className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
+                <p className={`text-xs font-medium ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  No has subido ningún comprobante con esta cuenta todavía.
+                </p>
+                {onNavigateToReceipts && (
+                  <button
+                    onClick={onNavigateToReceipts}
+                    className="mt-3 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Subir mi primer comprobante
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {userReceipts.map((rec) => (
+                  <div
+                    key={rec.id}
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                      isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                          {rec.plan === 'annual' ? 'Plan Anual' : 'Plan Mensual'} ({rec.amount}$ {rec.currency})
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          rec.status === 'approved'
+                            ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                            : rec.status === 'rejected'
+                            ? 'bg-red-500/15 text-red-500 border border-red-500/30'
+                            : 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                        }`}>
+                          {rec.status === 'approved' ? '✓ Aprobado' : rec.status === 'rejected' ? '✗ Rechazado' : '⏳ En Revisión'}
+                        </span>
+                      </div>
+                      <p className={`text-[10px] mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                        Ref: {rec.referenceCode} • {new Date(rec.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+
+                    {onNavigateToReceipts && (
+                      <button
+                        onClick={onNavigateToReceipts}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-bold cursor-pointer"
+                      >
+                        Ver
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+      )}
 
-        <div
-          className={`border rounded-xl divide-y text-xs transition-colors ${
-            isDark
-              ? 'bg-[#0A0A0C] border-[#1E1E24] divide-[#1E1E24]'
-              : 'bg-white border-[#E2E8F0] divide-[#E2E8F0] shadow-sm'
-          }`}
-        >
-          <div className="p-3 flex items-center justify-between">
-            <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-              <Key className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>ID de Usuario</span>
-            </span>
-            <span className={`font-mono text-[11px] truncate max-w-[140px] ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-              {currentUser.uid}
-            </span>
+      {/* TAB 3: AJUSTES & SISTEMA */}
+      {activeProfileTab === 'security' && (
+        <div className="space-y-4">
+          {/* App Theme Switcher Section (Dark / Light) */}
+          <div
+            className={`p-4 rounded-2xl border transition-colors ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
+                  <Palette className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    Tema de Visualización
+                  </span>
+                  <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    {isDark ? 'Modo Oscuro (#000000)' : 'Modo Claro'}
+                  </p>
+                </div>
+              </div>
+
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0066FF]/15 text-[#0066FF]">
+                {isDark ? 'Oscuro' : 'Claro'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <motion.button
+                id="theme-dark-select-btn"
+                onClick={() => setTheme('dark')}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer ${
+                  isDark
+                    ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
+                    : 'bg-[#F1F5F9] text-[#64748B] border-[#E2E8F0] hover:text-[#0F172A]'
+                }`}
+              >
+                <Moon className="w-3.5 h-3.5" />
+                <span>Modo Oscuro</span>
+              </motion.button>
+
+              <motion.button
+                id="theme-light-select-btn"
+                onClick={() => setTheme('light')}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border cursor-pointer ${
+                  !isDark
+                    ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-md shadow-[#0066FF]/30'
+                    : 'bg-[#121216] text-[#8E8E93] border-[#1E1E24] hover:text-white'
+                }`}
+              >
+                <Sun className="w-3.5 h-3.5" />
+                <span>Modo Claro</span>
+              </motion.button>
+            </div>
           </div>
 
-          <div className="p-3 flex items-center justify-between">
-            <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-              <Calendar className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Fecha de Registro</span>
-            </span>
-            <span className={isDark ? 'text-white' : 'text-[#0F172A]'}>
-              {currentUser.joinedAt}
-            </span>
+          {/* Role-Based Permissions Matrix */}
+          <div className="space-y-2">
+            <div className={`text-[11px] font-bold tracking-wider uppercase ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+              Matriz de Permisos (RBAC)
+            </div>
+            <div
+              className={`border rounded-xl p-3 text-xs space-y-2.5 transition-colors ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+              }`}
+            >
+              <div className={`flex items-center justify-between pb-2 border-b ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Subir material / Publicar</span>
+                {currentUser.role === 'admin' ? (
+                  <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Exclusivo Admin
+                  </span>
+                ) : (
+                  <span className="text-red-500 font-bold flex items-center gap-1 text-[11px]">
+                    <XCircle className="w-3.5 h-3.5" /> Bloqueado a usuarios
+                  </span>
+                )}
+              </div>
+
+              <div className={`flex items-center justify-between pb-2 border-b ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Descargar archivos completos</span>
+                <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Permitido
+                </span>
+              </div>
+
+              <div className={`flex items-center justify-between pb-2 border-b ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Dar Me Gusta a publicaciones</span>
+                <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Permitido
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Comentar en Foro Privado</span>
+                <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Permitido
+                </span>
+              </div>
+            </div>
           </div>
 
-          <div className="p-3 flex items-center justify-between">
-            <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-              <Database className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Servidor Vault</span>
-            </span>
-            <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-              Conectado
-            </span>
+          {/* Admin Key Activation for full upload access */}
+          {currentUser.role !== 'admin' && (
+            <div
+              className={`p-4 rounded-2xl border transition-colors ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-lg bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
+                  <Key className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    Activar Acceso Administrador ROOT
+                  </span>
+                  <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    Ingresa la clave de seguridad maestra (360) para desbloquear la gestión completa
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-3">
+                <input
+                  type="password"
+                  value={adminKeyInput}
+                  onChange={(e) => setAdminKeyInput(e.target.value)}
+                  placeholder="Ingresa clave 360"
+                  className={`flex-1 rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] ${
+                    isDark
+                      ? 'bg-[#121216] border-[#1E1E24] text-white'
+                      : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
+                  }`}
+                />
+                <motion.button
+                  onClick={handleElevateToAdmin}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/20 cursor-pointer"
+                >
+                  Activar
+                </motion.button>
+              </div>
+
+              <AnimatePresence>
+                {keyError && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex items-center gap-1.5 text-[11px] text-red-400 mt-2"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{keyError}</span>
+                  </motion.div>
+                )}
+
+                {keySuccess && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex items-center gap-1.5 text-[11px] text-emerald-400 mt-2"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>{keySuccess}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* Security & Access Info */}
+          <div className="space-y-2">
+            <div className={`text-[11px] font-bold tracking-wider uppercase ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+              Metadatos de Conexión
+            </div>
+
+            <div
+              className={`border rounded-xl divide-y text-xs transition-colors ${
+                isDark
+                  ? 'bg-[#0A0A0C] border-[#1E1E24] divide-[#1E1E24]'
+                  : 'bg-white border-[#E2E8F0] divide-[#E2E8F0] shadow-sm'
+              }`}
+            >
+              <div className="p-3 flex items-center justify-between">
+                <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  <Key className="w-3.5 h-3.5 text-[#0066FF]" />
+                  <span>ID de Usuario</span>
+                </span>
+                <span className={`font-mono text-[11px] truncate max-w-[140px] ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                  {currentUser.uid}
+                </span>
+              </div>
+
+              <div className="p-3 flex items-center justify-between">
+                <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  <Calendar className="w-3.5 h-3.5 text-[#0066FF]" />
+                  <span>Fecha de Registro</span>
+                </span>
+                <span className={isDark ? 'text-white' : 'text-[#0F172A]'}>
+                  {currentUser.joinedAt}
+                </span>
+              </div>
+
+              <div className="p-3 flex items-center justify-between">
+                <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                  <Database className="w-3.5 h-3.5 text-[#0066FF]" />
+                  <span>Servidor Vault</span>
+                </span>
+                <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                  Conectado
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Logout Button */}
       <motion.button
@@ -391,6 +899,189 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ currentUser, onLog
         <LogOut className="w-4 h-4" />
         <span>Cerrar Sesión Segura</span>
       </motion.button>
+
+      {/* MODAL DE EDICIÓN DE PERFIL INDIVIDUAL */}
+      <AnimatePresence>
+        {showEditModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className={`w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar p-5 rounded-3xl border shadow-2xl ${
+                isDark ? 'bg-[#0E0E12] border-[#2A2A35] text-white' : 'bg-white border-[#E2E8F0] text-[#0F172A]'
+              }`}
+            >
+              <div className="flex items-center justify-between pb-3 border-b dark:border-white/10 border-slate-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
+                    <Edit3 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold">Editar Perfil Personal</h3>
+                    <p className="text-[10px] text-slate-400">Personaliza tus datos individuales</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="p-1 rounded-full hover:bg-white/10 text-slate-400 cursor-pointer"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveProfile} className="space-y-4 pt-4">
+                {/* Selector de Avatar */}
+                <div>
+                  <label className="block text-xs font-bold mb-2">Foto de Perfil / Avatar</label>
+                  
+                  {/* Vista previa del avatar actual */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <img
+                      src={editAvatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${currentUser.uid}`}
+                      alt="Preview"
+                      className="w-14 h-14 rounded-2xl object-cover border-2 border-[#0066FF]"
+                    />
+                    <div className="flex-1 space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-white/10 hover:bg-[#0066FF] hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Subir desde dispositivo</span>
+                      </button>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleAvatarFileUpload}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <p className="text-[10px] text-slate-400">PNG, JPG o WebP hasta 5MB</p>
+                    </div>
+                  </div>
+
+                  {/* Galería de avatares rápidos */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-semibold text-slate-400">O elige uno de la galería:</span>
+                    <div className="grid grid-cols-4 gap-2">
+                      {AVATAR_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => setEditAvatarUrl(preset.url)}
+                          className={`p-1 rounded-xl border flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                            editAvatarUrl === preset.url
+                              ? 'border-[#0066FF] bg-[#0066FF]/15 scale-105'
+                              : 'border-slate-200 dark:border-white/10 hover:border-slate-400'
+                          }`}
+                        >
+                          <img
+                            src={preset.url}
+                            alt={preset.label}
+                            className="w-8 h-8 rounded-lg object-cover"
+                          />
+                          <span className="text-[9px] font-medium truncate w-full text-center">
+                            {preset.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Nombre de Usuario */}
+                <div>
+                  <label className="block text-xs font-bold mb-1">Nombre / Alias</label>
+                  <input
+                    type="text"
+                    required
+                    value={editDisplayName}
+                    onChange={(e) => setEditDisplayName(e.target.value)}
+                    placeholder="Tu nombre público"
+                    className={`w-full rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] ${
+                      isDark ? 'bg-[#1A1A22] border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </div>
+
+                {/* Estado Personalizado */}
+                <div>
+                  <label className="block text-xs font-bold mb-1">Estado o Lema Corto</label>
+                  <input
+                    type="text"
+                    value={editCustomStatus}
+                    onChange={(e) => setEditCustomStatus(e.target.value)}
+                    placeholder="Ej: 💎 Coleccionista de recursos VIP"
+                    className={`w-full rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] ${
+                      isDark ? 'bg-[#1A1A22] border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </div>
+
+                {/* WhatsApp / Teléfono */}
+                <div>
+                  <label className="block text-xs font-bold mb-1">WhatsApp / Contacto Telefónico</label>
+                  <input
+                    type="tel"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="Ej: +54 9 11 1234-5678"
+                    className={`w-full rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] ${
+                      isDark ? 'bg-[#1A1A22] border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-0.5">Se utilizará para validar comprobantes y coordinar pagos.</p>
+                </div>
+
+                {/* Biografía */}
+                <div>
+                  <label className="block text-xs font-bold mb-1">Biografía / Sobre mí</label>
+                  <textarea
+                    rows={3}
+                    value={editBio}
+                    onChange={(e) => setEditBio(e.target.value)}
+                    placeholder="Cuéntanos un poco sobre ti, qué buscas en la bóveda, proyectos, etc..."
+                    className={`w-full rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] resize-none ${
+                      isDark ? 'bg-[#1A1A22] border-white/10 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </div>
+
+                {/* Botones de acción */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditModal(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 text-xs font-bold hover:bg-white/5 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile}
+                    className="flex-1 py-2.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold shadow-lg shadow-[#0066FF]/20 cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                  >
+                    {isSavingProfile ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Guardando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Guardar Cambios</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
