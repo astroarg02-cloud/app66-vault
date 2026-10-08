@@ -553,7 +553,7 @@ app.get('/api/vault/items', async (req, res) => {
 });
 
 // POST /api/vault/upload-file - Dedicated endpoint for streaming files of ANY size directly to disk (NO MB LIMIT)
-app.post('/api/vault/upload-file', uploadMiddleware.single('file'), async (req, res) => {
+app.post('/api/vault/upload-file', uploadMiddleware.single('file') as any, async (req, res) => {
   try {
     const file = req.file;
     if (!file) {

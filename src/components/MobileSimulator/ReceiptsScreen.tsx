@@ -262,8 +262,8 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
   const pendingCount = receipts.filter((r) => r.status === 'pending').length;
 
   return (
-    <div className={`h-full flex flex-col overflow-y-auto min-h-0 transition-colors ${
-      isDark ? 'bg-[#0A0A0C] text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
+    <div className={`h-full flex flex-col overflow-y-auto min-h-0 custom-scrollbar pb-28 sm:pb-36 transition-colors ${
+      isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
     }`}>
       {/* Toast Notification */}
       <AnimatePresence>

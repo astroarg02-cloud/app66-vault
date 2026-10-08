@@ -156,7 +156,7 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
 
   return (
     <div
-      className={`h-full flex flex-col overflow-y-auto custom-scrollbar transition-colors duration-300 ${
+      className={`h-full flex flex-col overflow-y-auto custom-scrollbar pb-28 sm:pb-36 transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >

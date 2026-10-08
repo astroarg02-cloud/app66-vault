@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   FolderClosed, FolderOpen, ShieldCheck, ShieldAlert, Clock,
-  User, UserCheck, Wifi, Battery, Signal, Smartphone, Lock, CheckCircle2, XCircle,
+  User, UserCheck, Wifi, Battery, Signal, Lock, CheckCircle2, XCircle,
   Crown, FileText
 } from 'lucide-react';
 import { VaultItem, UserProfile } from '../../types';
@@ -48,46 +48,6 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
 
   return (
     <div className="relative flex flex-col items-center justify-center p-2 sm:p-4 space-y-4">
-      {/* Device Switcher Control Bar */}
-      <div className="flex flex-wrap items-center justify-center gap-3 max-w-xl w-full">
-        {/* Device Switcher (iPhone vs Android) */}
-        <div
-          className={`flex items-center gap-1.5 p-1 rounded-2xl border transition-colors ${
-            isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
-          }`}
-        >
-          <button
-            id="device-switch-iphone"
-            onClick={() => setDeviceOS('iphone')}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-              deviceOS === 'iphone'
-                ? 'bg-black text-white border border-white/20 shadow-md'
-                : isDark
-                ? 'text-[#8E8E93] hover:text-white'
-                : 'text-[#64748B] hover:text-[#0F172A]'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-blue-400" />
-            <span>iPhone 16 Pro (iOS)</span>
-          </button>
-
-          <button
-            id="device-switch-android"
-            onClick={() => setDeviceOS('android')}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-              deviceOS === 'android'
-                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-                : isDark
-                ? 'text-[#8E8E93] hover:text-white'
-                : 'text-[#64748B] hover:text-[#0F172A]'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Android (APK)</span>
-          </button>
-        </div>
-      </div>
-
       {/* Device Frame (Titanium iPhone or Sleek Android) */}
       <div 
         id="mobile-device-frame"

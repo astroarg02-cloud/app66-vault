@@ -772,7 +772,7 @@ function AppContent() {
 
   return (
     <div
-      className={`h-[100dvh] max-h-[100dvh] w-full flex flex-col font-sans overflow-hidden transition-colors duration-300 ${
+      className={`h-dvh max-h-dvh w-full flex flex-col font-sans overflow-hidden select-none ${
         isDark
           ? 'bg-black text-white selection:bg-[#0066FF] selection:text-white'
           : 'bg-[#F1F4F9] text-[#0F172A] selection:bg-[#0066FF] selection:text-white'
@@ -780,205 +780,72 @@ function AppContent() {
     >
       {/* Top Header Bar for Private Server */}
       <header
-        className={`shrink-0 z-40 px-3 sm:px-6 py-2.5 sm:py-3 border-b backdrop-blur-xl transition-colors duration-300 ${
+        className={`shrink-0 z-40 px-2 sm:px-4 py-1.5 sm:py-2 border-b backdrop-blur-xl ${
           isDark
-            ? 'border-[#1E1E24] bg-black/90 shadow-black/80'
+            ? 'border-[#1E1E24] bg-black/95 shadow-black/80'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-1.5 sm:gap-2">
           {/* Brand & Logo */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <motion.div 
-              whileHover={{ scale: 1.08, rotate: 3 }}
+              whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-[#0066FF] flex items-center justify-center shadow-lg shadow-[#0066FF]/30 text-white shrink-0 cursor-pointer"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/30 text-white shrink-0 cursor-pointer"
             >
-              <ShieldCheck className="w-5 h-5" />
+              <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             </motion.div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm sm:text-lg font-black tracking-tight leading-none">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1 className="text-sm sm:text-base font-black tracking-tight leading-none">
                   App 66
                 </h1>
-                <span className="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                <span className="px-1.5 py-0.5 rounded-full text-[8.5px] sm:text-[9.5px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
                   SERVIDOR PRIVADO
                 </span>
                 {isSupabaseConfigured && (
-                  <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    <Database className="w-2.5 h-2.5" /> SUPABASE CONECTADO
+                  <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <Database className="w-2.5 h-2.5" /> SUPABASE
                   </span>
                 )}
               </div>
-              <p className={`text-[11px] sm:text-xs mt-0.5 hidden sm:block ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                Bóveda de contenido exclusivo & acceso restringido
-              </p>
             </div>
           </div>
 
-          {/* Center Navigation Tabs with smooth sliding active pill */}
-          <nav className="flex items-center gap-1 sm:gap-1.5 p-1 rounded-2xl border bg-black/10 dark:bg-white/5 border-slate-200 dark:border-white/10 relative">
-            <button
-              id="nav-tab-vault"
-              onClick={() => setCurrentTab('vault')}
-              className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
-                currentTab === 'vault'
-                  ? 'text-white'
-                  : isDark
-                  ? 'text-[#8E8E93] hover:text-white'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              {currentTab === 'vault' && (
-                <motion.div
-                  layoutId="activeTabPill"
-                  className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30 -z-10"
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                />
-              )}
-              {currentUser?.role === 'admin' ? (
-                <FolderClosed className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              ) : (
-                <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              )}
-              <span className="hidden xs:inline">
-                {currentUser?.role === 'admin' ? 'Bóveda / Publicaciones' : 'Colecciones'}
-              </span>
-            </button>
-
-            <button
-              id="nav-tab-membership"
-              onClick={() => setCurrentTab('membership')}
-              className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
-                currentTab === 'membership'
-                  ? 'text-white'
-                  : isDark
-                  ? 'text-[#8E8E93] hover:text-white'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              {currentTab === 'membership' && (
-                <motion.div
-                  layoutId="activeTabPill"
-                  className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30 -z-10"
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                />
-              )}
-              <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">Membresía VIP</span>
-            </button>
-
-            <button
-              id="nav-tab-receipts"
-              onClick={() => setCurrentTab('receipts')}
-              className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
-                currentTab === 'receipts'
-                  ? 'text-white'
-                  : isDark
-                  ? 'text-[#8E8E93] hover:text-white'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              {currentTab === 'receipts' && (
-                <motion.div
-                  layoutId="activeTabPill"
-                  className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30 -z-10"
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                />
-              )}
-              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">Subir Comprobante</span>
-            </button>
-
-            {/* Apartado de Aprobación (SOLO ADMINISTRADORES) */}
-            {currentUser?.role === 'admin' && (
-              <button
-                id="nav-tab-approvals"
-                onClick={() => setCurrentTab('approvals')}
-                className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
-                  currentTab === 'approvals'
-                    ? 'text-white'
-                    : isDark
-                    ? 'text-teal-400 hover:text-teal-300'
-                    : 'text-teal-700 hover:text-teal-800'
-                }`}
-              >
-                {currentTab === 'approvals' && (
-                  <motion.div
-                    layoutId="activeTabPill"
-                    className="absolute inset-0 bg-gradient-to-r from-teal-600 to-emerald-600 rounded-xl shadow-md shadow-emerald-600/30 -z-10"
-                    transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                  />
-                )}
-                <div className="relative flex items-center justify-center">
-                  <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-400" />
-                  {pendingApprovalsCount > 0 && (
-                    <span className="absolute -top-1.5 -right-2 px-1 py-0.2 min-w-[14px] text-[9px] font-black rounded-full bg-amber-400 text-black border border-black animate-pulse flex items-center justify-center">
-                      {pendingApprovalsCount}
-                    </span>
-                  )}
-                </div>
-                <span className="hidden xs:inline">Aprobaciones</span>
-              </button>
-            )}
-
-            <button
-              id="nav-tab-profile"
-              onClick={() => setCurrentTab('profile')}
-              className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors z-10 cursor-pointer ${
-                currentTab === 'profile'
-                  ? 'text-white'
-                  : isDark
-                  ? 'text-[#8E8E93] hover:text-white'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              {currentTab === 'profile' && (
-                <motion.div
-                  layoutId="activeTabPill"
-                  className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30 -z-10"
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                />
-              )}
-              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">Mi Perfil</span>
-            </button>
-          </nav>
-
           {/* Right Controls: User info, Theme & Logout */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <div className="flex items-center gap-1 sm:gap-2">
             {/* Admin Maintenance Control Button */}
             {currentUser.role === 'admin' && (
               <motion.button
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
                 onClick={() => setShowMaintenanceModal(true)}
-                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
                   isMaintenanceActive
                     ? 'bg-amber-500/15 border-amber-500/35 text-amber-500 dark:text-amber-400 hover:bg-amber-500/25 shadow-sm'
                     : 'bg-black/5 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
                 title="Configurar Modo Mantenimiento"
               >
-                <Wrench className="w-3.5 h-3.5 shrink-0" />
+                <Wrench className="w-3 h-3 shrink-0" />
                 <span className="hidden sm:inline">Mantenimiento:</span>
                 <span className={isMaintenanceActive ? 'font-black text-amber-500 dark:text-amber-400' : 'font-semibold text-slate-400'}>
-                  {isMaintenanceActive ? 'ACTIVO' : 'OFF'}
+                  {isMaintenanceActive ? 'ON' : 'OFF'}
                 </span>
               </motion.button>
             )}
 
             {/* User badge */}
-            <div className={`hidden md:flex items-center gap-2 px-2.5 py-1 rounded-xl border text-xs font-semibold ${
+            <div className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-semibold ${
               isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
             }`}>
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="max-w-[100px] truncate">{currentUser.displayName}</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="max-w-[90px] truncate">{currentUser.displayName}</span>
               {currentUser.role === 'admin' ? (
                 <VerifiedBadge className="w-3.5 h-3.5 text-[#0066FF]" />
               ) : (
-                <span className="text-[10px] text-[#0066FF] font-bold">VIP</span>
+                <span className="text-[9px] text-[#0066FF] font-bold">VIP</span>
               )}
             </div>
 
@@ -986,10 +853,9 @@ function AppContent() {
             <motion.button
               id="theme-toggle-btn"
               onClick={toggleTheme}
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-[#1A1A22] text-[#8E8E93] hover:text-white'
                   : 'border-[#E2E8F0] hover:bg-slate-100 text-[#64748B] hover:text-black'
@@ -1004,7 +870,7 @@ function AppContent() {
                   exit={{ rotate: 90, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
+                  {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-700" />}
                 </motion.div>
               </AnimatePresence>
             </motion.button>
@@ -1013,25 +879,24 @@ function AppContent() {
             <motion.button
               id="logout-btn"
               onClick={handleLogout}
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-red-500/15 hover:border-red-500/30 text-[#8E8E93] hover:text-red-400'
                   : 'border-[#E2E8F0] hover:bg-red-50 text-[#64748B] hover:text-red-600'
               }`}
               title="Cerrar Sesión"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
             </motion.button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-5xl mx-auto p-2 sm:p-4 md:p-5 overflow-hidden flex flex-col min-h-0">
-        <div className={`w-full h-full flex-1 rounded-2xl sm:rounded-3xl border shadow-xl overflow-hidden flex flex-col min-h-0 relative transition-colors ${
+      <main className="flex-1 w-full max-w-6xl mx-auto p-1 sm:p-2 overflow-hidden flex flex-col min-h-0">
+        <div className={`w-full h-full flex-1 rounded-xl sm:rounded-2xl border shadow-lg overflow-hidden flex flex-col min-h-0 relative ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
         }`}>
           <AnimatePresence mode="wait">
@@ -1132,7 +997,7 @@ function AppContent() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.995 }}
                 transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                className="w-full h-full flex flex-col min-h-0"
+                className="w-full flex-1 h-full flex flex-col min-h-0"
               >
                 <ProfileScreen
                   currentUser={currentUser}
@@ -1158,13 +1023,15 @@ function AppContent() {
       <nav 
         id="global-bottom-home-bar"
         aria-label="Barra de Navegación Inferior"
-        className={`shrink-0 z-40 px-2 sm:px-4 py-2 sm:py-2.5 border-t backdrop-blur-2xl transition-colors duration-300 flex justify-center ${
+        className={`shrink-0 z-40 px-2 sm:px-4 py-1.5 sm:py-2 border-t flex justify-center ${
           isDark 
-            ? 'bg-black/95 border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.7)]' 
-            : 'bg-white/95 border-[#E2E8F0] shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
+            ? 'bg-black border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
+            : 'bg-white border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
         }`}
       >
-        <div className="flex items-center justify-center gap-1 sm:gap-2 p-1 sm:p-1.5 rounded-full bg-black/5 dark:bg-white/5 border border-slate-200 dark:border-white/10 relative shadow-inner max-w-full overflow-x-auto no-scrollbar">
+        <div className={`w-full max-w-xl flex items-center justify-between sm:justify-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-full border shadow-inner ${
+          isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-[#F1F5F9] border-slate-200'
+        }`}>
           {/* Publicaciones */}
           <button
             id="home-bar-tab-publicaciones"
@@ -1176,23 +1043,16 @@ function AppContent() {
               setVaultTabMode('items');
               setSelectedVaultListId(null);
             }}
-            className={`relative flex items-center justify-center gap-1.5 px-3 sm:px-4 h-9 sm:h-10 rounded-full transition-all z-10 cursor-pointer select-none ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId
-                ? 'text-white'
+                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-[#8E8E93] hover:text-white'
-                : 'text-[#64748B] hover:text-[#0F172A]'
+                ? 'text-zinc-400 hover:text-zinc-200'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            {currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId && (
-              <motion.div
-                layoutId="globalHomeBarActivePill"
-                className="absolute inset-0 bg-[#0066FF] rounded-full shadow-md shadow-[#0066FF]/40 -z-10"
-                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-              />
-            )}
             <FolderClosed className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[11px] sm:text-xs font-bold hidden xs:inline">Publicaciones</span>
+            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Publicaciones</span>
           </button>
 
           {/* Colecciones */}
@@ -1206,27 +1066,20 @@ function AppContent() {
               setVaultTabMode('collections');
               setSelectedVaultListId(null);
             }}
-            className={`relative flex items-center justify-center gap-1.5 px-3 sm:px-4 h-9 sm:h-10 rounded-full transition-all z-10 cursor-pointer select-none ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'vault' && (vaultTabMode === 'collections' || selectedVaultListId !== null)
-                ? 'text-white'
+                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-[#8E8E93] hover:text-white'
-                : 'text-[#64748B] hover:text-[#0F172A]'
+                ? 'text-zinc-400 hover:text-zinc-200'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            {currentTab === 'vault' && (vaultTabMode === 'collections' || selectedVaultListId !== null) && (
-              <motion.div
-                layoutId="globalHomeBarActivePill"
-                className="absolute inset-0 bg-[#0066FF] rounded-full shadow-md shadow-[#0066FF]/40 -z-10"
-                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-              />
-            )}
             <Layers className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[11px] sm:text-xs font-bold hidden xs:inline">Colecciones</span>
+            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Colecciones</span>
           </button>
 
           {/* Separador vertical sutil */}
-          <div className="w-px h-5 bg-slate-300 dark:bg-white/10 mx-0.5 shrink-0" />
+          <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
           {/* Membresía VIP */}
           <button
@@ -1235,96 +1088,73 @@ function AppContent() {
             title="Membresía VIP (1$ al mes / 12$ al año)"
             aria-label="Membresía VIP"
             onClick={() => setCurrentTab('membership')}
-            className={`relative flex items-center justify-center gap-1.5 px-3 sm:px-3.5 h-9 sm:h-10 rounded-full transition-all z-10 cursor-pointer select-none ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'membership'
-                ? 'text-white font-black'
+                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-amber-400 hover:text-amber-300 hover:bg-white/10 active:scale-95'
-                : 'text-amber-600 hover:text-amber-700 hover:bg-black/5 active:scale-95'
+                ? 'text-zinc-400 hover:text-zinc-200'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            {currentTab === 'membership' && (
-              <motion.div
-                layoutId="globalHomeBarActivePill"
-                className="absolute inset-0 bg-gradient-to-r from-amber-500 to-amber-600 rounded-full shadow-md shadow-amber-500/40 -z-10"
-                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-              />
-            )}
-            <Crown className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-amber-400" />
-            <span className="text-[11px] sm:text-xs font-bold hidden xs:inline">Membresía</span>
+            <Crown className={`w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 ${currentTab === 'membership' ? 'text-amber-300' : 'text-amber-400'}`} />
+            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Membresía</span>
           </button>
 
-          {/* Subir Comprobante */}
+          {/* Apartado de Comprobación (Solo Icono) */}
           <button
             id="home-bar-tab-comprobantes"
             type="button"
-            title="Subir Comprobante de Pago ($1/mes o $12/año)"
-            aria-label="Subir Comprobante de Pago"
+            title="Comprobación de Pago ($1/mes o $12/año)"
+            aria-label="Comprobación de Pago"
             onClick={() => setCurrentTab('receipts')}
-            className={`relative flex items-center justify-center gap-1.5 px-3 sm:px-3.5 h-9 sm:h-10 rounded-full transition-all z-10 cursor-pointer select-none ${
+            className={`relative flex items-center justify-center w-8.5 sm:w-9.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'receipts'
-                ? 'text-white font-black'
+                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 active:scale-95'
-                : 'text-emerald-700 bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/20 active:scale-95'
+                ? 'text-zinc-400 hover:text-zinc-200'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            {currentTab === 'receipts' && (
-              <motion.div
-                layoutId="globalHomeBarActivePill"
-                className="absolute inset-0 bg-emerald-600 rounded-full shadow-md shadow-emerald-600/40 -z-10"
-                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-              />
-            )}
             <div className="relative flex items-center justify-center">
               <FileText className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
               {currentTab !== 'receipts' && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-black dark:border-black animate-pulse" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400" />
               )}
             </div>
-            <span className="text-[11px] sm:text-xs font-black">Comprobantes</span>
           </button>
 
-          {/* Apartado de Aprobación en Home Bar (SOLO ADMINISTRADORES) */}
+          {/* Apartado de Aprobación en Home Bar (Solo Icono, SOLO ADMINISTRADORES) */}
           {currentUser?.role === 'admin' && (
             <>
-              <div className="w-px h-5 bg-slate-300 dark:bg-white/10 mx-0.5 shrink-0" />
+              <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
               <button
                 id="home-bar-tab-aprobaciones"
                 type="button"
-                title={`Aprobaciones de Membresías (${pendingApprovalsCount} pendientes)`}
-                aria-label="Aprobaciones de Membresías"
+                title={`Aprobación de Membresías (${pendingApprovalsCount} pendientes)`}
+                aria-label="Aprobación de Membresías"
                 onClick={() => setCurrentTab('approvals')}
-                className={`relative flex items-center justify-center gap-1.5 px-3 sm:px-3.5 h-9 sm:h-10 rounded-full transition-all z-10 cursor-pointer select-none ${
+                className={`relative flex items-center justify-center w-8.5 sm:w-9.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
                   currentTab === 'approvals'
-                    ? 'text-white font-black'
+                    ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                     : isDark
-                    ? 'text-teal-400 bg-teal-500/15 border border-teal-500/30 hover:bg-teal-500/25 active:scale-95'
-                    : 'text-teal-700 bg-teal-500/10 border border-teal-500/25 hover:bg-teal-500/20 active:scale-95'
+                    ? 'text-zinc-400 hover:text-zinc-200'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                {currentTab === 'approvals' && (
-                  <motion.div
-                    layoutId="globalHomeBarActivePill"
-                    className="absolute inset-0 bg-gradient-to-r from-teal-600 to-emerald-600 rounded-full shadow-md shadow-emerald-600/40 -z-10"
-                    transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                  />
-                )}
                 <div className="relative flex items-center justify-center">
-                  <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-teal-400" />
+                  <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
                   {pendingApprovalsCount > 0 && (
-                    <span className="absolute -top-1.5 -right-2 px-1 py-0.2 min-w-[14px] text-[9px] font-black rounded-full bg-amber-400 text-black border border-black animate-pulse flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-2 px-1 py-0.2 min-w-[14px] text-[9px] font-black rounded-full bg-amber-400 text-black border border-black flex items-center justify-center">
                       {pendingApprovalsCount}
                     </span>
                   )}
                 </div>
-                <span className="text-[11px] sm:text-xs font-black">Aprobación</span>
               </button>
             </>
           )}
 
           {/* Separador vertical sutil */}
-          <div className="w-px h-5 bg-slate-300 dark:bg-white/10 mx-0.5 shrink-0" />
+          <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
           {/* Perfil */}
           <button
@@ -1333,23 +1163,16 @@ function AppContent() {
             title="Perfil de Usuario"
             aria-label="Perfil de Usuario"
             onClick={() => setCurrentTab('profile')}
-            className={`relative flex items-center justify-center gap-1.5 px-3 sm:px-4 h-9 sm:h-10 rounded-full transition-all z-10 cursor-pointer select-none ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'profile'
-                ? 'text-white'
+                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-[#8E8E93] hover:text-white'
-                : 'text-[#64748B] hover:text-[#0F172A]'
+                ? 'text-zinc-400 hover:text-zinc-200'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            {currentTab === 'profile' && (
-              <motion.div
-                layoutId="globalHomeBarActivePill"
-                className="absolute inset-0 bg-[#0066FF] rounded-full shadow-md shadow-[#0066FF]/40 -z-10"
-                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-              />
-            )}
             <User className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[11px] sm:text-xs font-bold hidden xs:inline">Perfil</span>
+            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Perfil</span>
           </button>
         </div>
       </nav>

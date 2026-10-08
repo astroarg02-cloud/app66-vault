@@ -335,7 +335,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
       </div>
 
       {/* Directory Content List */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 sm:p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-4 pb-28 sm:pb-36 space-y-3">
         {/* COLLECTIONS / LISTS HUB VIEW */}
         {activeTabMode === 'collections' ? (
           <div className="space-y-3">
