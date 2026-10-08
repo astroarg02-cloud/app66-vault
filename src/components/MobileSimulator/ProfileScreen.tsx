@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Moon, Sun, Palette, Shield, Sparkles, AlertCircle,
   Edit3, Camera, Phone, Heart, FileText, Crown, Users, Check,
   ChevronRight, ArrowRight, ExternalLink, RefreshCw, Upload, Image as ImageIcon,
-  Instagram
+  Instagram, Settings
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VerifiedBadge } from '../VerifiedBadge';
@@ -50,8 +50,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 }) => {
   const { setTheme, isDark } = useTheme();
   
-  // Tabs internas del perfil (Por defecto 'all' para ver el perfil completo)
-  const [activeProfileTab, setActiveProfileTab] = useState<'all' | 'info' | 'activity' | 'security'>('all');
+  // Tabs internas del perfil (Por defecto 'settings' para ver Ajustes y Sistema de inmediato)
+  const [activeProfileTab, setActiveProfileTab] = useState<'settings' | 'info' | 'activity'>('settings');
 
   // Modal de Edición de Perfil
   const [showEditModal, setShowEditModal] = useState(false);
@@ -177,9 +177,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     setAdminKeyInput('');
   };
 
+  // Cambio rápido de avatar con 1 toque
+  const handleQuickSelectAvatar = async (url: string) => {
+    const updatedProfile: UserProfile = {
+      ...currentUser,
+      avatarUrl: url,
+    };
+    try {
+      await firebaseService.updateUserProfile(updatedProfile);
+      if (onUpdateUser) {
+        onUpdateUser(updatedProfile);
+      }
+      setSaveToast('¡Foto de perfil actualizada exitosamente!');
+      confetti({ particleCount: 30, spread: 50, origin: { y: 0.5 } });
+      setTimeout(() => setSaveToast(null), 3000);
+    } catch (err) {
+      console.error('Error changing avatar:', err);
+    }
+  };
+
   return (
     <div
-      className={`w-full flex-1 h-full min-h-0 flex flex-col overflow-y-auto custom-scrollbar p-3 sm:p-5 pb-36 sm:pb-44 space-y-4 ${
+      className={`w-full flex-1 h-full min-h-0 flex flex-col overflow-y-auto overscroll-contain custom-scrollbar p-2.5 sm:p-4 pb-24 sm:pb-28 space-y-3 sm:space-y-4 ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >
@@ -190,7 +209,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#0066FF] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-semibold"
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-[#0066FF] text-white px-4 py-2 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-semibold"
           >
             <CheckCircle2 className="w-4 h-4 text-white" />
             <span>{saveToast}</span>
@@ -198,51 +217,50 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
-            PERFIL PERSONAL & AJUSTES
+      {/* Header del Apartado */}
+      <div className="flex items-center justify-between pb-1">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF] shrink-0">
+            <Settings className="w-4.5 h-4.5" />
           </div>
-          <h2 className={`text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-            Mi Cuenta
-          </h2>
+          <div>
+            <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
+              APARTADO OFICIAL
+            </div>
+            <h2 className={`text-base sm:text-lg font-black tracking-tight ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+              Ajustes y Sistema
+            </h2>
+          </div>
         </div>
 
         <motion.button
           onClick={handleOpenEdit}
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold shadow-md shadow-[#0066FF]/20 cursor-pointer transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold shadow-md shadow-[#0066FF]/25 cursor-pointer transition-all"
         >
           <Edit3 className="w-3.5 h-3.5" />
           <span>Editar Perfil</span>
         </motion.button>
       </div>
 
-      {/* Tarjeta Principal de Perfil Único del Usuario */}
-      <motion.div
-        className={`p-4 sm:p-5 rounded-2xl border transition-all relative overflow-hidden ${
-          currentUser.role === 'admin'
-            ? isDark
-              ? 'bg-gradient-to-br from-[#0066FF]/15 via-[#0A0A0C] to-black border-[#0066FF]/40 shadow-lg shadow-[#0066FF]/10'
-              : 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-sm'
-            : isDark
-            ? 'bg-gradient-to-br from-[#0A0A0C] to-[#121216] border-[#1E1E24]'
-            : 'bg-white border-[#E2E8F0] shadow-sm'
-        }`}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          {/* Avatar con botón de edición rápida */}
-          <div className="relative shrink-0 self-start sm:self-center">
+      {/* TARJETA PRINCIPAL: FOTO DE PERFIL CON NOMBRE Y AJUSTES */}
+      <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+        isDark 
+          ? 'bg-[#0A0A0C] border-[#1E1E24] shadow-lg shadow-black/50' 
+          : 'bg-white border-[#E2E8F0] shadow-sm'
+      }`}>
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+          {/* Foto de Perfil con Botón de Edición */}
+          <div className="relative shrink-0">
             {currentUser.avatarUrl ? (
               <img
                 src={currentUser.avatarUrl}
                 alt={currentUser.displayName}
-                className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl object-cover border-2 border-[#0066FF] shadow-md shadow-[#0066FF]/20"
+                className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl object-cover border-2 border-[#0066FF] shadow-lg shadow-[#0066FF]/25"
               />
             ) : (
-              <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl bg-gradient-to-br from-[#0066FF] to-blue-700 flex items-center justify-center text-2xl font-black text-white shadow-md shadow-[#0066FF]/20">
+              <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl bg-gradient-to-br from-[#0066FF] to-blue-700 flex items-center justify-center text-3xl font-black text-white shadow-lg shadow-[#0066FF]/25">
                 {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
               </div>
             )}
@@ -250,210 +268,151 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <button
               onClick={handleOpenEdit}
               title="Cambiar foto de perfil"
-              className="absolute -bottom-1 -right-1 bg-[#0066FF] hover:bg-[#0052FF] text-white p-1 rounded-full shadow-lg border-2 border-black cursor-pointer transition-transform hover:scale-110"
+              className="absolute -bottom-1.5 -right-1.5 bg-[#0066FF] hover:bg-[#0052FF] text-white p-1.5 rounded-full shadow-lg border-2 border-black cursor-pointer transition-transform hover:scale-110"
             >
-              <Camera className="w-3 h-3" />
+              <Camera className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Información del usuario */}
-          <div className="flex-1 min-w-0 space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`text-base sm:text-lg font-black truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+          {/* Nombre, Email, Badges y Opciones de Perfil */}
+          <div className="flex-1 text-center sm:text-left min-w-0 space-y-1">
+            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+              <h3 className={`text-base sm:text-lg font-black truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
                 {currentUser.displayName}
-              </span>
+              </h3>
               {currentUser.role === 'admin' ? (
                 <VerifiedBadge className="w-4 h-4 shrink-0" />
               ) : (
-                <span className="bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Verificado
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                  VIP
                 </span>
               )}
             </div>
 
-            <p className={`text-xs truncate ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+            <p className={`text-xs ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
               {currentUser.email}
             </p>
 
-            {/* Estado personalizado / Biografía */}
             {currentUser.customStatus && (
-              <p className={`text-xs italic font-medium ${isDark ? 'text-blue-300' : 'text-[#0066FF]'}`}>
+              <p className="text-xs italic font-medium text-[#0066FF]">
                 "{currentUser.customStatus}"
               </p>
             )}
 
             {currentUser.bio && (
-              <p className={`text-xs line-clamp-2 ${isDark ? 'text-[#A1A1AA]' : 'text-[#475569]'}`}>
+              <p className={`text-xs line-clamp-2 pt-0.5 ${isDark ? 'text-zinc-300' : 'text-slate-600'}`}>
                 {currentUser.bio}
               </p>
             )}
 
-            {/* Badges y Plan */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1">
-              <span
-                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                  currentUser.role === 'admin'
-                    ? 'bg-[#0066FF] text-white shadow-sm'
-                    : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
-                }`}
-              >
+            {/* Badges de Rol y Membresía */}
+            <div className="flex items-center justify-center sm:justify-start gap-1.5 flex-wrap pt-1.5">
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                currentUser.role === 'admin' ? 'bg-[#0066FF] text-white shadow-sm' : 'bg-emerald-500/15 text-emerald-500'
+              }`}>
                 {currentUser.role === 'admin' ? 'ADMINISTRADOR ROOT' : 'MIEMBRO VIP'}
               </span>
 
-              {currentUser.tier && (
-                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 border ${
-                  isDark ? 'bg-purple-500/15 border-purple-500/30 text-purple-400' : 'bg-purple-50 border-purple-200 text-purple-700'
-                }`}>
-                  💎 {currentUser.tier}
-                </span>
-              )}
-
               {currentUser.membershipPlan && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-blue-500/15 text-[#0066FF] border border-[#0066FF]/30 flex items-center gap-1">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/15 text-amber-500 border border-amber-500/30 flex items-center gap-1">
                   <Crown className="w-3 h-3" />
                   {currentUser.membershipPlan === 'annual' ? 'Plan Anual ($12/año)' : 'Plan Mensual ($1/mes)'}
                 </span>
               )}
-
-              {currentUser.phone && (
-                <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 border ${
-                  isDark ? 'bg-white/5 border-white/10 text-[#8E8E93]' : 'bg-slate-100 border-slate-200 text-slate-600'
-                }`}>
-                  <Phone className="w-2.5 h-2.5 text-emerald-500" />
-                  {currentUser.phone}
-                </span>
-              )}
-
-              {currentUser.instagram && (
-                <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 border ${
-                  isDark ? 'bg-pink-500/15 border-pink-500/30 text-pink-400' : 'bg-pink-50 border-pink-200 text-pink-700'
-                }`}>
-                  <Instagram className="w-2.5 h-2.5 text-pink-500" />
-                  @{currentUser.instagram.replace(/^@/, '')}
-                </span>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Barra de Estadísticas Propias de Este Usuario */}
-        <div className={`grid grid-cols-3 gap-2 mt-4 pt-3 border-t text-center ${
-          isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'
-        }`}>
-          <div 
-            onClick={() => setActiveProfileTab('all')}
-            className={`p-2 rounded-xl transition-all cursor-pointer ${
-              isDark ? 'hover:bg-white/5' : 'hover:bg-slate-100'
-            }`}
-          >
-            <div className="text-base sm:text-lg font-black text-[#0066FF]">
-              {userFavoriteItems.length}
-            </div>
-            <div className={`text-[10px] font-semibold flex items-center justify-center gap-1 ${
-              isDark ? 'text-zinc-400' : 'text-slate-500'
-            }`}>
-              <Heart className="w-3 h-3 text-red-400" /> Favoritos
-            </div>
+        {/* Carrusel de Selección Rápida de Foto de Perfil */}
+        <div className={`mt-3.5 pt-3 border-t ${isDark ? 'border-[#1E1E24]' : 'border-slate-100'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className={`text-[11px] font-bold flex items-center gap-1.5 ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>
+              <Camera className="w-3.5 h-3.5 text-[#0066FF]" />
+              <span>Cambiar Foto Rápida (1 toque):</span>
+            </span>
+            <button
+              onClick={handleOpenEdit}
+              className="text-[11px] font-bold text-[#0066FF] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <Edit3 className="w-3 h-3" />
+              <span>Subir personalizada</span>
+            </button>
           </div>
 
-          <div 
-            onClick={() => setActiveProfileTab('all')}
-            className={`p-2 rounded-xl transition-all cursor-pointer ${
-              isDark ? 'hover:bg-white/5' : 'hover:bg-slate-100'
-            }`}
-          >
-            <div className="text-base sm:text-lg font-black text-emerald-500">
-              {userReceipts.length}
-            </div>
-            <div className={`text-[10px] font-semibold flex items-center justify-center gap-1 ${
-              isDark ? 'text-zinc-400' : 'text-slate-500'
-            }`}>
-              <FileText className="w-3 h-3 text-emerald-500" /> Comprobantes
-            </div>
-          </div>
-
-          <div 
-            onClick={onNavigateToMembership}
-            className={`p-2 rounded-xl transition-all cursor-pointer ${
-              isDark ? 'hover:bg-white/5' : 'hover:bg-slate-100'
-            }`}
-          >
-            <div className="text-base sm:text-lg font-black text-amber-500">
-              {currentUser.role === 'admin' ? 'Ilimitado' : currentUser.membershipPlan ? 'VIP Activo' : 'Básico'}
-            </div>
-            <div className={`text-[10px] font-semibold flex items-center justify-center gap-1 ${
-              isDark ? 'text-zinc-400' : 'text-slate-500'
-            }`}>
-              <Crown className="w-3 h-3 text-amber-500" /> Membresía
-            </div>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+            {AVATAR_PRESETS.map((preset) => {
+              const isSelected = currentUser.avatarUrl === preset.url;
+              return (
+                <button
+                  key={preset.id}
+                  onClick={() => handleQuickSelectAvatar(preset.url)}
+                  title={`Elegir ${preset.label}`}
+                  className={`relative shrink-0 rounded-xl overflow-hidden p-0.5 border-2 transition-all cursor-pointer ${
+                    isSelected ? 'border-[#0066FF] scale-105 shadow-md shadow-[#0066FF]/30' : 'border-transparent hover:border-slate-400'
+                  }`}
+                >
+                  <img src={preset.url} alt={preset.label} className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg object-cover" />
+                  {isSelected && (
+                    <div className="absolute inset-0 bg-[#0066FF]/25 flex items-center justify-center">
+                      <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
-      </motion.div>
+      </div>
 
-      {/* Tabs de Navegación del Perfil */}
+      {/* Tabs de Navegación del Apartado */}
       <div className={`flex items-center gap-1 p-1 rounded-2xl border ${
         isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'
       }`}>
         <button
-          onClick={() => setActiveProfileTab('all')}
-          className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer outline-none ${
-            activeProfileTab === 'all'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/20'
-              : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Perfil Completo</span>
-        </button>
-
-        <button
-          onClick={() => setActiveProfileTab('info')}
-          className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer outline-none ${
-            activeProfileTab === 'info'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/20'
-              : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <User className="w-3.5 h-3.5" />
-          <span>Información</span>
-        </button>
-
-        <button
-          onClick={() => setActiveProfileTab('activity')}
-          className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer outline-none ${
-            activeProfileTab === 'activity'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/20'
-              : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Heart className="w-3.5 h-3.5" />
-          <span>Actividades</span>
-        </button>
-
-        <button
-          onClick={() => setActiveProfileTab('security')}
-          className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer outline-none ${
-            activeProfileTab === 'security'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/20'
+          id="tab-ajustes-sistema"
+          onClick={() => setActiveProfileTab('settings')}
+          className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer outline-none ${
+            activeProfileTab === 'settings'
+              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/25'
               : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'
           }`}
         >
           <Shield className="w-3.5 h-3.5" />
-          <span>Ajustes</span>
+          <span>Ajustes & Sistema</span>
+        </button>
+
+        <button
+          id="tab-ajustes-datos"
+          onClick={() => setActiveProfileTab('info')}
+          className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer outline-none ${
+            activeProfileTab === 'info'
+              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/25'
+              : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <User className="w-3.5 h-3.5" />
+          <span>Datos de Perfil</span>
+        </button>
+
+        <button
+          id="tab-ajustes-actividades"
+          onClick={() => setActiveProfileTab('activity')}
+          className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer outline-none ${
+            activeProfileTab === 'activity'
+              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/25'
+              : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Heart className="w-3.5 h-3.5" />
+          <span>Actividades ({userFavoriteItems.length})</span>
         </button>
       </div>
 
       {/* CONTENIDO DE CADA SECCIÓN */}
 
       {/* SECCIÓN 1: INFORMACIÓN DETALLADA */}
-      {(activeProfileTab === 'all' || activeProfileTab === 'info') && (
+      {activeProfileTab === 'info' && (
         <div className="space-y-3">
-          {activeProfileTab === 'all' && (
-            <div className={`text-[11px] font-extrabold tracking-wider uppercase flex items-center gap-1.5 ${isDark ? 'text-[#0066FF]' : 'text-[#0066FF]'}`}>
-              <User className="w-3.5 h-3.5" />
-              <span>Información y Membresía</span>
-            </div>
-          )}
           {/* Tarjeta de Membresía Actual */}
           <div className={`p-4 rounded-2xl border transition-colors ${
             isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
@@ -556,14 +515,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       )}
 
       {/* SECCIÓN 2: ACTIVIDAD PERSONAL (Favoritos y Comprobantes) */}
-      {(activeProfileTab === 'all' || activeProfileTab === 'activity') && (
+      {activeProfileTab === 'activity' && (
         <div className="space-y-4">
-          {activeProfileTab === 'all' && (
-            <div className={`text-[11px] font-extrabold tracking-wider uppercase flex items-center gap-1.5 ${isDark ? 'text-[#0066FF]' : 'text-[#0066FF]'}`}>
-              <Heart className="w-3.5 h-3.5 text-red-500" />
-              <span>Mis Actividades y Comprobantes</span>
-            </div>
-          )}
           {/* Publicaciones que este usuario ha marcado como Me Gusta */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -709,14 +662,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       )}
 
       {/* SECCIÓN 3: AJUSTES & SISTEMA */}
-      {(activeProfileTab === 'all' || activeProfileTab === 'security') && (
+      {activeProfileTab === 'settings' && (
         <div className="space-y-4">
-          {activeProfileTab === 'all' && (
-            <div className={`text-[11px] font-extrabold tracking-wider uppercase flex items-center gap-1.5 ${isDark ? 'text-[#0066FF]' : 'text-[#0066FF]'}`}>
-              <Shield className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Ajustes y Permisos</span>
-            </div>
-          )}
           {/* App Theme Switcher Section (Dark / Light) */}
           <div
             className={`p-4 rounded-2xl border transition-colors ${

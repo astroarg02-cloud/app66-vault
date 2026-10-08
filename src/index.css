@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+html,
+body,
+#root {
+  height: 100%;
+  max-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 @keyframes verified-pulse {
   0%, 100% {
     filter: drop-shadow(0 0 6px rgba(0, 102, 255, 0.6));

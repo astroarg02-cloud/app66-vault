@@ -31,7 +31,8 @@ import {
   Layers,
   Wrench,
   FileText,
-  FileCheck
+  FileCheck,
+  Settings
 } from 'lucide-react';
 
 // Helper to manage deleted list IDs in localStorage to prevent deleted lists from resurfacing
@@ -772,7 +773,7 @@ function AppContent() {
 
   return (
     <div
-      className={`h-dvh max-h-dvh w-full flex flex-col font-sans overflow-hidden select-none ${
+      className={`h-full max-h-full w-full flex flex-col font-sans overflow-hidden select-none ${
         isDark
           ? 'bg-black text-white selection:bg-[#0066FF] selection:text-white'
           : 'bg-[#F1F4F9] text-[#0F172A] selection:bg-[#0066FF] selection:text-white'
@@ -780,7 +781,7 @@ function AppContent() {
     >
       {/* Top Header Bar for Private Server */}
       <header
-        className={`shrink-0 z-40 px-2 sm:px-4 py-1.5 sm:py-2 border-b backdrop-blur-xl ${
+        className={`shrink-0 z-40 px-2 sm:px-4 py-1 sm:py-1.5 border-b backdrop-blur-xl ${
           isDark
             ? 'border-[#1E1E24] bg-black/95 shadow-black/80'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
@@ -792,6 +793,7 @@ function AppContent() {
             <motion.div 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              onClick={() => setCurrentTab('vault')}
               className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/30 text-white shrink-0 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
@@ -813,7 +815,7 @@ function AppContent() {
             </div>
           </div>
 
-          {/* Right Controls: User info, Theme & Logout */}
+          {/* Right Controls: User info with Avatar, Theme & Logout */}
           <div className="flex items-center gap-1 sm:gap-2">
             {/* Admin Maintenance Control Button */}
             {currentUser.role === 'admin' && (
@@ -836,18 +838,43 @@ function AppContent() {
               </motion.button>
             )}
 
-            {/* User badge */}
-            <div className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-semibold ${
-              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
-            }`}>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="max-w-[90px] truncate">{currentUser.displayName}</span>
-              {currentUser.role === 'admin' ? (
-                <VerifiedBadge className="w-3.5 h-3.5 text-[#0066FF]" />
+            {/* User Profile Badge with Avatar and Name - Always visible, links to Profile */}
+            <motion.button
+              id="header-user-profile-btn"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setCurrentTab('profile')}
+              title={`Ver Perfil: ${currentUser.displayName}`}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-[11px] font-bold cursor-pointer transition-all ${
+                currentTab === 'profile'
+                  ? 'border-[#0066FF] bg-[#0066FF]/15 text-[#0066FF]'
+                  : isDark
+                  ? 'bg-[#0A0A0C] border-[#1E1E24] text-white hover:border-[#0066FF]/40'
+                  : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              {currentUser.avatarUrl ? (
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.displayName}
+                  className="w-5 h-5 rounded-full object-cover border border-[#0066FF] shrink-0"
+                />
               ) : (
-                <span className="text-[9px] text-[#0066FF] font-bold">VIP</span>
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#0066FF] to-blue-700 text-[10px] text-white flex items-center justify-center font-black shrink-0">
+                  {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
+                </div>
               )}
-            </div>
+              <span className="max-w-[75px] sm:max-w-[120px] truncate leading-none">
+                {currentUser.displayName}
+              </span>
+              {currentUser.role === 'admin' ? (
+                <VerifiedBadge className="w-3.5 h-3.5 text-[#0066FF] shrink-0" />
+              ) : (
+                <span className="px-1 py-0.2 rounded-full text-[8.5px] font-extrabold bg-[#0066FF]/15 text-[#0066FF] shrink-0">
+                  VIP
+                </span>
+              )}
+            </motion.button>
 
             {/* Theme Toggle */}
             <motion.button
@@ -1023,13 +1050,13 @@ function AppContent() {
       <nav 
         id="global-bottom-home-bar"
         aria-label="Barra de Navegación Inferior"
-        className={`shrink-0 z-40 px-2 sm:px-4 py-1.5 sm:py-2 border-t flex justify-center ${
+        className={`shrink-0 z-40 px-2 sm:px-4 py-1 sm:py-1.5 border-t flex justify-center ${
           isDark 
             ? 'bg-black border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
             : 'bg-white border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
         }`}
       >
-        <div className={`w-full max-w-xl flex items-center justify-between sm:justify-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-full border shadow-inner ${
+        <div className={`w-full max-w-xl flex items-center justify-between sm:justify-center gap-1 sm:gap-2 px-1 sm:px-2 py-1 rounded-full border shadow-inner ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-[#F1F5F9] border-slate-200'
         }`}>
           {/* Publicaciones */}
@@ -1043,16 +1070,16 @@ function AppContent() {
               setVaultTabMode('items');
               setSelectedVaultListId(null);
             }}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
               currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId
                 ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 hover:text-zinc-200'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'text-zinc-400 active:text-white'
+                : 'text-slate-500 active:text-slate-900'
             }`}
           >
             <FolderClosed className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Publicaciones</span>
+            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Publicaciones</span>
           </button>
 
           {/* Colecciones */}
@@ -1066,16 +1093,16 @@ function AppContent() {
               setVaultTabMode('collections');
               setSelectedVaultListId(null);
             }}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
               currentTab === 'vault' && (vaultTabMode === 'collections' || selectedVaultListId !== null)
                 ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 hover:text-zinc-200'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'text-zinc-400 active:text-white'
+                : 'text-slate-500 active:text-slate-900'
             }`}
           >
             <Layers className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Colecciones</span>
+            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Colecciones</span>
           </button>
 
           {/* Separador vertical sutil */}
@@ -1088,31 +1115,31 @@ function AppContent() {
             title="Membresía VIP (1$ al mes / 12$ al año)"
             aria-label="Membresía VIP"
             onClick={() => setCurrentTab('membership')}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
               currentTab === 'membership'
                 ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 hover:text-zinc-200'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'text-zinc-400 active:text-white'
+                : 'text-slate-500 active:text-slate-900'
             }`}
           >
             <Crown className={`w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 ${currentTab === 'membership' ? 'text-amber-300' : 'text-amber-400'}`} />
-            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Membresía</span>
+            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Membresía</span>
           </button>
 
-          {/* Apartado de Comprobación (Solo Icono) */}
+          {/* Apartado de Comprobación (SOLO ICONO) */}
           <button
             id="home-bar-tab-comprobantes"
             type="button"
             title="Comprobación de Pago ($1/mes o $12/año)"
             aria-label="Comprobación de Pago"
             onClick={() => setCurrentTab('receipts')}
-            className={`relative flex items-center justify-center w-8.5 sm:w-9.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
+            className={`relative flex items-center justify-center w-8.5 sm:w-9 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
               currentTab === 'receipts'
                 ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 hover:text-zinc-200'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'text-zinc-400 active:text-white'
+                : 'text-slate-500 active:text-slate-900'
             }`}
           >
             <div className="relative flex items-center justify-center">
@@ -1123,7 +1150,7 @@ function AppContent() {
             </div>
           </button>
 
-          {/* Apartado de Aprobación en Home Bar (Solo Icono, SOLO ADMINISTRADORES) */}
+          {/* Apartado de Aprobación en Home Bar (SOLO ICONO, SOLO ADMINISTRADORES) */}
           {currentUser?.role === 'admin' && (
             <>
               <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
@@ -1133,12 +1160,12 @@ function AppContent() {
                 title={`Aprobación de Membresías (${pendingApprovalsCount} pendientes)`}
                 aria-label="Aprobación de Membresías"
                 onClick={() => setCurrentTab('approvals')}
-                className={`relative flex items-center justify-center w-8.5 sm:w-9.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
+                className={`relative flex items-center justify-center w-8.5 sm:w-9 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
                   currentTab === 'approvals'
                     ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                     : isDark
-                    ? 'text-zinc-400 hover:text-zinc-200'
-                    : 'text-slate-500 hover:text-slate-800'
+                    ? 'text-zinc-400 active:text-white'
+                    : 'text-slate-500 active:text-slate-900'
                 }`}
               >
                 <div className="relative flex items-center justify-center">
@@ -1156,23 +1183,23 @@ function AppContent() {
           {/* Separador vertical sutil */}
           <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
-          {/* Perfil */}
+          {/* Ajustes y Sistema */}
           <button
-            id="home-bar-tab-perfil"
+            id="home-bar-tab-ajustes"
             type="button"
-            title="Perfil de Usuario"
-            aria-label="Perfil de Usuario"
+            title="Ajustes y Sistema"
+            aria-label="Ajustes y Sistema"
             onClick={() => setCurrentTab('profile')}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9.5 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
+            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
               currentTab === 'profile'
                 ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 hover:text-zinc-200'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'text-zinc-400 active:text-white'
+                : 'text-slate-500 active:text-slate-900'
             }`}
           >
-            <User className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[10px] sm:text-xs font-bold hidden xs:inline">Perfil</span>
+            <Settings className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Ajustes</span>
           </button>
         </div>
       </nav>
