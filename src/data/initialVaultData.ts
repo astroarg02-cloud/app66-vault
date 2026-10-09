@@ -28,8 +28,8 @@ export const INITIAL_ADMIN_USER: UserProfile = {
   tier: 'Bóveda Diamante',
   membershipPlan: 'annual',
   membershipStatus: 'active',
-  subscribedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-  membershipExpiresAt: new Date(Date.now() + 335 * 86400000).toISOString(),
+  subscribedAt: new Date().toISOString(),
+  membershipExpiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
   lastPaymentAmount: 12,
   avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
 };
@@ -43,8 +43,8 @@ export const INITIAL_MEMBER_USER: UserProfile = {
   tier: 'Acceso VIP',
   membershipPlan: 'monthly',
   membershipStatus: 'active',
-  subscribedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-  membershipExpiresAt: new Date(Date.now() + 27 * 86400000).toISOString(),
+  subscribedAt: new Date().toISOString(),
+  membershipExpiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
   lastPaymentAmount: 1,
   avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
 };

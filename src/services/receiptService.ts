@@ -118,12 +118,19 @@ export const receiptService = {
     if (idx === -1) return null;
 
     const target = all[idx];
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const durationDays = target.plan === 'annual' ? 365 : 30;
+    const expiresIso = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
     const updatedReceipt: PaymentReceipt = {
       ...target,
       status,
       adminNote: adminNote !== undefined ? adminNote : target.adminNote,
-      reviewedAt: new Date().toISOString(),
+      reviewedAt: nowIso,
       reviewedBy: reviewerName || 'Administrador',
+      membershipStartsAt: status === 'approved' ? nowIso : undefined,
+      membershipExpiresAt: status === 'approved' ? expiresIso : undefined,
     };
 
     all[idx] = updatedReceipt;

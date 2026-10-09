@@ -476,18 +476,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
             {currentUser.membershipExpiresAt && (() => {
               const expireDate = new Date(currentUser.membershipExpiresAt);
+              const startDate = currentUser.subscribedAt ? new Date(currentUser.subscribedAt) : new Date();
               const daysLeft = Math.max(0, Math.ceil((expireDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
               return (
-                <div className={`p-2.5 rounded-xl flex items-center justify-between text-xs ${
+                <div className={`p-2.5 rounded-xl space-y-1.5 text-xs ${
                   isDark ? 'bg-[#121216]' : 'bg-slate-50'
                 }`}>
-                  <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Vigencia restante:</span>
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <span className="text-[#0066FF] font-mono">
-                      {daysLeft} {daysLeft === 1 ? 'día restante' : 'días restantes'}
+                  <div className="flex items-center justify-between">
+                    <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha exacta de inicio:</span>
+                    <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                      {startDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })} ({startDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs)
                     </span>
-                    <span className="text-[10px] text-neutral-400">
-                      ({expireDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })})
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha exacta de vencimiento:</span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      {expireDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })} ({expireDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                    <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Vigencia restante:</span>
+                    <span className="text-[#0066FF] font-mono font-bold">
+                      {daysLeft} {daysLeft === 1 ? 'día restante' : 'días restantes'}
                     </span>
                   </div>
                 </div>

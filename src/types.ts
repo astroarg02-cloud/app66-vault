@@ -123,5 +123,7 @@ export interface PaymentReceipt {
   reviewedAt?: string;
   reviewedBy?: string;
   adminNote?: string;
+  membershipStartsAt?: string;
+  membershipExpiresAt?: string;
 }
 

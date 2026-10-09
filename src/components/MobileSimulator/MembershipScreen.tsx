@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Check, Sparkles, Shield, Zap, Crown, 
@@ -12,6 +12,7 @@ import confetti from 'canvas-confetti';
 import { UserProfile, MembershipPlanType } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { firebaseService } from '../../services/firebaseService';
+import { receiptService } from '../../services/receiptService';
 
 // WhatsApp contact constant
 export const WHATSAPP_CONTACT_PHONE = '+54 9 11 6554-6038';
@@ -53,34 +54,149 @@ export const MembershipScreen: React.FC<MembershipScreenProps> = ({
   // FAQ open states
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
+  // Real-time clock for live membership bar updates
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Membership status checks
   const isSubscribed = Boolean(
-    currentUser.membershipStatus === 'active' ||
-    (currentUser.membershipPlan && currentUser.membershipStatus !== 'cancelled' && currentUser.membershipStatus !== 'none') ||
-    currentUser.tier === 'Acceso VIP' ||
-    currentUser.tier === 'Bóveda Diamante' ||
-    currentUser.role === 'admin'
+    currentUser.membershipStatus !== 'cancelled' &&
+    currentUser.membershipStatus !== 'none' &&
+    (currentUser.membershipStatus === 'active' ||
+      currentUser.membershipPlan ||
+      currentUser.tier === 'Acceso VIP' ||
+      currentUser.tier === 'Bóveda Diamante' ||
+      currentUser.role === 'admin')
   );
   const activePlan: MembershipPlanType = (currentUser.membershipPlan as MembershipPlanType) || 
     (currentUser.role === 'admin' || currentUser.tier === 'Bóveda Diamante' ? 'annual' : 'monthly');
+
+  // Ensure exact real start date (subscribedAt) and expiration date (membershipExpiresAt) are permanently recorded on the profile
+  useEffect(() => {
+    if (!isSubscribed) return;
+
+    let cancelledAtMs = 0;
+    try {
+      const rawCancelledAt = localStorage.getItem(`vault_cancelled_at_${currentUser.uid}`);
+      if (rawCancelledAt) {
+        const parsedCancelled = new Date(rawCancelledAt).getTime();
+        if (!isNaN(parsedCancelled)) cancelledAtMs = parsedCancelled;
+      }
+    } catch {}
+
+    // Check if the user has an approved receipt with exact activation dates newer than any previous cancellation
+    const userReceipts = receiptService
+      .getAllReceipts()
+      .filter(
+        (r) =>
+          r.status === 'approved' &&
+          (r.userId === currentUser.uid ||
+            (currentUser.email && r.userEmail?.toLowerCase() === currentUser.email.toLowerCase())) &&
+          new Date(r.membershipStartsAt || r.reviewedAt || r.createdAt).getTime() > cancelledAtMs
+      )
+      .sort((a, b) => {
+        const timeA = new Date(a.membershipStartsAt || a.reviewedAt || a.createdAt).getTime();
+        const timeB = new Date(b.membershipStartsAt || b.reviewedAt || b.createdAt).getTime();
+        return timeB - timeA;
+      });
+
+    const latestApproved = userReceipts[0];
+
+    let targetStartIso = currentUser.subscribedAt;
+    let targetExpireIso = currentUser.membershipExpiresAt;
+    let targetPlan: MembershipPlanType = activePlan;
+
+    if (latestApproved) {
+      const receiptStart = latestApproved.membershipStartsAt || latestApproved.reviewedAt || latestApproved.createdAt;
+      if (receiptStart && (!targetStartIso || new Date(receiptStart).getTime() > new Date(targetStartIso).getTime())) {
+        targetStartIso = new Date(receiptStart).toISOString();
+        targetPlan = latestApproved.plan || activePlan;
+        const durationDays = targetPlan === 'annual' ? 365 : 30;
+        targetExpireIso =
+          latestApproved.membershipExpiresAt ||
+          new Date(new Date(targetStartIso).getTime() + durationDays * 86400000).toISOString();
+      }
+    }
+
+    const parsedStart = targetStartIso ? new Date(targetStartIso) : null;
+    const parsedExpire = targetExpireIso ? new Date(targetExpireIso) : null;
+
+    if (!parsedStart || isNaN(parsedStart.getTime()) || !parsedExpire || isNaN(parsedExpire.getTime())) {
+      const now = new Date();
+      const durationDays = targetPlan === 'annual' ? 365 : 30;
+      const validStart = parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : now;
+      const validExpire =
+        parsedExpire && !isNaN(parsedExpire.getTime())
+          ? parsedExpire
+          : new Date(validStart.getTime() + durationDays * 86400000);
+
+      const updatedUser: UserProfile = {
+        ...currentUser,
+        membershipPlan: targetPlan,
+        membershipStatus: currentUser.membershipStatus || 'active',
+        subscribedAt: validStart.toISOString(),
+        membershipExpiresAt: validExpire.toISOString(),
+      };
+
+      firebaseService.updateUserProfile(updatedUser).catch(() => {
+        firebaseService.saveSession(updatedUser);
+      });
+      if (onUpdateUser) {
+        onUpdateUser(updatedUser);
+      }
+    } else if (
+      targetStartIso !== currentUser.subscribedAt ||
+      targetExpireIso !== currentUser.membershipExpiresAt
+    ) {
+      const updatedUser: UserProfile = {
+        ...currentUser,
+        membershipPlan: targetPlan,
+        membershipStatus: 'active',
+        subscribedAt: targetStartIso,
+        membershipExpiresAt: targetExpireIso,
+      };
+      firebaseService.updateUserProfile(updatedUser).catch(() => {
+        firebaseService.saveSession(updatedUser);
+      });
+      if (onUpdateUser) {
+        onUpdateUser(updatedUser);
+      }
+    }
+  }, [
+    isSubscribed,
+    currentUser.uid,
+    currentUser.email,
+    currentUser.subscribedAt,
+    currentUser.membershipExpiresAt,
+    activePlan,
+  ]);
 
   // Calculate formatted dates and dynamic days remaining in real-time
   const calculateDaysLeft = () => {
     const isAnnual = activePlan === 'annual';
     const defaultTotalDays = isAnnual ? 365 : 30;
 
-    // Start date (subscription date or joinedAt)
+    // Real current date from live clock
+    const now = currentTime;
+
+    // Exact start date (subscription date)
     let startD: Date;
     if (currentUser.subscribedAt) {
       startD = new Date(currentUser.subscribedAt);
       if (isNaN(startD.getTime())) {
-        startD = new Date();
+        startD = now;
       }
     } else {
-      startD = new Date();
+      startD = now;
     }
 
-    // Expiration date
+    // Exact expiration date
     let expireD: Date;
     if (currentUser.membershipExpiresAt) {
       expireD = new Date(currentUser.membershipExpiresAt);
@@ -91,31 +207,71 @@ export const MembershipScreen: React.FC<MembershipScreenProps> = ({
       expireD = new Date(startD.getTime() + defaultTotalDays * 86400000);
     }
 
-    // Real current date
-    const now = new Date();
-
     // Total duration in ms & days
     const totalDurationMs = Math.max(1, expireD.getTime() - startD.getTime());
     const effectiveTotalDays = Math.max(1, Math.round(totalDurationMs / 86400000)) || defaultTotalDays;
 
     // Remaining ms & days based on real time
     const diffMs = expireD.getTime() - now.getTime();
+    const elapsedMs = Math.max(0, now.getTime() - startD.getTime());
     const daysRemaining = Math.max(0, Math.ceil(diffMs / 86400000));
-    const elapsedDays = Math.max(0, effectiveTotalDays - daysRemaining);
+    const elapsedDays = Math.min(effectiveTotalDays, Math.max(0, Math.floor(elapsedMs / 86400000)));
 
-    // Percentage of remaining days (from 100% down to 0% as days pass)
-    const percentRemaining = Math.min(100, Math.max(0, (daysRemaining / effectiveTotalDays) * 100));
+    // Percentage of remaining time (from 100% down to 0% as real time passes)
+    const percentRemaining = Math.min(100, Math.max(0, (diffMs / totalDurationMs) * 100));
 
-    const isExpired = daysRemaining <= 0;
+    const isExpired = diffMs <= 0;
     const isExpiringSoon = !isExpired && daysRemaining <= 5;
+
+    const startDateExactNumeric = startD.toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const expireDateExactNumeric = expireD.toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+
+    const startDateFormatted = startD.toLocaleDateString('es-ES', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+    const expireDateFormatted = expireD.toLocaleDateString('es-ES', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+
+    const startTimeFormatted = startD.toLocaleTimeString('es-AR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const expireTimeFormatted = expireD.toLocaleTimeString('es-AR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
+    const startDateFullFormatted = `${startDateExactNumeric} (${startDateFormatted} • ${startTimeFormatted} hs)`;
+    const expireDateFullFormatted = `${expireDateExactNumeric} (${expireDateFormatted} • ${expireTimeFormatted} hs)`;
 
     return {
       daysRemaining,
       totalDays: effectiveTotalDays,
       elapsedDays,
       percentRemaining,
-      startDateFormatted: startD.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
-      expireDateFormatted: expireD.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+      startDateExactNumeric,
+      expireDateExactNumeric,
+      startDateFormatted,
+      expireDateFormatted,
+      startTimeFormatted,
+      expireTimeFormatted,
+      startDateFullFormatted,
+      expireDateFullFormatted,
       isExpired,
       isExpiringSoon,
       isAnnual,
@@ -198,9 +354,17 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
   };
 
   const handleConfirmCancel = async () => {
+    try {
+      localStorage.setItem(`vault_cancelled_at_${currentUser.uid}`, new Date().toISOString());
+    } catch {}
+
     const updatedUser: UserProfile = {
       ...currentUser,
+      tier: 'Invitado',
       membershipStatus: 'cancelled',
+      membershipPlan: undefined,
+      subscribedAt: undefined,
+      membershipExpiresAt: undefined,
     };
 
     try {
@@ -215,7 +379,7 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
 
     setShowCancelModal(false);
     showNotification(
-      'Tu suscripción ha sido cancelada. Mantendrás tu acceso VIP hasta el final del periodo ya pagado.',
+      'Tu membresía ha sido cancelada correctamente. Puedes volver a activarla cuando lo desees.',
       'info'
     );
   };
@@ -224,6 +388,10 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
   const handlePurchasePlan = async (plan: MembershipPlanType) => {
     setIsProcessingPayment(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
+
+    try {
+      localStorage.removeItem(`vault_cancelled_at_${currentUser.uid}`);
+    } catch {}
 
     const now = new Date();
     const days = plan === 'annual' ? 365 : 30;
@@ -639,18 +807,90 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 </motion.div>
               </div>
 
-              {/* Date Markers & Details below bar */}
-              <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-neutral-400 pt-2.5 font-mono flex-wrap gap-2">
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-[#0066FF]" />
-                  <span>Inicio: <strong className={isDark ? 'text-white' : 'text-neutral-800'}>{membershipTiming.startDateFormatted}</strong></span>
-                </span>
-                <span className="text-neutral-400 font-semibold">
-                  ⏳ Transcurridos: <strong className={isDark ? 'text-white' : 'text-neutral-800'}>{membershipTiming.elapsedDays} días</strong>
-                </span>
-                <span className="flex items-center gap-1 text-right">
-                  <span>Vence: <strong className={membershipTiming.isExpired ? 'text-red-400' : membershipTiming.isExpiringSoon ? 'text-amber-400' : 'text-emerald-400'}>{membershipTiming.expireDateFormatted}</strong></span>
-                </span>
+              {/* Exact Real Start & Expiration Date Registration Cards below bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3.5 font-mono">
+                {/* Exact Start Date */}
+                <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
+                  isDark ? 'bg-white/[0.03] border-white/10' : 'bg-slate-50 border-slate-200/80'
+                }`}>
+                  <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#0066FF]" />
+                    Fecha Exacta de Inicio
+                  </span>
+                  <div className="mt-1">
+                    <div className={`text-xs sm:text-sm font-black ${isDark ? 'text-white' : 'text-neutral-900'}`}>
+                      {membershipTiming.startDateExactNumeric}
+                    </div>
+                    <div className="text-[10px] text-neutral-400">
+                      {membershipTiming.startDateFormatted} • {membershipTiming.startTimeFormatted} hs
+                    </div>
+                  </div>
+                </div>
+
+                {/* Elapsed Days */}
+                <div className={`p-2.5 rounded-xl border flex flex-col justify-between sm:items-center sm:text-center ${
+                  isDark ? 'bg-white/[0.03] border-white/10' : 'bg-slate-50 border-slate-200/80'
+                }`}>
+                  <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                    <Hourglass className="w-3.5 h-3.5 text-amber-400" />
+                    Tiempo Transcurrido
+                  </span>
+                  <div className="mt-1">
+                    <div className={`text-xs sm:text-sm font-black ${isDark ? 'text-white' : 'text-neutral-900'}`}>
+                      {membershipTiming.elapsedDays} {membershipTiming.elapsedDays === 1 ? 'día' : 'días'}
+                    </div>
+                    <div className="text-[10px] text-neutral-400">
+                      de {membershipTiming.totalDays} días totales
+                    </div>
+                  </div>
+                </div>
+
+                {/* Exact Expiration Date */}
+                <div className={`p-2.5 rounded-xl border flex flex-col justify-between sm:items-end sm:text-right ${
+                  membershipTiming.isExpired
+                    ? 'bg-red-500/10 border-red-500/30'
+                    : membershipTiming.isExpiringSoon
+                    ? 'bg-amber-500/10 border-amber-500/30'
+                    : isDark
+                    ? 'bg-emerald-500/[0.06] border-emerald-500/25'
+                    : 'bg-emerald-50/70 border-emerald-200'
+                }`}>
+                  <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                    <Clock className={`w-3.5 h-3.5 ${
+                      membershipTiming.isExpired ? 'text-red-400' : membershipTiming.isExpiringSoon ? 'text-amber-400' : 'text-emerald-400'
+                    }`} />
+                    Fecha Exacta de Vencimiento
+                  </span>
+                  <div className="mt-1">
+                    <div className={`text-xs sm:text-sm font-black ${
+                      membershipTiming.isExpired ? 'text-red-400' : membershipTiming.isExpiringSoon ? 'text-amber-400' : 'text-emerald-400'
+                    }`}>
+                      {membershipTiming.expireDateExactNumeric}
+                    </div>
+                    <div className="text-[10px] text-neutral-400">
+                      {membershipTiming.expireDateFormatted} • {membershipTiming.expireTimeFormatted} hs
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Functional Cancel Membership Button inside the Membership Bar Card */}
+              <div className={`mt-3.5 pt-3 border-t flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 ${
+                isDark ? 'border-white/10' : 'border-slate-200/80'
+              }`}>
+                <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+                  <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Control total de tu suscripción activa sin penalizaciones</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCancelModal(true)}
+                  className="px-4 py-2 rounded-xl text-xs font-extrabold bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/35 hover:border-red-500/60 flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancelar Membresía</span>
+                </button>
               </div>
             </div>
 
@@ -1358,9 +1598,9 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
               </div>
 
               <div>
-                <h3 className="text-base font-bold">¿Cancelar suscripción?</h3>
+                <h3 className="text-base font-bold">¿Cancelar tu Membresía VIP?</h3>
                 <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
-                  No se realizarán cobros futuros. Mantendrás todos los beneficios VIP hasta el final de tu periodo actual (<strong>{currentRenewalDate}</strong>).
+                  Al confirmar, tu membresía activa (con vencimiento el <strong>{membershipTiming.expireDateExactNumeric}</strong>) quedará cancelada de inmediato y podrás volver a suscribirte cuando quieras.
                 </p>
               </div>
 
@@ -1450,12 +1690,12 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                     <span className="text-[#25D366]">WhatsApp Oficial ({WHATSAPP_CONTACT_PHONE})</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Fecha de Alta:</span>
-                    <span>{currentUser.subscribedAt || 'Hoy'}</span>
+                    <span className="text-neutral-500">Fecha Exacta de Inicio:</span>
+                    <span>{membershipTiming.startDateFullFormatted}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Vigencia hasta:</span>
-                    <span>{currentRenewalDate}</span>
+                    <span className="text-neutral-500">Fecha Exacta de Vencimiento:</span>
+                    <span>{membershipTiming.expireDateFullFormatted}</span>
                   </div>
                 </div>
 

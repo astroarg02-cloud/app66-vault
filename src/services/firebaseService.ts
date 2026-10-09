@@ -91,6 +91,11 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
         role: 'admin',
         joinedAt: '2025-01-15',
         tier: 'Bóveda Diamante',
+        membershipPlan: 'annual',
+        membershipStatus: 'active',
+        subscribedAt: new Date().toISOString(),
+        membershipExpiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
+        lastPaymentAmount: 12,
         avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
         customStatus: '🛡️ Administrador Secundario',
       },
@@ -116,11 +121,20 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
     }
   }
 
-  // Garantizar que cada usuario en el registro tenga un ID de usuario único sin colisiones
+  // Migración única para reemplazar fechas simuladas antiguas (-30 días / -3 días) por la fecha exacta y real de inicio y vencimiento
+  const REAL_DATES_MIGRATION_KEY = 'vault_real_membership_dates_v2';
+  let needsRealDateMigration = false;
+  try {
+    needsRealDateMigration = localStorage.getItem(REAL_DATES_MIGRATION_KEY) !== 'true';
+  } catch {}
+
+  // Garantizar que cada usuario en el registro tenga un ID de usuario único sin colisiones y fechas reales de membresía
   const seenUids = new Set<string>();
   let hasChanges = false;
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
 
-  for (const [emailKey, record] of Object.entries(accounts)) {
+  for (const [, record] of Object.entries(accounts)) {
     if (!record || !record.profile) continue;
 
     const currentUid = record.profile.uid;
@@ -132,6 +146,57 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
       hasChanges = true;
     }
     seenUids.add(record.profile.uid);
+
+    const prof = record.profile;
+    const hasActiveMembership =
+      prof.membershipStatus !== 'cancelled' &&
+      prof.membershipStatus !== 'none' &&
+      (prof.membershipStatus === 'active' ||
+        prof.tier === 'Acceso VIP' ||
+        prof.tier === 'Bóveda Diamante' ||
+        prof.role === 'admin');
+
+    if (hasActiveMembership) {
+      const plan: MembershipPlanType =
+        prof.membershipPlan || (prof.role === 'admin' || prof.tier === 'Bóveda Diamante' ? 'annual' : 'monthly');
+      const durationMs = (plan === 'annual' ? 365 : 30) * 86400000;
+
+      // Si es cuenta semilla con fechas simuladas antiguas o le faltan fechas reales, fijar fecha exacta real
+      const isSeedUser =
+        prof.uid === 'admin_master_astro' ||
+        prof.uid === 'vip_user_449' ||
+        prof.uid === 'admin_ninja_989';
+
+      if ((needsRealDateMigration && isSeedUser) || !prof.subscribedAt || !prof.membershipExpiresAt) {
+        const startIso = (!needsRealDateMigration && prof.subscribedAt) ? prof.subscribedAt : nowIso;
+        const startTime = new Date(startIso).getTime();
+        const validStartTime = isNaN(startTime) ? nowMs : startTime;
+        prof.membershipPlan = plan;
+        if (!prof.membershipStatus || prof.membershipStatus === 'none') {
+          prof.membershipStatus = 'active';
+        }
+        prof.subscribedAt = new Date(validStartTime).toISOString();
+        prof.membershipExpiresAt = new Date(validStartTime + durationMs).toISOString();
+        hasChanges = true;
+      }
+    }
+  }
+
+  if (needsRealDateMigration) {
+    try {
+      localStorage.setItem(REAL_DATES_MIGRATION_KEY, 'true');
+      // Sincronizar también la sesión activa si corresponde a una de las cuentas actualizadas
+      const rawSession = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+      if (rawSession) {
+        const sessionUser = JSON.parse(rawSession) as UserProfile;
+        if (sessionUser && sessionUser.email) {
+          const updatedRecord = accounts[sessionUser.email.toLowerCase().trim()];
+          if (updatedRecord && updatedRecord.profile) {
+            localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(updatedRecord.profile));
+          }
+        }
+      }
+    } catch {}
   }
 
   if (hasChanges || !localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY)) {
@@ -258,11 +323,12 @@ export const firebaseService = {
     }
   },
 
-  // Activar o mejorar la membresía de un usuario por su UID o Email
+  // Activar o mejorar la membresía de un usuario por su UID o Email con fecha exacta y real de inicio y vencimiento
   upgradeUserMembershipByUidOrEmail(
     uid: string, 
     email?: string, 
-    plan: MembershipPlanType = 'monthly'
+    plan: MembershipPlanType = 'monthly',
+    customStartDateIso?: string
   ): UserProfile | null {
     const accounts = getStoredRegisteredAccounts();
     let foundKey: string | null = null;
@@ -278,30 +344,86 @@ export const firebaseService = {
       }
     }
 
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + (plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString();
+    const startD = customStartDateIso ? new Date(customStartDateIso) : new Date();
+    const validStartD = isNaN(startD.getTime()) ? new Date() : startD;
+    const subscribedAtIso = validStartD.toISOString();
+    const expiresAtIso = new Date(validStartD.getTime() + (plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString();
+
+    let updatedProf: UserProfile | null = null;
 
     if (foundKey && accounts[foundKey]) {
-      const updatedProf: UserProfile = {
+      updatedProf = {
         ...accounts[foundKey].profile,
         membershipPlan: plan,
         membershipStatus: 'active',
-        tier: 'Acceso VIP',
-        subscribedAt: now.toISOString(),
-        membershipExpiresAt: expiresAt,
+        tier: accounts[foundKey].profile.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP',
+        subscribedAt: subscribedAtIso,
+        membershipExpiresAt: expiresAtIso,
         lastPaymentAmount: plan === 'annual' ? 12 : 1,
       };
       accounts[foundKey].profile = updatedProf;
       localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+    } else if (email || uid) {
+      const normalizedEmail = (email || `${uid}@vault.user`).toLowerCase().trim();
+      updatedProf = {
+        uid: uid || generateUniqueUserId('usr'),
+        email: normalizedEmail,
+        displayName: normalizedEmail.split('@')[0] || 'Miembro VIP',
+        role: 'vip_member',
+        tier: 'Acceso VIP',
+        joinedAt: validStartD.toISOString().split('T')[0],
+        membershipPlan: plan,
+        membershipStatus: 'active',
+        subscribedAt: subscribedAtIso,
+        membershipExpiresAt: expiresAtIso,
+        lastPaymentAmount: plan === 'annual' ? 12 : 1,
+      };
+      accounts[normalizedEmail] = {
+        email: normalizedEmail,
+        password: 'password123',
+        profile: updatedProf,
+        registeredAt: subscribedAtIso,
+      };
+      localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+    }
+
+    if (updatedProf) {
+      try {
+        localStorage.removeItem(`vault_cancelled_at_${updatedProf.uid}`);
+      } catch {}
 
       const currentSession = this.getLocalSession();
-      if (currentSession && (currentSession.uid === uid || currentSession.email.toLowerCase() === accounts[foundKey].email.toLowerCase())) {
+      if (
+        currentSession &&
+        (currentSession.uid === uid ||
+          (email && currentSession.email.toLowerCase() === email.toLowerCase().trim()))
+      ) {
         this.saveSession(updatedProf);
         window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: updatedProf } }));
       }
-      return updatedProf;
+
+      // Persistir también en Firestore
+      try {
+        if (updatedProf.uid) {
+          const userDocRef = doc(db, 'users', updatedProf.uid);
+          setDoc(
+            userDocRef,
+            {
+              membershipPlan: updatedProf.membershipPlan,
+              membershipStatus: updatedProf.membershipStatus,
+              tier: updatedProf.tier,
+              subscribedAt: updatedProf.subscribedAt,
+              membershipExpiresAt: updatedProf.membershipExpiresAt,
+              lastPaymentAmount: updatedProf.lastPaymentAmount,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          ).catch(() => {});
+        }
+      } catch {}
     }
-    return null;
+
+    return updatedProf;
   },
 
   // Denegar o revocar membresía de un usuario
@@ -349,12 +471,38 @@ export const firebaseService = {
 
   getLocalSession(): UserProfile | null {
     try {
+      // Ejecutar registro de cuentas primero para aplicar migración de fechas reales si corresponde
+      const accounts = getStoredRegisteredAccounts();
       const stored = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
       if (stored) {
         const user = JSON.parse(stored) as UserProfile;
         if (user && typeof user === 'object') {
           if (!user.uid) {
             user.uid = generateUniqueUserId(user.role === 'admin' ? 'admin' : 'usr');
+          }
+          // Sincronizar fechas reales de membresía si están vacías en sesión pero existen en el registro (y no fue cancelada)
+          const matchedRecord = user.email ? accounts[user.email.toLowerCase().trim()] : undefined;
+          let sessionChanged = false;
+          if (
+            matchedRecord &&
+            matchedRecord.profile &&
+            user.membershipStatus !== 'cancelled' &&
+            user.membershipStatus !== 'none'
+          ) {
+            if (!user.subscribedAt && matchedRecord.profile.subscribedAt) {
+              user.subscribedAt = matchedRecord.profile.subscribedAt;
+              sessionChanged = true;
+            }
+            if (!user.membershipExpiresAt && matchedRecord.profile.membershipExpiresAt) {
+              user.membershipExpiresAt = matchedRecord.profile.membershipExpiresAt;
+              sessionChanged = true;
+            }
+            if (!user.membershipPlan && matchedRecord.profile.membershipPlan) {
+              user.membershipPlan = matchedRecord.profile.membershipPlan;
+              sessionChanged = true;
+            }
+          }
+          if (sessionChanged) {
             this.saveSession(user);
           }
           return user;
@@ -374,6 +522,9 @@ export const firebaseService = {
 
     let tier: 'Bóveda Diamante' | 'Acceso VIP' | 'Invitado' = isAdmin ? 'Bóveda Diamante' : 'Acceso VIP';
     let displayName = fbUser.displayName || (email.split('@')[0] ? email.split('@')[0] : 'Miembro VIP');
+    const nowIso = new Date().toISOString();
+    const defaultPlan: MembershipPlanType = isAdmin ? 'annual' : 'monthly';
+    const defaultExpiresIso = new Date(Date.now() + (defaultPlan === 'annual' ? 365 : 30) * 86400000).toISOString();
 
     const profile: UserProfile = {
       uid: fbUser.uid,
@@ -381,11 +532,15 @@ export const firebaseService = {
       displayName,
       role: isAdmin ? 'admin' : 'vip_member',
       avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${fbUser.uid}`,
-      joinedAt: new Date().toISOString().split('T')[0],
+      joinedAt: nowIso.split('T')[0],
       tier,
+      membershipPlan: defaultPlan,
+      membershipStatus: 'active',
+      subscribedAt: nowIso,
+      membershipExpiresAt: defaultExpiresIso,
     };
 
-    // Check local profile first to retain customizations
+    // Check local profile first to retain customizations & exact real membership dates
     const localAccounts = getStoredRegisteredAccounts();
     const localMatch = localAccounts[email.toLowerCase()];
     if (localMatch && localMatch.profile) {
@@ -397,7 +552,9 @@ export const firebaseService = {
       if (localMatch.profile.instagram) profile.instagram = localMatch.profile.instagram;
       if (localMatch.profile.membershipPlan) profile.membershipPlan = localMatch.profile.membershipPlan;
       if (localMatch.profile.membershipStatus) profile.membershipStatus = localMatch.profile.membershipStatus;
+      if (localMatch.profile.subscribedAt) profile.subscribedAt = localMatch.profile.subscribedAt;
       if (localMatch.profile.membershipExpiresAt) profile.membershipExpiresAt = localMatch.profile.membershipExpiresAt;
+      if (localMatch.profile.lastPaymentAmount) profile.lastPaymentAmount = localMatch.profile.lastPaymentAmount;
     }
 
     // Non-blocking firestore sync with timeout to prevent loading hangs
