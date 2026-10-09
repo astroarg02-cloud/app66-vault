@@ -238,7 +238,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 24 }}
         transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-        className={`w-full max-w-lg max-h-[94dvh] sm:max-h-[92dvh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-t sm:border transition-colors duration-300 relative ${
+        className={`w-full max-w-lg sm:max-w-xl md:max-w-2xl max-h-[94dvh] sm:max-h-[90dvh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-t sm:border transition-colors duration-300 relative ${
           isDark ? 'bg-black border-[#1E1E24] text-white' : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
         }`}
       >

@@ -341,7 +341,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
       </div>
 
       {/* Directory Content List */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-2.5 sm:p-4 pb-20 sm:pb-32 space-y-2.5 sm:space-y-3">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-5 lg:p-6 pb-20 sm:pb-28 space-y-3 sm:space-y-4">
         {/* COLLECTIONS / LISTS HUB VIEW */}
         {activeTabMode === 'collections' || (!isAdmin && !activeList) ? (
           <div className="space-y-3">
@@ -393,7 +393,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {lists
                   .filter((l) => {
                     if (!searchQuery.trim()) return true;
@@ -588,7 +588,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
           /* GRID VIEW */
           <motion.div 
             layout 
-            className="grid grid-cols-2 gap-3"
+            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4"
           >
             <AnimatePresence>
               {filteredItems.map((item, index) => {
@@ -615,7 +615,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                         : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/70 shadow-sm hover:shadow-md'
                     }`}
                   >
-                    <div className={`relative h-24 overflow-hidden ${isDark ? 'bg-[#121216]' : 'bg-[#E2E8F0]'}`}>
+                    <div className={`relative h-28 sm:h-36 overflow-hidden ${isDark ? 'bg-[#121216]' : 'bg-[#E2E8F0]'}`}>
                       <img
                         src={item.coverImage}
                         alt={item.title}
@@ -693,7 +693,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
           </motion.div>
         ) : (
           /* LIST VIEW */
-          <motion.div layout className="space-y-3">
+          <motion.div layout className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-3.5">
             <AnimatePresence>
               {filteredItems.map((item, index) => {
                 const itemLists = lists.filter((l) => Array.isArray(l.itemIds) && l.itemIds.includes(item.id));

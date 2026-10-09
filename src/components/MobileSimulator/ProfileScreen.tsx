@@ -189,10 +189,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   return (
     <div
-      className={`w-full flex-1 h-full min-h-0 flex flex-col overflow-y-auto overscroll-contain custom-scrollbar p-2.5 sm:p-4 pb-24 sm:pb-28 space-y-3 sm:space-y-4 ${
+      className={`w-full flex-1 h-full min-h-0 flex flex-col overflow-y-auto overscroll-contain custom-scrollbar p-3 sm:p-5 lg:p-6 pb-20 sm:pb-24 ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >
+      <div className="w-full max-w-4xl mx-auto space-y-3 sm:space-y-4">
       {/* Toast Notification */}
       <AnimatePresence>
         {saveToast && (
@@ -1060,6 +1061,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 };

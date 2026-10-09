@@ -784,15 +784,15 @@ function AppContent() {
   // Priority 2: Unauthenticated view -> Mandatory AuthScreen
   if (!currentUser) {
     return (
-      <div className={`h-[100dvh] w-full flex items-center justify-center p-3 sm:p-4 overflow-y-auto transition-colors duration-300 ${
+      <div className={`min-h-[100dvh] h-[100dvh] w-full flex items-center justify-center p-0 sm:p-4 md:p-6 overflow-y-auto transition-colors duration-300 ${
         isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
       }`}>
         <motion.div 
           initial={{ opacity: 0, scale: 0.96, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-          className={`w-full max-w-md max-h-[94dvh] rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
-            isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+          className={`w-full h-full sm:h-auto sm:max-w-[440px] sm:max-h-[92dvh] rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl overflow-hidden flex flex-col ${
+            isDark ? 'bg-[#0A0A0C] sm:border-[#1E1E24]' : 'bg-white sm:border-[#E2E8F0]'
           }`}
         >
           <AuthScreen onLogin={handleLogin} />
@@ -803,7 +803,7 @@ function AppContent() {
 
   return (
     <div
-      className={`h-full max-h-full w-full flex flex-col font-sans overflow-hidden select-none ${
+      className={`h-[100dvh] max-h-[100dvh] w-full flex flex-col font-sans overflow-hidden select-none ${
         isDark
           ? 'bg-black text-white selection:bg-[#0066FF] selection:text-white'
           : 'bg-[#F1F4F9] text-[#0F172A] selection:bg-[#0066FF] selection:text-white'
@@ -811,33 +811,38 @@ function AppContent() {
     >
       {/* Top Header Bar for Private Server */}
       <header
-        className={`shrink-0 z-40 px-2 sm:px-4 py-1 sm:py-1.5 border-b backdrop-blur-xl ${
+        className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 border-b backdrop-blur-xl ${
           isDark
             ? 'border-[#1E1E24] bg-black/95 shadow-black/80'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-1.5 sm:gap-2">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand & Logo */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <motion.div 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setCurrentTab('vault')}
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/30 text-white shrink-0 cursor-pointer"
+              onClick={() => {
+                setCurrentTab('vault');
+                if (currentUser.role !== 'admin') {
+                  setVaultTabMode('collections');
+                }
+              }}
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/30 text-white shrink-0 cursor-pointer"
             >
-              <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+              <ShieldCheck className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
             </motion.div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="text-sm sm:text-base font-black tracking-tight leading-none">
+                <h1 className="text-sm sm:text-base lg:text-lg font-black tracking-tight leading-none truncate">
                   App 66
                 </h1>
-                <span className="px-1.5 py-0.5 rounded-full text-[8.5px] sm:text-[9.5px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[8.5px] sm:text-[10px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30 shrink-0">
                   SERVIDOR PRIVADO
                 </span>
                 {isSupabaseConfigured && (
-                  <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                     <Database className="w-2.5 h-2.5" /> SUPABASE
                   </span>
                 )}
@@ -846,22 +851,22 @@ function AppContent() {
           </div>
 
           {/* Right Controls: User info with Avatar, Theme & Logout */}
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* Admin Maintenance Control Button */}
             {currentUser.role === 'admin' && (
               <motion.button
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
                 onClick={() => setShowMaintenanceModal(true)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                   isMaintenanceActive
                     ? 'bg-amber-500/15 border-amber-500/35 text-amber-500 dark:text-amber-400 hover:bg-amber-500/25 shadow-sm'
                     : 'bg-black/5 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
                 title="Configurar Modo Mantenimiento"
               >
-                <Wrench className="w-3 h-3 shrink-0" />
-                <span className="hidden sm:inline">Mantenimiento:</span>
+                <Wrench className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden md:inline">Mantenimiento:</span>
                 <span className={isMaintenanceActive ? 'font-black text-amber-500 dark:text-amber-400' : 'font-semibold text-slate-400'}>
                   {isMaintenanceActive ? 'ON' : 'OFF'}
                 </span>
@@ -875,7 +880,7 @@ function AppContent() {
               whileTap={{ scale: 0.97 }}
               onClick={() => setCurrentTab('profile')}
               title={`Ver Perfil: ${currentUser.displayName}`}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-[11px] font-bold cursor-pointer transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
                 currentTab === 'profile'
                   ? 'border-[#0066FF] bg-[#0066FF]/15 text-[#0066FF]'
                   : isDark
@@ -887,20 +892,20 @@ function AppContent() {
                 <img
                   src={currentUser.avatarUrl}
                   alt={currentUser.displayName}
-                  className="w-5 h-5 rounded-full object-cover border border-[#0066FF] shrink-0"
+                  className="w-5 h-5 sm:w-6 sm:h-6 rounded-full object-cover border border-[#0066FF] shrink-0"
                 />
               ) : (
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#0066FF] to-blue-700 text-[10px] text-white flex items-center justify-center font-black shrink-0">
+                <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-[#0066FF] to-blue-700 text-[10px] sm:text-xs text-white flex items-center justify-center font-black shrink-0">
                   {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
                 </div>
               )}
-              <span className="max-w-[75px] sm:max-w-[120px] truncate leading-none">
+              <span className="max-w-[80px] sm:max-w-[150px] truncate leading-none">
                 {currentUser.displayName}
               </span>
               {currentUser.role === 'admin' ? (
-                <VerifiedBadge className="w-3.5 h-3.5 text-[#0066FF] shrink-0" />
+                <VerifiedBadge className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0066FF] shrink-0" />
               ) : currentUser.membershipStatus === 'active' && currentUser.membershipPlan ? (
-                <span className="px-1 py-0.2 rounded-full text-[8.5px] font-extrabold bg-[#0066FF]/15 text-[#0066FF] shrink-0">
+                <span className="px-1.5 py-0.5 rounded-full text-[8.5px] sm:text-[9px] font-extrabold bg-[#0066FF]/15 text-[#0066FF] shrink-0">
                   VIP
                 </span>
               ) : null}
@@ -912,7 +917,7 @@ function AppContent() {
               onClick={toggleTheme}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-[#1A1A22] text-[#8E8E93] hover:text-white'
                   : 'border-[#E2E8F0] hover:bg-slate-100 text-[#64748B] hover:text-black'
@@ -927,7 +932,7 @@ function AppContent() {
                   exit={{ rotate: 90, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-700" />}
+                  {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
                 </motion.div>
               </AnimatePresence>
             </motion.button>
@@ -938,23 +943,23 @@ function AppContent() {
               onClick={handleLogout}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
                 isDark
                   ? 'border-[#1E1E24] hover:bg-red-500/15 hover:border-red-500/30 text-[#8E8E93] hover:text-red-400'
                   : 'border-[#E2E8F0] hover:bg-red-50 text-[#64748B] hover:text-red-600'
               }`}
               title="Cerrar Sesión"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-4 h-4" />
             </motion.button>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-6xl mx-auto p-1 sm:p-2 overflow-hidden flex flex-col min-h-0">
-        <div className={`w-full h-full flex-1 rounded-xl sm:rounded-2xl border shadow-lg overflow-hidden flex flex-col min-h-0 relative ${
-          isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+      {/* Main Content Area: Full-bleed on mobile, framed container on PC */}
+      <main className="flex-1 w-full max-w-7xl mx-auto p-0 sm:p-3 lg:p-5 overflow-hidden flex flex-col min-h-0">
+        <div className={`w-full h-full flex-1 rounded-none sm:rounded-2xl border-0 sm:border sm:shadow-xl overflow-hidden flex flex-col min-h-0 relative ${
+          isDark ? 'bg-[#0A0A0C] sm:border-[#1E1E24]' : 'bg-white sm:border-[#E2E8F0]'
         }`}>
           <AnimatePresence mode="wait">
             {currentTab === 'vault' && (
@@ -1076,20 +1081,20 @@ function AppContent() {
         </div>
       </main>
 
-      {/* GLOBAL BOTTOM HOME BAR (Barra de Inicio Inferior visible en TODOS los apartados) */}
+      {/* GLOBAL BOTTOM HOME BAR (Solo iconos en Mobile y PC) */}
       <nav 
         id="global-bottom-home-bar"
         aria-label="Barra de Navegación Inferior"
-        className={`shrink-0 z-40 px-2 sm:px-4 py-1 sm:py-1.5 border-t flex justify-center ${
+        className={`shrink-0 z-40 px-3 sm:px-6 py-1.5 sm:py-2 border-t flex justify-center pb-[max(0.375rem,env(safe-area-inset-bottom))] ${
           isDark 
-            ? 'bg-black border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
-            : 'bg-white border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
+            ? 'bg-black/95 border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
+            : 'bg-white/95 border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
         }`}
       >
-        <div className={`w-full max-w-xl flex items-center justify-between sm:justify-center gap-1 sm:gap-2 px-1 sm:px-2 py-1 rounded-full border shadow-inner ${
+        <div className={`w-full max-w-md flex items-center justify-around sm:justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border shadow-inner ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-[#F1F5F9] border-slate-200'
         }`}>
-          {/* Publicaciones (SOLO ADMINISTRADORES) */}
+          {/* Publicaciones (SOLO ICONO, SOLO ADMINISTRADORES) */}
           {currentUser?.role === 'admin' && (
             <button
               id="home-bar-tab-publicaciones"
@@ -1101,20 +1106,19 @@ function AppContent() {
                 setVaultTabMode('items');
                 setSelectedVaultListId(null);
               }}
-              className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
+              className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
                 currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId
-                  ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
+                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                   : isDark
-                  ? 'text-zinc-400 active:text-white'
-                  : 'text-slate-500 active:text-slate-900'
+                  ? 'text-zinc-400 hover:text-white active:text-white'
+                  : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
               }`}
             >
-              <FolderClosed className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-              <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Publicaciones</span>
+              <FolderClosed className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
             </button>
           )}
 
-          {/* Colecciones */}
+          {/* Colecciones (SOLO ICONO) */}
           <button
             id="home-bar-tab-colecciones"
             type="button"
@@ -1125,77 +1129,55 @@ function AppContent() {
               setVaultTabMode('collections');
               setSelectedVaultListId(null);
             }}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
+            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'vault' && (vaultTabMode === 'collections' || selectedVaultListId !== null)
-                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
+                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 active:text-white'
-                : 'text-slate-500 active:text-slate-900'
+                ? 'text-zinc-400 hover:text-white active:text-white'
+                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
             }`}
           >
-            <Layers className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Colecciones</span>
+            <Layers className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
           </button>
 
           {/* Separador vertical sutil */}
-          <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
+          <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
-          {/* Membresía VIP */}
+          {/* Membresía VIP (SOLO ICONO) */}
           <button
             id="home-bar-tab-membresia"
             type="button"
-            title={
-              currentUser && (
-                currentUser.membershipStatus === 'active' ||
-                currentUser.membershipPlan ||
-                currentUser.tier === 'Acceso VIP' ||
-                currentUser.tier === 'Bóveda Diamante' ||
-                currentUser.role === 'admin'
-              )
-                ? 'Membresía VIP'
-                : 'Membresía VIP (1$ al mes / 12$ al año)'
-            }
+            title="Membresía VIP"
             aria-label="Membresía VIP"
             onClick={() => setCurrentTab('membership')}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
+            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'membership'
-                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
+                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 active:text-white'
-                : 'text-slate-500 active:text-slate-900'
+                ? 'text-zinc-400 hover:text-white active:text-white'
+                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
             }`}
           >
-            <Crown className={`w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 ${currentTab === 'membership' ? 'text-amber-300' : 'text-amber-400'}`} />
-            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Membresía</span>
+            <Crown className={`w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0 ${currentTab === 'membership' ? 'text-amber-300' : 'text-amber-400'}`} />
           </button>
 
           {/* Apartado de Comprobación (SOLO ICONO) */}
           <button
             id="home-bar-tab-comprobantes"
             type="button"
-            title={
-              currentUser && (
-                currentUser.membershipStatus === 'active' ||
-                currentUser.membershipPlan ||
-                currentUser.tier === 'Acceso VIP' ||
-                currentUser.tier === 'Bóveda Diamante' ||
-                currentUser.role === 'admin'
-              )
-                ? 'Comprobación de Pago'
-                : 'Comprobación de Pago ($1/mes o $12/año)'
-            }
+            title="Comprobación de Pago"
             aria-label="Comprobación de Pago"
             onClick={() => setCurrentTab('receipts')}
-            className={`relative flex items-center justify-center w-8.5 sm:w-9 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
+            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'receipts'
                 ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 active:text-white'
-                : 'text-slate-500 active:text-slate-900'
+                ? 'text-zinc-400 hover:text-white active:text-white'
+                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
             }`}
           >
             <div className="relative flex items-center justify-center">
-              <FileText className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+              <FileText className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
               {currentTab !== 'receipts' && (
                 <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400" />
               )}
@@ -1205,23 +1187,23 @@ function AppContent() {
           {/* Apartado de Aprobación en Home Bar (SOLO ICONO, SOLO ADMINISTRADORES) */}
           {currentUser?.role === 'admin' && (
             <>
-              <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
+              <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
               <button
                 id="home-bar-tab-aprobaciones"
                 type="button"
                 title={`Aprobación de Membresías (${pendingApprovalsCount} pendientes)`}
                 aria-label="Aprobación de Membresías"
                 onClick={() => setCurrentTab('approvals')}
-                className={`relative flex items-center justify-center w-8.5 sm:w-9 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
+                className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
                   currentTab === 'approvals'
                     ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                     : isDark
-                    ? 'text-zinc-400 active:text-white'
-                    : 'text-slate-500 active:text-slate-900'
+                    ? 'text-zinc-400 hover:text-white active:text-white'
+                    : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
                 }`}
               >
                 <div className="relative flex items-center justify-center">
-                  <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+                  <ShieldCheck className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
                   {pendingApprovalsCount > 0 && (
                     <span className="absolute -top-1.5 -right-2 px-1 py-0.2 min-w-[14px] text-[9px] font-black rounded-full bg-amber-400 text-black border border-black flex items-center justify-center">
                       {pendingApprovalsCount}
@@ -1233,25 +1215,24 @@ function AppContent() {
           )}
 
           {/* Separador vertical sutil */}
-          <div className={`w-px h-4.5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
+          <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
-          {/* Ajustes y Sistema */}
+          {/* Ajustes y Sistema (SOLO ICONO) */}
           <button
             id="home-bar-tab-ajustes"
             type="button"
             title="Ajustes y Sistema"
             aria-label="Ajustes y Sistema"
             onClick={() => setCurrentTab('profile')}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
+            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
               currentTab === 'profile'
-                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
+                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
                 : isDark
-                ? 'text-zinc-400 active:text-white'
-                : 'text-slate-500 active:text-slate-900'
+                ? 'text-zinc-400 hover:text-white active:text-white'
+                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
             }`}
           >
-            <Settings className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Ajustes</span>
+            <Settings className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
           </button>
         </div>
       </nav>
