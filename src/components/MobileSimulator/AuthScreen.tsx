@@ -17,17 +17,18 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
-import { isAuthorizedAdminKey } from '../../data/initialVaultData';
 import { firebaseService } from '../../services/firebaseService';
+import { isAuthorizedAdminKey } from '../../data/initialVaultData';
 
 interface AuthScreenProps {
   onLogin: (user: UserProfile) => void;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
-  const [enableAdminMode, setEnableAdminMode] = useState(false);
-  const [adminKey, setAdminKey] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [adminKey, setAdminKey] = useState('');
+  const [showAdminKey, setShowAdminKey] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -37,28 +38,32 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { isDark } = useTheme();
 
-  const isKeyValid = isAuthorizedAdminKey(adminKey);
-
-  // Formulario de Administrador con Key
-  const handleAdminSubmit = async (e: React.FormEvent) => {
+  // Acceso directo de Administrador en el inicio de sesión con Key
+  const handleAdminKeySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    if (!isKeyValid) {
-      setErrorMessage('Key de seguridad incorrecta. Se requiere la clave de Administrador.');
+    const cleanKey = adminKey.trim();
+    if (!cleanKey) {
+      setErrorMessage('Por favor introduce la Key de Administrador.');
       return;
     }
 
+    if (!isAuthorizedAdminKey(cleanKey)) {
+      setErrorMessage('Key de Administrador incorrecta. Acceso denegado.');
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      const adminProfile = await firebaseService.loginAsAdminWithKey(adminKey);
-      setSuccessMessage('¡Acceso concedido como Administrador!');
+      const adminUser = await firebaseService.loginAsAdminWithKey(cleanKey);
+      setSuccessMessage('¡Acceso de Administrador verificado!');
       setTimeout(() => {
-        onLogin(adminProfile);
-      }, 400);
+        onLogin(adminUser);
+      }, 350);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Error al validar la Key');
+      setErrorMessage(err?.message || 'Error al verificar acceso de Administrador.');
     } finally {
       setIsLoading(false);
     }
@@ -78,7 +83,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       return;
     }
 
-    if (cleanPass.length < 6) {
+    if (isSignUp && cleanPass.length < 6) {
       setErrorMessage('La contraseña debe contener al menos 6 caracteres.');
       return;
     }
@@ -143,18 +148,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           >
             <div
               className={`w-18 h-18 rounded-full flex items-center justify-center border transition-all ${
-                enableAdminMode
-                  ? 'bg-[#0066FF]/10 border-[#0066FF] shadow-[0_0_50px_-5px_rgba(0,102,255,0.6)]'
-                  : isDark
+                isDark
                   ? 'bg-[#0A0A0C] border-[#1E1E24] shadow-[0_0_50px_-10px_rgba(0,102,255,0.45)]'
                   : 'bg-white border-blue-100 shadow-xl shadow-blue-500/15'
               }`}
             >
-              {enableAdminMode ? (
-                <Shield className="w-9 h-9 text-[#0066FF] animate-pulse" />
-              ) : (
-                <Shield className="w-9 h-9 text-[#0066FF]" />
-              )}
+              <Shield className="w-9 h-9 text-[#0066FF]" />
             </div>
             <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/40">
               <Key className="w-2.5 h-2.5 text-white" />
@@ -164,68 +163,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           <div>
             <div className="flex items-center justify-center gap-1.5 text-[11px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
               <Flame className="w-3 h-3 text-amber-400" />
-              <span>{enableAdminMode ? 'ACCESO ADMINISTRADOR' : 'BÓVEDA PRIVADA'}</span>
+              <span>BÓVEDA PRIVADA</span>
             </div>
             <h1
               className={`text-2xl font-black tracking-tight mt-1 ${
                 isDark ? 'text-white' : 'text-[#0F172A]'
               }`}
             >
-              {enableAdminMode ? 'Desbloqueo con Key' : isSignUp ? 'Crear Cuenta' : 'Acceso al Servidor'}
+              {isAdminMode
+                ? 'Acceso Administrador'
+                : isSignUp
+                ? 'Crear Cuenta'
+                : 'Acceso al Servidor'}
             </h1>
             <p className={`text-xs max-w-xs mt-1 leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-              {enableAdminMode
-                ? 'Ingresa tu Key de seguridad para desbloquear privilegios de Administrador.'
+              {isAdminMode
+                ? 'Ingresa la Key de seguridad para entrar como Administrador.'
                 : isSignUp
                 ? 'Crea tu cuenta de acceso a la bóveda privada.'
                 : 'Servidor privado con autenticación segura.'}
             </p>
-          </div>
-        </div>
-
-        {/* Toggle Mode Administrador con Key */}
-        <div
-          className={`p-3 rounded-2xl border transition-all ${
-            enableAdminMode
-              ? isDark
-                ? 'bg-[#0066FF]/15 border-[#0066FF]/50 ring-1 ring-[#0066FF]/40'
-                : 'bg-blue-50 border-blue-300 ring-1 ring-blue-500/30 shadow-sm'
-              : isDark
-              ? 'bg-[#0A0A0C] border-[#1E1E24]'
-              : 'bg-white border-[#E2E8F0] shadow-sm'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${
-                enableAdminMode ? 'bg-[#0066FF] text-white' : isDark ? 'bg-[#1E1E24] text-[#8E8E93]' : 'bg-slate-100 text-[#64748B]'
-              }`}>
-                <Key className="w-3.5 h-3.5" />
-              </div>
-              <div>
-                <span className={`text-xs font-bold block ${enableAdminMode ? 'text-[#0066FF]' : isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                  Modo Administrador (Acceso con Key)
-                </span>
-                <span className={`text-[10px] block ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                  {enableAdminMode ? 'Clave maestra requerida' : 'Activar para entrar con Key'}
-                </span>
-              </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
-              <input
-                id="admin-mode-toggle"
-                type="checkbox"
-                checked={enableAdminMode}
-                onChange={(e) => {
-                  setEnableAdminMode(e.target.checked);
-                  setErrorMessage(null);
-                  setSuccessMessage(null);
-                  if (!e.target.checked) setAdminKey('');
-                }}
-                className="sr-only peer"
-              />
-              <div className="w-8 h-4.5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#0066FF]"></div>
-            </label>
           </div>
         </div>
 
@@ -259,78 +216,119 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           )}
         </AnimatePresence>
 
-        {/* Formulario Administrador con Key */}
-        {enableAdminMode ? (
-          <form onSubmit={handleAdminSubmit} className="space-y-3.5">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label
-                  className={`block text-[11px] font-semibold uppercase tracking-wider ${
-                    isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'
-                  }`}
-                >
-                  Key de Seguridad
-                </label>
-                {isKeyValid ? (
-                  <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Key Validada
-                  </span>
-                ) : null}
+        {/* Toggle de Acceso Administrador en el Inicio de Sesión */}
+        <div
+          className={`p-3 rounded-2xl border flex items-center justify-between transition-colors ${
+            isAdminMode
+              ? 'bg-[#0066FF]/10 border-[#0066FF]/40'
+              : isDark
+              ? 'bg-[#0A0A0C] border-[#1E1E24]'
+              : 'bg-slate-50 border-slate-200'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                isAdminMode
+                  ? 'bg-[#0066FF] text-white'
+                  : isDark
+                  ? 'bg-[#121216] text-[#0066FF]'
+                  : 'bg-white text-[#0066FF] border border-slate-200'
+              }`}
+            >
+              <Key className="w-4 h-4" />
+            </div>
+            <div>
+              <div className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                Modo Administrador
               </div>
+              <div className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                Acceso al panel con Key de seguridad
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="toggle-admin-mode-btn"
+            onClick={() => {
+              setIsAdminMode(!isAdminMode);
+              setErrorMessage(null);
+              setSuccessMessage(null);
+            }}
+            className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer relative ${
+              isAdminMode ? 'bg-[#0066FF]' : isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform ${
+                isAdminMode ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {isAdminMode ? (
+          /* Formulario de Acceso Administrador con Key */
+          <form onSubmit={handleAdminKeySubmit} className="space-y-3">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
+                Key de Administrador
+              </label>
               <div className="relative">
-                <Key
-                  className={`w-4 h-4 absolute left-3.5 top-3.5 text-[#0066FF]`}
-                />
+                <Key className="w-4 h-4 absolute left-3.5 top-2.5 text-[#0066FF]" />
                 <input
-                  id="admin-key-direct-input"
-                  type="password"
+                  type={showAdminKey ? 'text' : 'password'}
                   required
-                  autoFocus
                   value={adminKey}
-                  onChange={(e) => {
-                    setAdminKey(e.target.value);
-                    setErrorMessage(null);
-                  }}
-                  placeholder="Ingresa la Key de Administrador"
-                  className={`w-full rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm font-mono tracking-widest focus:outline-none transition-colors border ${
-                    isKeyValid
-                      ? 'border-emerald-500 bg-emerald-500/5 text-emerald-400'
-                      : isDark
-                      ? 'border-[#1E1E24] bg-[#0A0A0C] text-white placeholder-[#5A5A62]'
-                      : 'border-[#CBD5E1] bg-white text-[#0F172A] placeholder-[#94A3B8]'
+                  onChange={(e) => setAdminKey(e.target.value)}
+                  placeholder="Ingresa la Key de seguridad..."
+                  className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] transition-colors font-mono ${
+                    isDark
+                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-slate-600'
+                      : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                   }`}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowAdminKey(!showAdminKey)}
+                  className="absolute right-3.5 top-2.5 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  {showAdminKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
             <motion.button
-              id="admin-direct-submit-btn"
               type="submit"
               disabled={isLoading}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="w-full py-3 px-5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] active:scale-[0.99] text-white font-bold text-xs sm:text-sm tracking-wide uppercase flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer"
+              className="w-full py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white font-bold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer disabled:opacity-50"
             >
-              <Shield className="w-4 h-4" />
-              <span>INGRESAR COMO ADMINISTRADOR</span>
+              {isLoading ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Shield className="w-4 h-4" />
+                  <span>Entrar como Administrador</span>
+                </>
+              )}
             </motion.button>
 
-            <motion.button
+            <button
               type="button"
               onClick={() => {
-                setEnableAdminMode(false);
-                setAdminKey('');
+                setIsAdminMode(false);
                 setErrorMessage(null);
               }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full text-center text-xs py-1 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                isDark ? 'text-[#8E8E93] hover:text-white' : 'text-[#64748B] hover:text-[#0F172A]'
+              className={`w-full py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
+                isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Volver a Inicio de Sesión</span>
-            </motion.button>
+              <span>Volver al inicio de sesión de usuarios</span>
+            </button>
           </form>
         ) : (
           /* Formulario Normal de Auth (Login y Register) */
@@ -485,3 +483,4 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     </motion.div>
   );
 };
+

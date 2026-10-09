@@ -3,6 +3,7 @@ import { VaultItem, VaultList, UserProfile } from '../types';
 export const ADMIN_AUTHORIZED_EMAILS = [
   'astroarg02@gmail.com',
   'cuentaninja989@gmail.com',
+  'creadorffx@gmail.com',
   'admin@vault.private',
 ];
 export const ADMIN_AUTHORIZED_EMAIL = 'astroarg02@gmail.com';

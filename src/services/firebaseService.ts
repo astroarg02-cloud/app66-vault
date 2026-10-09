@@ -75,6 +75,8 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
       profile: {
         ...INITIAL_ADMIN_USER,
         uid: 'admin_master_astro',
+        role: 'admin',
+        tier: 'Bóveda Diamante',
         bio: 'Administrador central de Bóveda App 66. Gestión de contenidos y verificaciones.',
         phone: '+54 9 11 6554-6038',
         customStatus: '🛡️ En línea - Modo Administrador',
@@ -107,6 +109,7 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
       profile: {
         ...INITIAL_MEMBER_USER,
         uid: 'vip_user_449',
+        role: 'vip_member',
         bio: 'Miembro VIP de la comunidad. Acceso a recursos exclusivos.',
         customStatus: '💎 Miembro VIP',
       },
@@ -128,7 +131,7 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
     needsRealDateMigration = localStorage.getItem(REAL_DATES_MIGRATION_KEY) !== 'true';
   } catch {}
 
-  // Garantizar que cada usuario en el registro tenga un ID de usuario único sin colisiones y fechas reales de membresía
+  // Garantizar que solo los correos autorizados tengan rol admin, y ningún usuario regular pueda tener admin
   const seenUids = new Set<string>();
   let hasChanges = false;
   const nowMs = Date.now();
@@ -137,11 +140,23 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
   for (const [, record] of Object.entries(accounts)) {
     if (!record || !record.profile) continue;
 
+    const isAllowedAdmin = isAuthorizedAdminEmail(record.email || record.profile.email);
+    if (isAllowedAdmin && record.profile.role !== 'admin') {
+      record.profile.role = 'admin';
+      record.profile.tier = 'Bóveda Diamante';
+      hasChanges = true;
+    } else if (!isAllowedAdmin && record.profile.role === 'admin') {
+      record.profile.role = 'vip_member';
+      if (record.profile.tier === 'Bóveda Diamante') {
+        record.profile.tier = 'Acceso VIP';
+      }
+      hasChanges = true;
+    }
+
     const currentUid = record.profile.uid;
     // Si el ID está vacío o repetido por otro usuario, se genera un ID único e irrepetible
     if (!currentUid || seenUids.has(currentUid)) {
-      const isAdm = record.profile.role === 'admin' || isAuthorizedAdminEmail(record.email);
-      const uniqueId = generateUniqueUserId(isAdm ? 'admin' : 'usr');
+      const uniqueId = generateUniqueUserId(isAllowedAdmin ? 'admin' : 'usr');
       record.profile.uid = uniqueId;
       hasChanges = true;
     }
@@ -223,7 +238,13 @@ export const firebaseService = {
   saveSession(user: UserProfile | null): void {
     try {
       if (user) {
-        localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(user));
+        const isAllowedAdmin = isAuthorizedAdminEmail(user.email);
+        const sanitizedUser: UserProfile = {
+          ...user,
+          role: isAllowedAdmin ? 'admin' : 'vip_member',
+          tier: isAllowedAdmin ? 'Bóveda Diamante' : (user.tier === 'Bóveda Diamante' ? 'Acceso VIP' : user.tier),
+        };
+        localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(sanitizedUser));
       } else {
         localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
       }
@@ -477,12 +498,25 @@ export const firebaseService = {
       if (stored) {
         const user = JSON.parse(stored) as UserProfile;
         if (user && typeof user === 'object') {
+          let sessionChanged = false;
+          const isAllowedAdmin = isAuthorizedAdminEmail(user.email);
           if (!user.uid) {
-            user.uid = generateUniqueUserId(user.role === 'admin' ? 'admin' : 'usr');
+            user.uid = generateUniqueUserId(isAllowedAdmin ? 'admin' : 'usr');
+            sessionChanged = true;
+          }
+          if (isAllowedAdmin && user.role !== 'admin') {
+            user.role = 'admin';
+            user.tier = 'Bóveda Diamante';
+            sessionChanged = true;
+          } else if (!isAllowedAdmin && user.role === 'admin') {
+            user.role = 'vip_member';
+            if (user.tier === 'Bóveda Diamante') {
+              user.tier = 'Acceso VIP';
+            }
+            sessionChanged = true;
           }
           // Sincronizar fechas reales de membresía si están vacías en sesión pero existen en el registro (y no fue cancelada)
           const matchedRecord = user.email ? accounts[user.email.toLowerCase().trim()] : undefined;
-          let sessionChanged = false;
           if (
             matchedRecord &&
             matchedRecord.profile &&
@@ -515,9 +549,9 @@ export const firebaseService = {
   },
 
   // Map a Firebase Auth User + Firestore data into app's UserProfile
-  async mapFirebaseUserToProfile(fbUser: FirebaseUser, forceAdmin?: boolean): Promise<UserProfile> {
+  async mapFirebaseUserToProfile(fbUser: FirebaseUser): Promise<UserProfile> {
     const email = fbUser.email || '';
-    const isAdmin = forceAdmin || isAuthorizedAdminEmail(email);
+    const isAdmin = isAuthorizedAdminEmail(email);
     const userDocRef = doc(db, 'users', fbUser.uid);
 
     let tier: 'Bóveda Diamante' | 'Acceso VIP' | 'Invitado' = isAdmin ? 'Bóveda Diamante' : 'Acceso VIP';
@@ -566,7 +600,7 @@ export const firebaseService = {
         ]);
         if (snap && snap.exists()) {
           const data = snap.data();
-          if (data.tier) profile.tier = data.tier;
+          if (data.tier) profile.tier = isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : data.tier);
           if (data.displayName) profile.displayName = data.displayName;
           if (data.avatarUrl) profile.avatarUrl = data.avatarUrl;
           if (data.bio) profile.bio = data.bio;
@@ -617,8 +651,13 @@ export const firebaseService = {
 
       if (existingRecord) {
         if (existingRecord.password === cleanPassword) {
-          this.saveSession(existingRecord.profile);
-          return existingRecord.profile;
+          const isAllowedAdmin = isAuthorizedAdminEmail(normalizedEmail);
+          const safeProfile: UserProfile = {
+            ...existingRecord.profile,
+            role: isAllowedAdmin ? 'admin' : 'vip_member',
+          };
+          this.saveSession(safeProfile);
+          return safeProfile;
         }
         const passError = new Error('Contraseña incorrecta. Por favor verifica tus datos.');
         (passError as any).code = 'auth/wrong-password';
@@ -630,12 +669,14 @@ export const firebaseService = {
         let uniqueAdminUid = 'admin_master_astro';
         if (normalizedEmail.includes('ninja')) uniqueAdminUid = 'admin_ninja_989';
         else if (normalizedEmail.includes('vault.private')) uniqueAdminUid = 'admin_vault_private';
+        else if (normalizedEmail.includes('creador')) uniqueAdminUid = 'admin_creador_ffx';
 
         const adminUser: UserProfile = {
           ...INITIAL_ADMIN_USER,
           uid: uniqueAdminUid,
           email: normalizedEmail,
           displayName: `Administrador (${normalizedEmail.split('@')[0]})`,
+          role: 'admin',
         };
         storeRegisteredAccount({
           email: normalizedEmail,

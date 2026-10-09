@@ -230,15 +230,15 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4"
     >
       <motion.div
         id="vault-detail-modal-container"
-        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        initial={{ opacity: 0, scale: 0.96, y: 24 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.94, y: 16 }}
+        exit={{ opacity: 0, scale: 0.96, y: 24 }}
         transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-        className={`w-full max-w-lg max-h-[92dvh] rounded-3xl flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border transition-colors duration-300 relative ${
+        className={`w-full max-w-lg max-h-[94dvh] sm:max-h-[92dvh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-t sm:border transition-colors duration-300 relative ${
           isDark ? 'bg-black border-[#1E1E24] text-white' : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
         }`}
       >
@@ -642,7 +642,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                 className="hidden"
                 onChange={handleReuploadFile}
               />
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="text-xs">
                   <span className={`font-bold block ${isDark ? 'text-white' : 'text-slate-800'}`}>
                     {hasFile ? 'Actualizar Archivo Real' : 'Adjuntar Archivo Real a la Publicación'}
@@ -655,7 +655,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isReuploading}
-                  className="px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#0052FF] disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  className="w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#0052FF] disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
                   <span>{isReuploading ? `Subiendo (${reuploadProgress || 0}%)` : hasFile ? 'Re-subir archivo' : 'Subir archivo'}</span>

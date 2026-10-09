@@ -54,16 +54,22 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
     isAdmin ? 'items' : 'collections'
   );
 
-  const activeTabMode = externalActiveTabMode !== undefined ? externalActiveTabMode : internalActiveTabMode;
-  const setActiveTabMode = (mode: 'items' | 'collections') => {
-    setInternalActiveTabMode(mode);
-    onTabModeChange?.(mode);
-  };
-
   const selectedListId = externalSelectedListId !== undefined ? externalSelectedListId : internalSelectedListId;
   const setSelectedListId = (id: string | null) => {
     setInternalSelectedListId(id);
     onSelectedListChange?.(id);
+  };
+
+  const activeTabMode =
+    !isAdmin && !selectedListId
+      ? 'collections'
+      : externalActiveTabMode !== undefined
+      ? externalActiveTabMode
+      : internalActiveTabMode;
+  const setActiveTabMode = (mode: 'items' | 'collections') => {
+    const safeMode = !isAdmin && mode === 'items' && !selectedListId ? 'collections' : mode;
+    setInternalActiveTabMode(safeMode);
+    onTabModeChange?.(safeMode);
   };
   const [itemToDelete, setItemToDelete] = useState<VaultItem | null>(null);
   const [listToDelete, setListToDelete] = useState<VaultList | null>(null);
@@ -82,8 +88,8 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
         (Array.isArray(activeList.itemIds) && activeList.itemIds.includes(item.id)) ||
         (Array.isArray(item.listIds) && item.listIds.includes(selectedListId));
       if (!isInsideList) return false;
-    } else if (!isAdmin && activeTabMode === 'collections') {
-      // Non-admins only view items inside an explicitly selected collection
+    } else if (!isAdmin) {
+      // Non-admins can NEVER view the general Publicaciones section — only inside an explicitly selected collection
       return false;
     }
 
@@ -149,24 +155,24 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
     >
       {/* Top Bar / Header */}
       <div
-        className={`px-4 sm:px-5 pt-3.5 pb-3 border-b backdrop-blur-md transition-colors shrink-0 ${
+        className={`px-3 sm:px-5 pt-3 pb-2.5 sm:pt-3.5 sm:pb-3 border-b backdrop-blur-md transition-colors shrink-0 ${
           isDark
             ? 'border-[#1E1E24] bg-black/90'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
-        <div className="flex items-center justify-between mb-2.5">
-          <div>
-            <div className="text-[10px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase flex items-center gap-1.5">
-              <span>{isAdmin ? 'BÓVEDA PRIVADA' : activeList ? 'COLECCIÓN SELECCIONADA' : 'COLECCIONES EXCLUSIVAS'}</span>
+        <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2.5 min-w-0">
+          <div className="min-w-0 flex-1">
+            <div className="text-[9.5px] sm:text-[10px] font-extrabold tracking-[0.16em] sm:tracking-[0.2em] text-[#0066FF] uppercase flex items-center gap-1.5 flex-wrap">
+              <span className="truncate">{isAdmin ? 'BÓVEDA PRIVADA' : activeList ? 'COLECCIÓN SELECCIONADA' : 'COLECCIONES EXCLUSIVAS'}</span>
               {lists.length > 0 && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                <span className="text-[8.5px] sm:text-[9px] px-1.5 py-0.2 rounded-full bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30 shrink-0">
                   {lists.length} COLECCIONES
                 </span>
               )}
             </div>
             <h2
-              className={`text-lg sm:text-xl font-bold tracking-tight ${
+              className={`text-base sm:text-xl font-bold tracking-tight truncate ${
                 isDark ? 'text-white' : 'text-[#0F172A]'
               }`}
             >
@@ -180,7 +186,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {isAdmin ? (
               <div className="flex items-center gap-1.5">
                 {onOpenAdminCreateList && (
@@ -190,16 +196,16 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                     whileHover={{ scale: 1.04, y: -1 }}
                     whileTap={{ scale: 0.96 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       isDark
                         ? 'bg-[#121216] hover:bg-[#1E1E24] border-[#1E1E24] text-white'
                         : 'bg-white hover:bg-slate-100 border-[#CBD5E1] text-[#0F172A]'
                     }`}
                     title="Crear una nueva lista para agrupar publicaciones"
                   >
-                    <FolderPlus className="w-3.5 h-3.5 text-[#0066FF]" />
+                    <FolderPlus className="w-3.5 h-3.5 text-[#0066FF] shrink-0" />
                     <span className="hidden sm:inline">+ Nueva Colección</span>
-                    <span className="sm:hidden">+ Colección</span>
+                    <span className="sm:hidden">+ Lista</span>
                   </motion.button>
                 )}
 
@@ -209,23 +215,23 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                   whileHover={{ scale: 1.04, y: -1 }}
                   whileTap={{ scale: 0.96 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/25 cursor-pointer"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-[11px] sm:text-xs font-bold transition-all shadow-md shadow-[#0066FF]/25 cursor-pointer whitespace-nowrap"
                   title="Subir y alojar nuevo material"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                   <span className="hidden sm:inline">+ Subir Material</span>
-                  <span className="sm:hidden">+ Subir</span>
+                  <span className="sm:hidden">Subir</span>
                 </motion.button>
               </div>
             ) : (
               <div
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-[9.5px] sm:text-[10px] font-bold border whitespace-nowrap ${
                   isDark
                     ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93]'
                     : 'bg-[#F1F5F9] border-[#CBD5E1] text-[#64748B]'
                 }`}
               >
-                <Lock className="w-3 h-3 text-[#0066FF]" />
+                <Lock className="w-3 h-3 text-[#0066FF] shrink-0" />
                 <span>SOLO LECTURA</span>
               </div>
             )}
@@ -238,7 +244,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className={`mt-2 p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-2 transition-colors ${
+            className={`mt-2 p-2.5 sm:p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-colors ${
               isDark ? 'bg-[#121216] border-[#1E1E24]' : 'bg-blue-50/70 border-blue-200'
             }`}
           >
@@ -249,12 +255,12 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
               >
                 {React.createElement(getListIcon(activeList.icon), { className: 'w-4.5 h-4.5' })}
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
                   <span className={`text-xs sm:text-sm font-bold truncate ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
                     {activeList.name}
                   </span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[#0066FF]">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#0066FF]/15 text-[#0066FF] shrink-0">
                     {filteredItems.length} {filteredItems.length === 1 ? 'publicación' : 'publicaciones'}
                   </span>
                 </div>
@@ -266,7 +272,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center justify-end gap-1.5 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-white/5">
               {/* Grid / List switch for regular users inside a collection */}
               {!isAdmin && (
                 <button
@@ -287,7 +293,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenAdminEditList(activeList)}
-                  className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                  className={`px-2 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
                     isDark
                       ? 'bg-[#0A0A0C] border-[#1E1E24] text-[#8E8E93] hover:text-white'
                       : 'bg-white border-[#CBD5E1] text-[#64748B] hover:text-[#0F172A]'
@@ -295,7 +301,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                   title="Editar o reorganizar esta colección"
                 >
                   <Edit3 className="w-3 h-3 text-[#0066FF]" />
-                  <span className="hidden sm:inline">Editar</span>
+                  <span>Editar</span>
                 </button>
               )}
 
@@ -303,7 +309,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setListToDelete(activeList)}
-                  className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                  className={`px-2 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
                     isDark
                       ? 'bg-[#0A0A0C] border-[#1E1E24] text-red-400 hover:bg-red-500/15 hover:border-red-500/30'
                       : 'bg-white border-[#CBD5E1] text-red-600 hover:bg-red-50 hover:border-red-200'
@@ -311,7 +317,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                   title="Eliminar esta colección"
                 >
                   <Trash2 className="w-3 h-3" />
-                  <span className="hidden sm:inline">Borrar</span>
+                  <span>Borrar</span>
                 </button>
               )}
 
@@ -335,9 +341,9 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
       </div>
 
       {/* Directory Content List */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-4 pb-28 sm:pb-36 space-y-3">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-2.5 sm:p-4 pb-20 sm:pb-32 space-y-2.5 sm:space-y-3">
         {/* COLLECTIONS / LISTS HUB VIEW */}
-        {activeTabMode === 'collections' ? (
+        {activeTabMode === 'collections' || (!isAdmin && !activeList) ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between px-1">
               <div>
@@ -707,7 +713,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                     whileTap={{ scale: 0.985 }}
                     id={`vault-item-list-${item.id}`}
                     onClick={() => onSelectItem(item)}
-                    className={`border rounded-2xl p-4 cursor-pointer transition-shadow flex items-start gap-3.5 group relative ${
+                    className={`border rounded-2xl p-3 sm:p-4 cursor-pointer transition-shadow flex items-start gap-3 sm:gap-3.5 group relative ${
                       isDark
                         ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/60 hover:shadow-lg hover:shadow-[#0066FF]/10'
                         : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/60 shadow-sm hover:shadow-md'

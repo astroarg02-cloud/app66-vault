@@ -184,7 +184,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
           </p>
 
           {/* Security Banner: No viewing or actions allowed for regular users */}
-          <div className={`w-full p-3.5 rounded-2xl border text-left flex items-start gap-3 mb-6 ${
+          <div className={`w-full p-3.5 rounded-2xl border text-left flex items-start gap-3 mb-5 ${
             isDark
               ? 'bg-[#15151C] border-[#22222E] text-slate-400'
               : 'bg-slate-50 border-slate-200 text-slate-600'
@@ -192,128 +192,75 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
             <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
             <div className="text-xs leading-relaxed">
               <span className="font-bold text-slate-900 dark:text-slate-100 block mb-0.5">
-                Acceso restringido
+                Acceso restringido temporalmente
               </span>
-              No es posible visualizar contenidos, listas ni realizar descargas. Solo administradores autorizados pueden acceder usando su clave maestra.
+              Estamos realizando mejoras en la bóveda. El servicio volverá a estar disponible en breve.
             </div>
           </div>
 
-          {/* Admin Unlock Toggle Button or Form */}
-          {!showAdminPortal ? (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setShowAdminPortal(true)}
-              className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl bg-gradient-to-r from-[#0066FF] to-[#0052CC] hover:from-[#005CE6] hover:to-[#0047B3] text-white font-bold text-xs sm:text-sm shadow-lg shadow-[#0066FF]/25 cursor-pointer transition-all"
-            >
-              <Key className="w-4 h-4" />
-              <span>Ingresar como Administrador con Key</span>
-              <ArrowRight className="w-4 h-4 ml-0.5" />
-            </motion.button>
-          ) : (
-            <motion.form
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              onSubmit={handleKeySubmit}
-              className="w-full flex flex-col gap-3 text-left pt-2 border-t border-slate-200 dark:border-[#22222E]"
-            >
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5 text-[#0066FF]" />
-                  <span>Clave Maestra de Administrador (Key)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAdminPortal(false);
-                    setErrorMessage(null);
-                  }}
-                  className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-              </div>
-
-              {/* Password Input */}
-              <div className="relative">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  value={adminKey}
-                  onChange={(e) => {
-                    setAdminKey(e.target.value);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  placeholder="Introduce tu Key (ej. 360)"
-                  autoFocus
-                  disabled={isLoading}
-                  className={`w-full px-4 py-3 rounded-2xl border text-sm font-mono tracking-wider focus:outline-none transition-all pr-11 ${
-                    isDark
-                      ? 'bg-[#15151C] border-[#2A2A38] text-white placeholder-slate-500 focus:border-[#0066FF] focus:ring-2 focus:ring-[#0066FF]/20'
-                      : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-[#0066FF] focus:ring-2 focus:ring-[#0066FF]/20'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1"
-                >
-                  {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {/* Error Alert */}
-              <AnimatePresence>
+          {/* Admin Portal Toggle */}
+          <div className="w-full pt-2 border-t border-slate-200 dark:border-white/10">
+            {!showAdminPortal ? (
+              <button
+                type="button"
+                onClick={() => setShowAdminPortal(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0066FF] hover:underline cursor-pointer py-1"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>Acceso Administrador</span>
+              </button>
+            ) : (
+              <form onSubmit={handleKeySubmit} className="space-y-2.5 text-left mt-2">
                 {errorMessage && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-500 dark:text-red-400 text-xs flex items-center gap-2"
-                  >
+                  <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
                     <span>{errorMessage}</span>
-                  </motion.div>
+                  </div>
                 )}
-              </AnimatePresence>
-
-              {/* Success Alert */}
-              <AnimatePresence>
                 {successMessage && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-500 dark:text-emerald-400 text-xs flex items-center gap-2"
-                  >
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span>{successMessage}</span>
-                  </motion.div>
+                  </div>
                 )}
-              </AnimatePresence>
-
-              {/* Submit Button */}
-              <motion.button
-                type="submit"
-                disabled={isLoading || !adminKey.trim()}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-[#0066FF] hover:bg-[#0055D4] text-white font-bold text-xs sm:text-sm shadow-md shadow-[#0066FF]/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-1"
-              >
-                {isLoading ? (
-                  <>
+                <div className="relative">
+                  <Key className="w-4 h-4 absolute left-3.5 top-2.5 text-[#0066FF]" />
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={adminKey}
+                    onChange={(e) => setAdminKey(e.target.value)}
+                    placeholder="Key de Administrador..."
+                    className={`w-full pl-10 pr-10 py-2 rounded-xl text-xs border focus:outline-none focus:border-[#0066FF] font-mono ${
+                      isDark
+                        ? 'bg-[#121218] border-[#252532] text-white'
+                        : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-2.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  {isLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verificando Key...</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Desbloquear y Acceder</span>
-                  </>
-                )}
-              </motion.button>
-            </motion.form>
-          )}
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Entrar como Administrador</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
         </motion.div>
       </main>
 
@@ -324,9 +271,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
           <span>Servidor Privado App 66 &bull; Seguridad Reforzada</span>
         </div>
         <div className="flex items-center gap-3">
-          <span>Solo Administradores Autorizados</span>
-          <span className="inline-block w-1 h-1 rounded-full bg-slate-400" />
-          <span className="font-mono text-[10px]">AUTH_MODE: MASTER_KEY</span>
+          <span>Bóveda Privada</span>
         </div>
       </footer>
     </div>

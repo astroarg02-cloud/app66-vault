@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS, INITIAL_VAULT_LISTS, ADMIN_SECURITY_KEY } from './data/initialVaultData';
+import { INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, INITIAL_VAULT_ITEMS, INITIAL_VAULT_LISTS, ADMIN_SECURITY_KEY, isAuthorizedAdminEmail } from './data/initialVaultData';
 import { VaultItem, UserProfile, VaultComment, VaultList } from './types';
 import { AuthScreen } from './components/MobileSimulator/AuthScreen';
 import { VaultScreen } from './components/MobileSimulator/VaultScreen';
@@ -84,23 +84,39 @@ function AppContent() {
     return INITIAL_VAULT_LISTS;
   });
 
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => firebaseService.getLocalSession());
+  const sanitizeUserRole = (user: UserProfile | null): UserProfile | null => {
+    if (!user) return null;
+    if (isAuthorizedAdminEmail(user.email)) {
+      return {
+        ...user,
+        role: 'admin',
+        tier: 'Bóveda Diamante',
+      };
+    }
+    if (user.role === 'admin' || user.tier === 'Bóveda Diamante') {
+      return {
+        ...user,
+        role: 'vip_member',
+        tier: user.tier === 'Bóveda Diamante' ? 'Acceso VIP' : user.tier,
+      };
+    }
+    return user;
+  };
+
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => sanitizeUserRole(firebaseService.getLocalSession()));
   const [isCheckingSession, setIsCheckingSession] = useState(false);
   const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'receipts' | 'approvals' | 'profile'>('vault');
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(() => receiptService.getPendingCount());
-  const [vaultTabMode, setVaultTabMode] = useState<'items' | 'collections'>('items');
+  const [vaultTabMode, setVaultTabMode] = useState<'items' | 'collections'>(() => {
+    const initialUser = sanitizeUserRole(firebaseService.getLocalSession());
+    return initialUser?.role === 'admin' ? 'items' : 'collections';
+  });
   const [selectedVaultListId, setSelectedVaultListId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const [showAdminListModal, setShowAdminListModal] = useState(false);
   const [editingList, setEditingList] = useState<VaultList | null>(null);
-  const [isMaintenanceActive, setIsMaintenanceActive] = useState<boolean>(() => {
-    try {
-      const cached = localStorage.getItem('vault_maintenance_active');
-      if (cached !== null) return cached === 'true';
-    } catch (e) {}
-    return true; // Default to true so people see "en mantenimiento" upon entry
-  });
+  const [isMaintenanceActive, setIsMaintenanceActive] = useState<boolean>(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState<string>(() => {
     try {
       const cached = localStorage.getItem('vault_maintenance_message');
@@ -111,12 +127,16 @@ function AppContent() {
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
-  // Protective guard: only admins can access 'approvals'
+  // Protective guard: only admins can access 'approvals' or the general 'Publicaciones' ('items' without selected collection) section
   useEffect(() => {
-    if (currentTab === 'approvals' && (!currentUser || currentUser.role !== 'admin')) {
+    const isAdmin = currentUser?.role === 'admin';
+    if (currentTab === 'approvals' && !isAdmin) {
       setCurrentTab('vault');
     }
-  }, [currentTab, currentUser]);
+    if (!isAdmin && vaultTabMode === 'items' && !selectedVaultListId) {
+      setVaultTabMode('collections');
+    }
+  }, [currentTab, currentUser, vaultTabMode, selectedVaultListId]);
 
   // Helper to merge incoming items with existing state preserving custom user uploads
   const mergeVaultItems = useCallback((incoming: VaultItem[]) => {
@@ -170,14 +190,18 @@ function AppContent() {
   useEffect(() => {
     const unsub = firebaseService.onAuthState((user) => {
       if (user) {
-        setCurrentUser(user);
+        const clean = sanitizeUserRole(user);
+        setCurrentUser(clean);
+        if (clean?.role !== 'admin') {
+          setVaultTabMode('collections');
+        }
       }
       setIsCheckingSession(false);
     });
 
     const handleProfileUpdated = (e: any) => {
       if (e?.detail?.profile) {
-        setCurrentUser(e.detail.profile);
+        setCurrentUser(sanitizeUserRole(e.detail.profile));
       }
     };
     window.addEventListener('vault_profile_updated', handleProfileUpdated);
@@ -201,17 +225,8 @@ function AppContent() {
       }
     });
 
-    // Real-time Firestore maintenance mode listener
-    const unsubFirestoreMaintenance = firebaseService.onMaintenanceSnapshot((liveMaint) => {
-      if (liveMaint && typeof liveMaint.isMaintenance === 'boolean') {
-        setIsMaintenanceActive(liveMaint.isMaintenance);
-        localStorage.setItem('vault_maintenance_active', String(liveMaint.isMaintenance));
-        if (liveMaint.message) {
-          setMaintenanceMessage(liveMaint.message);
-          localStorage.setItem('vault_maintenance_message', liveMaint.message);
-        }
-      }
-    });
+    // Real-time Firestore maintenance mode listener (disabled since no user has admin)
+    const unsubFirestoreMaintenance = () => {};
 
     // Safety fallback
     const timer = setTimeout(() => {
@@ -286,33 +301,9 @@ function AppContent() {
           mergeVaultItems(localItems);
         }
 
-        // 6. Check Maintenance Mode status (Firestore Cloud + Express API)
-        try {
-          const cloudMaint = await firebaseService.fetchMaintenance();
-          if (cloudMaint && typeof cloudMaint.isMaintenance === 'boolean') {
-            setIsMaintenanceActive(cloudMaint.isMaintenance);
-            localStorage.setItem('vault_maintenance_active', String(cloudMaint.isMaintenance));
-            if (cloudMaint.message) {
-              setMaintenanceMessage(cloudMaint.message);
-              localStorage.setItem('vault_maintenance_message', cloudMaint.message);
-            }
-          } else {
-            const resMaint = await fetch('/api/maintenance');
-            if (resMaint.ok) {
-              const dataMaint = await resMaint.json();
-              if (typeof dataMaint.isMaintenance === 'boolean') {
-                setIsMaintenanceActive(dataMaint.isMaintenance);
-                localStorage.setItem('vault_maintenance_active', String(dataMaint.isMaintenance));
-              }
-              if (dataMaint.message) {
-                setMaintenanceMessage(dataMaint.message);
-                localStorage.setItem('vault_maintenance_message', dataMaint.message);
-              }
-            }
-          }
-        } catch (mErr) {
-          console.warn('Error fetching maintenance status:', mErr);
-        }
+        // 6. Ensure maintenance mode is off so users are not locked out
+        setIsMaintenanceActive(false);
+        localStorage.setItem('vault_maintenance_active', 'false');
       } catch (err) {
         console.warn('Error loading initial vault data:', err);
       }
@@ -347,21 +338,6 @@ function AppContent() {
           const jsonLists = await resLists.json();
           if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
         }
-
-        // Sync maintenance status
-        try {
-          const resM = await fetch('/api/maintenance');
-          if (resM.ok) {
-            const dM = await resM.json();
-            if (typeof dM.isMaintenance === 'boolean') {
-              setIsMaintenanceActive(dM.isMaintenance);
-              localStorage.setItem('vault_maintenance_active', String(dM.isMaintenance));
-            }
-            if (dM.message) {
-              setMaintenanceMessage(dM.message);
-            }
-          }
-        } catch (e) {}
       } catch (e) {}
     }, 30000);
 
@@ -378,8 +354,15 @@ function AppContent() {
   }, [mergeVaultItems, mergeVaultLists]);
 
   const handleLogin = (user: UserProfile) => {
-    setCurrentUser(user);
-    firebaseService.saveSession(user);
+    const cleanUser = sanitizeUserRole(user);
+    setCurrentUser(cleanUser);
+    if (cleanUser?.role === 'admin') {
+      setVaultTabMode('items');
+    } else {
+      setVaultTabMode('collections');
+      setSelectedVaultListId(null);
+    }
+    firebaseService.saveSession(cleanUser);
   };
 
   const handleLogout = async () => {
@@ -1083,7 +1066,7 @@ function AppContent() {
                   onNavigateToReceipts={() => setCurrentTab('receipts')}
                   onNavigateToVault={() => {
                     setCurrentTab('vault');
-                    setVaultTabMode('items');
+                    setVaultTabMode(currentUser?.role === 'admin' ? 'items' : 'collections');
                     setSelectedVaultListId(null);
                   }}
                 />
@@ -1106,28 +1089,30 @@ function AppContent() {
         <div className={`w-full max-w-xl flex items-center justify-between sm:justify-center gap-1 sm:gap-2 px-1 sm:px-2 py-1 rounded-full border shadow-inner ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-[#F1F5F9] border-slate-200'
         }`}>
-          {/* Publicaciones */}
-          <button
-            id="home-bar-tab-publicaciones"
-            type="button"
-            title={`Publicaciones (${items.length})`}
-            aria-label="Publicaciones"
-            onClick={() => {
-              setCurrentTab('vault');
-              setVaultTabMode('items');
-              setSelectedVaultListId(null);
-            }}
-            className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
-              currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId
-                ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
-                : isDark
-                ? 'text-zinc-400 active:text-white'
-                : 'text-slate-500 active:text-slate-900'
-            }`}
-          >
-            <FolderClosed className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-            <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Publicaciones</span>
-          </button>
+          {/* Publicaciones (SOLO ADMINISTRADORES) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              id="home-bar-tab-publicaciones"
+              type="button"
+              title={`Publicaciones (${items.length})`}
+              aria-label="Publicaciones"
+              onClick={() => {
+                setCurrentTab('vault');
+                setVaultTabMode('items');
+                setSelectedVaultListId(null);
+              }}
+              className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
+                currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId
+                  ? 'bg-[#0066FF] text-white font-bold shadow-md shadow-[#0066FF]/35'
+                  : isDark
+                  ? 'text-zinc-400 active:text-white'
+                  : 'text-slate-500 active:text-slate-900'
+              }`}
+            >
+              <FolderClosed className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+              <span className="text-[10px] sm:text-xs font-bold hidden sm:inline">Publicaciones</span>
+            </button>
+          )}
 
           {/* Colecciones */}
           <button

@@ -64,20 +64,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
 
-  // Activación con Clave de Administrador
-  const [adminKeyInput, setAdminKeyInput] = useState('');
-  const [keyError, setKeyError] = useState<string | null>(null);
-  const [keySuccess, setKeySuccess] = useState<string | null>(null);
-
   // Comprobantes del usuario
   const [userReceipts, setUserReceipts] = useState<PaymentReceipt[]>(() => {
     return receiptService.getReceiptsByUser(currentUser.uid);
   });
 
   const [copiedUid, setCopiedUid] = useState(false);
-  const [registeredAccounts, setRegisteredAccounts] = useState<Record<string, any>>(() => {
-    return firebaseService.getRegisteredAccounts();
-  });
 
   const handleCopyUserId = async () => {
     try {
@@ -89,20 +81,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     } catch {}
   };
 
-  const handleSwitchAccount = (email: string) => {
-    const switched = firebaseService.switchAccount(email);
-    if (switched && onUpdateUser) {
-      onUpdateUser(switched);
-    }
-  };
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sincronizar comprobantes cuando cambien
   useEffect(() => {
     const handleReceiptsUpdate = () => {
       setUserReceipts(receiptService.getReceiptsByUser(currentUser.uid));
-      setRegisteredAccounts(firebaseService.getRegisteredAccounts());
     };
     window.addEventListener('vault_receipts_changed', handleReceiptsUpdate);
     window.addEventListener('vault_profile_updated', handleReceiptsUpdate);
@@ -178,30 +162,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     } finally {
       setIsSavingProfile(false);
     }
-  };
-
-  // Elevar a Admin con Key 360
-  const handleElevateToAdmin = () => {
-    setKeyError(null);
-    setKeySuccess(null);
-    if (!isAuthorizedAdminKey(adminKeyInput)) {
-      setKeyError('Clave de Administrador incorrecta. Ingrese la clave de seguridad (360).');
-      return;
-    }
-
-    const elevatedUser: UserProfile = {
-      ...currentUser,
-      role: 'admin',
-      tier: 'Bóveda Diamante',
-      displayName: currentUser.displayName.includes('Admin') ? currentUser.displayName : `${currentUser.displayName} (Admin)`,
-    };
-
-    firebaseService.updateUserProfile(elevatedUser);
-    if (onUpdateUser) {
-      onUpdateUser(elevatedUser);
-    }
-    setKeySuccess('¡Privilegios de Administrador ROOT activados exitosamente!');
-    setAdminKeyInput('');
   };
 
   // Cambio rápido de avatar con 1 toque
@@ -308,7 +268,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 {currentUser.displayName}
               </h3>
               {currentUser.role === 'admin' ? (
-                <VerifiedBadge className="w-4 h-4 shrink-0" />
+                <VerifiedBadge className="w-4 h-4 text-[#0066FF] shrink-0" />
               ) : (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
                   VIP
@@ -334,10 +294,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
             {/* Badges de Rol y Membresía */}
             <div className="flex items-center justify-center sm:justify-start gap-1.5 flex-wrap pt-1.5">
-              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                currentUser.role === 'admin' ? 'bg-[#0066FF] text-white shadow-sm' : 'bg-emerald-500/15 text-emerald-500'
-              }`}>
-                {currentUser.role === 'admin' ? 'ADMINISTRADOR ROOT' : 'MIEMBRO VIP'}
+              <span
+                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                  currentUser.role === 'admin'
+                    ? 'bg-[#0066FF]/15 text-[#0066FF]'
+                    : 'bg-emerald-500/15 text-emerald-500'
+                }`}
+              >
+                {currentUser.role === 'admin' ? 'ADMINISTRADOR' : 'MIEMBRO VIP'}
               </span>
 
               {currentUser.membershipPlan && (
@@ -454,9 +418,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     Estado de la Membresía
                   </h4>
                   <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                    {currentUser.role === 'admin'
-                      ? 'Acceso Total Ilimitado (Administrador ROOT)'
-                      : currentUser.membershipPlan
+                    {currentUser.membershipPlan && currentUser.membershipStatus !== 'cancelled' && currentUser.membershipStatus !== 'none'
                       ? `Suscripción Activa (${currentUser.membershipPlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'})`
                       : 'Sin membresía VIP activa'}
                   </p>
@@ -780,14 +742,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               }`}
             >
               <div className={`flex items-center justify-between pb-2 border-b ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
-                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Subir material / Publicar</span>
+                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Apartado de Publicaciones y Subida</span>
                 {currentUser.role === 'admin' ? (
                   <span className="text-emerald-500 font-bold flex items-center gap-1 text-[11px]">
                     <CheckCircle2 className="w-3.5 h-3.5" /> Exclusivo Admin
                   </span>
                 ) : (
                   <span className="text-red-500 font-bold flex items-center gap-1 text-[11px]">
-                    <XCircle className="w-3.5 h-3.5" /> Bloqueado a usuarios
+                    <XCircle className="w-3.5 h-3.5" /> Solo Administradores
                   </span>
                 )}
               </div>
@@ -814,77 +776,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </div>
             </div>
           </div>
-
-          {/* Admin Key Activation for full upload access */}
-          {currentUser.role !== 'admin' && (
-            <div
-              className={`p-4 rounded-2xl border transition-colors ${
-                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
-                  <Key className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                    Activar Acceso Administrador ROOT
-                  </span>
-                  <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                    Ingresa la clave de seguridad maestra (360) para desbloquear la gestión completa
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2 mt-3">
-                <input
-                  type="password"
-                  value={adminKeyInput}
-                  onChange={(e) => setAdminKeyInput(e.target.value)}
-                  placeholder="Ingresa clave 360"
-                  className={`flex-1 rounded-xl px-3 py-2 text-xs border focus:outline-none focus:border-[#0066FF] ${
-                    isDark
-                      ? 'bg-[#121216] border-[#1E1E24] text-white'
-                      : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
-                  }`}
-                />
-                <motion.button
-                  onClick={handleElevateToAdmin}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="px-4 py-2 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold transition-all shadow-md shadow-[#0066FF]/20 cursor-pointer"
-                >
-                  Activar
-                </motion.button>
-              </div>
-
-              <AnimatePresence>
-                {keyError && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="flex items-center gap-1.5 text-[11px] text-red-400 mt-2"
-                  >
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>{keyError}</span>
-                  </motion.div>
-                )}
-
-                {keySuccess && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="flex items-center gap-1.5 text-[11px] text-emerald-400 mt-2"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                    <span>{keySuccess}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
 
           {/* Security & Access Info */}
           <div className="space-y-2">
@@ -944,56 +835,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </div>
             </div>
           </div>
-
-          {/* Cuentas registradas con IDs únicos */}
-          {Object.keys(registeredAccounts).length > 1 && (
-            <div className="space-y-2">
-              <div className={`text-[11px] font-bold tracking-wider uppercase flex items-center justify-between ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                <span className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-[#0066FF]" />
-                  <span>Cuentas con ID Diferente ({Object.keys(registeredAccounts).length})</span>
-                </span>
-                <span className="text-[10px] text-emerald-400 font-bold">IDs Independientes</span>
-              </div>
-
-              <div className={`border rounded-xl divide-y text-xs overflow-hidden ${
-                isDark ? 'bg-[#0A0A0C] border-[#1E1E24] divide-[#1E1E24]' : 'bg-white border-[#E2E8F0] divide-[#E2E8F0] shadow-sm'
-              }`}>
-                {Object.values(registeredAccounts).map((acc: any) => {
-                  const isCurrent = acc?.profile?.uid === currentUser.uid;
-                  return (
-                    <div key={acc?.profile?.uid || acc?.email} className="p-2.5 flex items-center justify-between gap-2 hover:bg-slate-500/5 transition-colors">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <img
-                          src={acc?.profile?.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${acc?.profile?.uid}`}
-                          alt={acc?.profile?.displayName}
-                          className="w-6 h-6 rounded-full object-cover shrink-0 border border-slate-700"
-                        />
-                        <div className="min-w-0">
-                          <p className={`text-[11px] font-bold truncate ${isCurrent ? 'text-[#0066FF]' : isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                            {acc?.profile?.displayName} {isCurrent && '(Activo)'}
-                          </p>
-                          <p className="text-[9.5px] font-mono text-slate-400 truncate">
-                            ID: <span className="text-[#0066FF] font-semibold">{acc?.profile?.uid}</span>
-                          </p>
-                        </div>
-                      </div>
-
-                      {!isCurrent && (
-                        <button
-                          type="button"
-                          onClick={() => handleSwitchAccount(acc.email)}
-                          className="px-2.5 py-1 rounded-lg bg-[#0066FF]/15 hover:bg-[#0066FF] text-[#0066FF] hover:text-white text-[10px] font-bold transition-all cursor-pointer shrink-0"
-                        >
-                          Cambiar
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
