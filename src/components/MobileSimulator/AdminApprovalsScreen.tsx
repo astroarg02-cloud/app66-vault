@@ -127,7 +127,7 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
   // Action: Open Approval Modal
   const openApproveModal = (receipt: PaymentReceipt) => {
     setApprovingReceipt(receipt);
-    const planName = receipt.plan === 'annual' ? 'ANUAL ($12 USD)' : 'MENSUAL ($1 USD)';
+    const planName = receipt.plan === 'annual' ? 'ANUAL' : 'MENSUAL';
     setApprovalNote(`Comprobante verificado. Membresía VIP ${planName} activada con éxito.`);
   };
 

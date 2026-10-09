@@ -30,6 +30,13 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
 }) => {
   const { isDark } = useTheme();
   const isAdmin = currentUser.role === 'admin';
+  const isSubscribed = Boolean(
+    currentUser.membershipStatus === 'active' ||
+    (currentUser.membershipPlan && currentUser.membershipStatus !== 'cancelled' && currentUser.membershipStatus !== 'none') ||
+    currentUser.tier === 'Acceso VIP' ||
+    currentUser.tier === 'Bóveda Diamante' ||
+    currentUser.role === 'admin'
+  );
 
   // Navigation tab inside Receipts screen
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
@@ -153,7 +160,7 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
 
       // If user chose to notify on WhatsApp
       if (sendWhatsAppAlert) {
-        const planText = selectedPlan === 'monthly' ? 'MENSUAL (1$ USD)' : 'ANUAL (12$ USD)';
+        const planText = selectedPlan === 'monthly' ? (isSubscribed ? 'MENSUAL' : 'MENSUAL (1$ USD)') : (isSubscribed ? 'ANUAL' : 'ANUAL (12$ USD)');
         const refText = newRec.referenceCode ? `\n• Ref/Operación: ${newRec.referenceCode}` : '';
         const msg = `¡Hola! Acabo de subir mi comprobante de pago en App 66 📄✨
         
@@ -365,7 +372,11 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                 WhatsApp: <span className="font-mono text-[#0066FF]">{WHATSAPP_CONTACT_PHONE}</span>
               </p>
               <p className={`text-[11px] mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                Precios oficiales: <strong className="text-emerald-400">Mensual = 1$ USD</strong> | <strong className="text-emerald-400">Anual = 12$ USD</strong>
+                {isSubscribed ? (
+                  <span>Tu cuenta cuenta con una <strong>membresía activa</strong> vinculada.</span>
+                ) : (
+                  <>Precios oficiales: <strong className="text-emerald-400">Mensual = 1$ USD</strong> | <strong className="text-emerald-400">Anual = 12$ USD</strong></>
+                )}
               </p>
             </div>
           </div>
@@ -427,7 +438,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                       </div>
                       <div>
                         <p className="text-xs font-black">Plan Mensual</p>
-                        <p className="text-[11px] text-emerald-400 font-bold">1$ USD al mes</p>
+                        <p className="text-[11px] text-emerald-400 font-bold">{isSubscribed ? 'Ciclo de 30 días' : '1$ USD al mes'}</p>
                       </div>
                     </div>
                     {selectedPlan === 'monthly' && (
@@ -457,7 +468,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                             Ahorro
                           </span>
                         </div>
-                        <p className="text-[11px] text-emerald-400 font-bold">12$ USD al año</p>
+                        <p className="text-[11px] text-emerald-400 font-bold">{isSubscribed ? 'Ciclo de 365 días' : '12$ USD al año'}</p>
                       </div>
                     </div>
                     {selectedPlan === 'annual' && (
@@ -802,7 +813,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                           <div className="min-w-0 flex-1 space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-xs font-black">
-                                Plan {receipt.plan === 'monthly' ? 'Mensual ($1 USD)' : 'Anual ($12 USD)'}
+                                Plan {receipt.plan === 'monthly' ? (isSubscribed ? 'Mensual' : 'Mensual ($1 USD)') : (isSubscribed ? 'Anual' : 'Anual ($12 USD)')}
                               </span>
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 ${
                                 isPending
@@ -971,7 +982,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                   <div className={`p-3 rounded-2xl border ${isDark ? 'bg-black/40 border-[#1E1E24]' : 'bg-slate-50 border-slate-200'}`}>
                     <p className="text-[10px] text-slate-400 uppercase font-bold">Plan Solicitado</p>
                     <p className="font-black text-sm text-[#0066FF] mt-0.5">
-                      {viewingReceipt.plan === 'monthly' ? 'Mensual ($1 USD)' : 'Anual ($12 USD)'}
+                      {viewingReceipt.plan === 'monthly' ? (isSubscribed ? 'Mensual' : 'Mensual ($1 USD)') : (isSubscribed ? 'Anual' : 'Anual ($12 USD)')}
                     </p>
                   </div>
 

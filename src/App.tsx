@@ -1159,7 +1159,17 @@ function AppContent() {
           <button
             id="home-bar-tab-membresia"
             type="button"
-            title="Membresía VIP (1$ al mes / 12$ al año)"
+            title={
+              currentUser && (
+                currentUser.membershipStatus === 'active' ||
+                currentUser.membershipPlan ||
+                currentUser.tier === 'Acceso VIP' ||
+                currentUser.tier === 'Bóveda Diamante' ||
+                currentUser.role === 'admin'
+              )
+                ? 'Membresía VIP'
+                : 'Membresía VIP (1$ al mes / 12$ al año)'
+            }
             aria-label="Membresía VIP"
             onClick={() => setCurrentTab('membership')}
             className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${
@@ -1178,7 +1188,17 @@ function AppContent() {
           <button
             id="home-bar-tab-comprobantes"
             type="button"
-            title="Comprobación de Pago ($1/mes o $12/año)"
+            title={
+              currentUser && (
+                currentUser.membershipStatus === 'active' ||
+                currentUser.membershipPlan ||
+                currentUser.tier === 'Acceso VIP' ||
+                currentUser.tier === 'Bóveda Diamante' ||
+                currentUser.role === 'admin'
+              )
+                ? 'Comprobación de Pago'
+                : 'Comprobación de Pago ($1/mes o $12/año)'
+            }
             aria-label="Comprobación de Pago"
             onClick={() => setCurrentTab('receipts')}
             className={`relative flex items-center justify-center w-8.5 sm:w-9 h-8.5 sm:h-9 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-colors ${

@@ -54,8 +54,15 @@ export const MembershipScreen: React.FC<MembershipScreenProps> = ({
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Membership status checks
-  const isSubscribed = currentUser.membershipStatus === 'active' || Boolean(currentUser.membershipPlan && currentUser.membershipStatus !== 'cancelled') || currentUser.tier === 'Acceso VIP';
-  const activePlan = currentUser.membershipPlan || (currentUser.tier === 'Acceso VIP' ? 'monthly' : null);
+  const isSubscribed = Boolean(
+    currentUser.membershipStatus === 'active' ||
+    (currentUser.membershipPlan && currentUser.membershipStatus !== 'cancelled' && currentUser.membershipStatus !== 'none') ||
+    currentUser.tier === 'Acceso VIP' ||
+    currentUser.tier === 'Bóveda Diamante' ||
+    currentUser.role === 'admin'
+  );
+  const activePlan: MembershipPlanType = (currentUser.membershipPlan as MembershipPlanType) || 
+    (currentUser.role === 'admin' || currentUser.tier === 'Bóveda Diamante' ? 'annual' : 'monthly');
 
   // Calculate formatted dates and dynamic days remaining in real-time
   const calculateDaysLeft = () => {
@@ -129,8 +136,8 @@ export const MembershipScreen: React.FC<MembershipScreenProps> = ({
   };
 
   const getWhatsAppMessage = (plan: MembershipPlanType): string => {
-    const planName = plan === 'monthly' ? 'MENSUAL (1$ AL MES)' : 'ANUAL (12$ AL AÑO)';
-    const priceText = plan === 'monthly' ? '1$ USD al mes' : '12$ USD al año';
+    const planName = plan === 'monthly' ? (isSubscribed ? 'MENSUAL (30 DÍAS)' : 'MENSUAL (1$ AL MES)') : (isSubscribed ? 'ANUAL (365 DÍAS)' : 'ANUAL (12$ AL AÑO)');
+    const priceText = plan === 'monthly' ? (isSubscribed ? 'periodo de 30 días' : '1$ USD al mes') : (isSubscribed ? 'periodo de 365 días' : '12$ USD al año');
     const userName = currentUser.displayName || 'Usuario VIP';
     const userEmail = currentUser.email || 'No registrado';
     const userId = currentUser.uid || 'VIP';
@@ -321,53 +328,55 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
             </a>
           </div>
 
-          {/* Billing Selector Toggle */}
-          <div className="pt-3 flex justify-center">
-            <div className={`p-1 rounded-2xl border flex items-center gap-1 ${
-              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'
-            }`}>
-              <button
-                type="button"
-                onClick={() => setSelectedBillingTab('monthly')}
-                className={`relative px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                  selectedBillingTab === 'monthly'
-                    ? 'text-white'
-                    : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
-                }`}
-              >
-                {selectedBillingTab === 'monthly' && (
-                  <motion.div
-                    layoutId="billingTabPill"
-                    className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30"
-                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  />
-                )}
-                <span className="relative z-10">Plan Mensual (1$)</span>
-              </button>
+          {/* Billing Selector Toggle (solo para usuarios sin membresía activa) */}
+          {!isSubscribed && (
+            <div className="pt-3 flex justify-center">
+              <div className={`p-1 rounded-2xl border flex items-center gap-1 ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBillingTab('monthly')}
+                  className={`relative px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    selectedBillingTab === 'monthly'
+                      ? 'text-white'
+                      : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
+                  }`}
+                >
+                  {selectedBillingTab === 'monthly' && (
+                    <motion.div
+                      layoutId="billingTabPill"
+                      className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-md shadow-[#0066FF]/30"
+                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                    />
+                  )}
+                  <span className="relative z-10">Plan Mensual (1$)</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setSelectedBillingTab('annual')}
-                className={`relative px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  selectedBillingTab === 'annual'
-                    ? 'text-white'
-                    : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
-                }`}
-              >
-                {selectedBillingTab === 'annual' && (
-                  <motion.div
-                    layoutId="billingTabPill"
-                    className="absolute inset-0 bg-amber-500 rounded-xl shadow-md shadow-amber-500/30"
-                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  />
-                )}
-                <span className="relative z-10">Plan Anual (12$)</span>
-                <span className="relative z-10 text-[10px] px-1.5 py-0.5 rounded-full font-black bg-amber-400 text-black shadow-sm">
-                  365 DÍAS
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBillingTab('annual')}
+                  className={`relative px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    selectedBillingTab === 'annual'
+                      ? 'text-white'
+                      : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
+                  }`}
+                >
+                  {selectedBillingTab === 'annual' && (
+                    <motion.div
+                      layoutId="billingTabPill"
+                      className="absolute inset-0 bg-amber-500 rounded-xl shadow-md shadow-amber-500/30"
+                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                    />
+                  )}
+                  <span className="relative z-10">Plan Anual (12$)</span>
+                  <span className="relative z-10 text-[10px] px-1.5 py-0.5 rounded-full font-black bg-amber-400 text-black shadow-sm">
+                    365 DÍAS
+                  </span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* NON-SUBSCRIBED USER TEASER BANNER (when not yet subscribed) */}
@@ -476,7 +485,7 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                     )}
                   </div>
                   <h3 className="text-base sm:text-lg font-black mt-0.5">
-                    {activePlan === 'annual' ? 'Acceso VIP Anual ($12 USD)' : 'Acceso VIP Mensual ($1 USD)'}
+                    {activePlan === 'annual' ? 'Acceso VIP Anual' : 'Acceso VIP Mensual'}
                   </h3>
                 </div>
               </div>
@@ -665,8 +674,9 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
           </motion.div>
         )}
 
-        {/* Pricing Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
+        {/* Pricing Cards Grid (solo visible si el usuario NO tiene la membresía comprada) */}
+        {!isSubscribed && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-6">
           
           {/* PLAN MENSUAL CARD */}
           <motion.div
@@ -701,20 +711,36 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 </p>
               </div>
 
-              {/* Price Tag */}
-              <div className="pt-1 pb-2">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-4xl sm:text-5xl font-black tracking-tight text-[#0066FF]">
-                    1$
-                  </span>
-                  <span className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                    AL MES
-                  </span>
+              {/* Price Tag / Status */}
+              {!isSubscribed ? (
+                <div className="pt-1 pb-2">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-4xl sm:text-5xl font-black tracking-tight text-[#0066FF]">
+                      1$
+                    </span>
+                    <span className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                      AL MES
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-medium text-neutral-400 mt-1">
+                    Facturación mensual de $1.00 USD (30 días de vigencia)
+                  </div>
                 </div>
-                <div className="text-[11px] font-medium text-neutral-400 mt-1">
-                  Facturación mensual de $1.00 USD (30 días de vigencia)
+              ) : (
+                <div className="pt-1 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl sm:text-3xl font-black tracking-tight text-[#0066FF]">
+                      30 DÍAS
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                      Ciclo Mensual
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-medium text-neutral-400 mt-1">
+                    Acceso VIP ilimitado con ciclo de 30 días
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Feature List */}
               <div className={`space-y-3 pt-3 border-t text-xs sm:text-sm ${isDark ? 'border-[#1E1E24]' : 'border-slate-100'}`}>
@@ -755,7 +781,7 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                   className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#25D366] hover:bg-[#20ba59] text-black shadow-lg shadow-[#25D366]/25 hover:scale-[1.01] cursor-pointer"
                 >
                   <MessageCircle className="w-4 h-4 fill-black" />
-                  <span>Pagar por WhatsApp ($1 al mes)</span>
+                  <span>{isSubscribed ? 'Coordinar Plan Mensual por WhatsApp' : 'Pagar por WhatsApp ($1 al mes)'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}
@@ -803,21 +829,38 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 </p>
               </div>
 
-              {/* Price Tag */}
-              <div className="pt-1 pb-2">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-4xl sm:text-5xl font-black tracking-tight text-amber-400">
-                    12$
-                  </span>
-                  <span className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                    AL AÑO
-                  </span>
+              {/* Price Tag / Status */}
+              {!isSubscribed ? (
+                <div className="pt-1 pb-2">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-4xl sm:text-5xl font-black tracking-tight text-amber-400">
+                      12$
+                    </span>
+                    <span className={`text-sm font-bold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                      AL AÑO
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-medium text-amber-400/80 mt-1 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    Barra de 365 días completos sin preocuparte por renovaciones
+                  </div>
                 </div>
-                <div className="text-[11px] font-medium text-amber-400/80 mt-1 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" />
-                  Barra de 365 días completos sin preocuparte por renovaciones
+              ) : (
+                <div className="pt-1 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl sm:text-3xl font-black tracking-tight text-amber-400">
+                      365 DÍAS
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-400/15 text-amber-400 border border-amber-400/30">
+                      Ciclo Anual
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-medium text-amber-400/80 mt-1 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    Acceso VIP ininterrumpido durante 365 días completos
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Feature List */}
               <div className={`space-y-3 pt-3 border-t text-xs sm:text-sm ${isDark ? 'border-[#1E1E24]' : 'border-slate-100'}`}>
@@ -858,13 +901,80 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                   className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#25D366] hover:bg-[#20ba59] text-black shadow-lg shadow-[#25D366]/25 hover:scale-[1.01] cursor-pointer"
                 >
                   <MessageCircle className="w-4 h-4 fill-black" />
-                  <span>Pagar por WhatsApp ($12 al año)</span>
+                  <span>{isSubscribed ? 'Coordinar Plan Anual por WhatsApp' : 'Pagar por WhatsApp ($12 al año)'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}
             </div>
           </motion.div>
         </div>
+      )}
+
+      {/* Panel de Beneficios Activos (aparece debajo de la barra de carga en lugar de los planes cuando la membresía ya está comprada) */}
+      {isSubscribed && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`p-6 sm:p-7 rounded-3xl border transition-all ${
+            isDark
+              ? 'bg-gradient-to-b from-[#0E0E14] to-[#0A0A0C] border-emerald-500/30 shadow-xl shadow-emerald-500/5'
+              : 'bg-white border-emerald-200 shadow-md'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 border-b border-white/10 dark:border-[#1E1E24]">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-black">
+                    Membresía {activePlan === 'annual' ? 'Anual' : 'Mensual'} Activa
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Acceso VIP Ilimitado
+                  </span>
+                </div>
+                <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                  Tu cuenta cuenta con todos los privilegios VIP activos. Los recursos de la Bóveda están disponibles para descarga inmediata.
+                </p>
+              </div>
+            </div>
+
+            {onNavigateToVault && (
+              <button
+                type="button"
+                onClick={onNavigateToVault}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#0066FF] hover:bg-blue-600 text-white flex items-center gap-2 shadow-md shadow-[#0066FF]/25 cursor-pointer shrink-0 transition-all hover:scale-[1.02]"
+              >
+                <Download className="w-4 h-4" />
+                <span>Explorar la Bóveda</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Lista de Beneficios Activos */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-5 text-xs sm:text-sm">
+            <div className="flex items-start gap-2.5">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <span>Acceso total e ilimitado a todos los archivos y carpetas de la Bóveda</span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <span>Barra de seguimiento en tiempo real con contador exacto de tus días restantes</span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <span>Descargas directas en formato original a máxima velocidad de transferencia</span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <span>Canal preferente de soporte directo y atención inmediata por WhatsApp</span>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
         {/* Banner para subir comprobante de pago */}
         <div className={`p-4 sm:p-5 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${
@@ -982,12 +1092,18 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
           {[
             {
               q: '¿Cómo funciona el método de pago por WhatsApp?',
-              a: 'Al hacer clic en el botón de pago, serás redirigido directamente a mi WhatsApp oficial (+54 9 11 6554-6038) con un mensaje preparado que incluye tu ID de usuario y el plan elegido (1$ mensual o 12$ anual). Allí te proporciono las opciones de pago disponibles (transferencia, billeteras virtuales, etc.) y activo tu membresía en minutos.',
+              a: isSubscribed
+                ? 'Al coordinar por WhatsApp (+54 9 11 6554-6038), se envía tu ID de usuario y el plan seleccionado. Allí recibes asistencia directa y actualización inmediata de tu cuenta.'
+                : 'Al hacer clic en el botón de pago, serás redirigido directamente a mi WhatsApp oficial (+54 9 11 6554-6038) con un mensaje preparado que incluye tu ID de usuario y el plan elegido. Allí te proporciono las opciones de pago disponibles (transferencia, billeteras virtuales, etc.) y activo tu membresía en minutos.',
             },
-            {
-              q: '¿Cuáles son los precios exactos?',
-              a: 'El Plan Mensual cuesta exactamente 1$ al mes ($1.00 USD / mes). El Plan Anual cuesta 12$ al año ($12.00 USD / año) por 365 días ininterrumpidos de acceso a la bóveda.',
-            },
+            ...(!isSubscribed
+              ? [
+                  {
+                    q: '¿Cuáles son los precios exactos?',
+                    a: 'El Plan Mensual cuesta exactamente 1$ al mes ($1.00 USD / mes). El Plan Anual cuesta 12$ al año ($12.00 USD / año) por 365 días ininterrumpidos de acceso a la bóveda.',
+                  },
+                ]
+              : []),
             {
               q: '¿Puedo cancelar en cualquier momento?',
               a: 'Sí, totalmente. Puedes cancelar la membresía con un solo clic directamente desde esta pantalla o solicitándolo por WhatsApp en cualquier momento.',
@@ -1068,7 +1184,9 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                       Pago por WhatsApp
                     </h3>
                     <p className={`text-[11px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                      {targetPlan === 'monthly' ? 'Plan Mensual ($1.00 USD • 30 días)' : 'Plan Anual ($12.00 USD • 365 días)'}
+                      {targetPlan === 'monthly'
+                        ? (isSubscribed ? 'Plan Mensual (30 días de vigencia)' : 'Plan Mensual ($1.00 USD • 30 días)')
+                        : (isSubscribed ? 'Plan Anual (365 días de vigencia)' : 'Plan Anual ($12.00 USD • 365 días)')}
                     </p>
                   </div>
                 </div>
@@ -1097,10 +1215,12 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 }`}>
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
-                      Monto Total a Pagar
+                      {isSubscribed ? 'Plan Seleccionado' : 'Monto Total a Pagar'}
                     </div>
                     <div className="text-xl font-black">
-                      {targetPlan === 'monthly' ? '$1.00 USD' : '$12.00 USD'}
+                      {isSubscribed
+                        ? (targetPlan === 'monthly' ? 'Plan Mensual (30 Días)' : 'Plan Anual (365 Días)')
+                        : (targetPlan === 'monthly' ? '$1.00 USD' : '$12.00 USD')}
                     </div>
                     <div className="text-[11px] text-neutral-500">
                       {targetPlan === 'monthly' ? 'Vigencia de 30 días con barra activa' : 'Vigencia de 365 días con barra activa'}
@@ -1340,9 +1460,11 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 </div>
 
                 <div className="border-t pt-3 flex justify-between items-baseline font-bold text-sm font-sans border-neutral-700">
-                  <span>Monto Total Cobrado:</span>
+                  <span>{isSubscribed ? 'Plan Activado:' : 'Monto Total Cobrado:'}</span>
                   <span className="text-base text-emerald-400">
-                    {activePlan === 'annual' ? '$12.00 USD' : '$1.00 USD'}
+                    {isSubscribed
+                      ? (activePlan === 'annual' ? 'Plan Anual (365 Días)' : 'Plan Mensual (30 Días)')
+                      : (activePlan === 'annual' ? '$12.00 USD' : '$1.00 USD')}
                   </span>
                 </div>
 

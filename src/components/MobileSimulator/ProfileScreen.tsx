@@ -343,7 +343,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {currentUser.membershipPlan && (
                 <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/15 text-amber-500 border border-amber-500/30 flex items-center gap-1">
                   <Crown className="w-3 h-3" />
-                  {currentUser.membershipPlan === 'annual' ? 'Plan Anual ($12/año)' : 'Plan Mensual ($1/mes)'}
+                  {currentUser.membershipPlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'}
                 </span>
               )}
             </div>
@@ -457,7 +457,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     {currentUser.role === 'admin'
                       ? 'Acceso Total Ilimitado (Administrador ROOT)'
                       : currentUser.membershipPlan
-                      ? `Suscripción Activa (${currentUser.membershipPlan === 'annual' ? 'Plan Anual $12' : 'Plan Mensual $1'})`
+                      ? `Suscripción Activa (${currentUser.membershipPlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'})`
                       : 'Sin membresía VIP activa'}
                   </p>
                 </div>
