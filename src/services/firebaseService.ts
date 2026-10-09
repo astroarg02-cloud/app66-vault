@@ -93,11 +93,7 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
         role: 'admin',
         joinedAt: '2025-01-15',
         tier: 'Bóveda Diamante',
-        membershipPlan: 'annual',
-        membershipStatus: 'active',
-        subscribedAt: new Date().toISOString(),
-        membershipExpiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
-        lastPaymentAmount: 12,
+        membershipStatus: 'none',
         avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
         customStatus: '🛡️ Administrador Secundario',
       },
@@ -163,33 +159,27 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
     seenUids.add(record.profile.uid);
 
     const prof = record.profile;
-    const hasActiveMembership =
-      prof.membershipStatus !== 'cancelled' &&
-      prof.membershipStatus !== 'none' &&
-      (prof.membershipStatus === 'active' ||
-        prof.tier === 'Acceso VIP' ||
-        prof.tier === 'Bóveda Diamante' ||
-        prof.role === 'admin');
+    let isExplicitlyPurchased = false;
+    try {
+      isExplicitlyPurchased = localStorage.getItem(`vault_purchased_membership_${prof.uid}`) === 'true';
+    } catch {}
 
-    if (hasActiveMembership) {
-      const plan: MembershipPlanType =
-        prof.membershipPlan || (prof.role === 'admin' || prof.tier === 'Bóveda Diamante' ? 'annual' : 'monthly');
-      const durationMs = (plan === 'annual' ? 365 : 30) * 86400000;
-
-      // Si es cuenta semilla con fechas simuladas antiguas o le faltan fechas reales, fijar fecha exacta real
-      const isSeedUser =
-        prof.uid === 'admin_master_astro' ||
-        prof.uid === 'vip_user_449' ||
-        prof.uid === 'admin_ninja_989';
-
-      if ((needsRealDateMigration && isSeedUser) || !prof.subscribedAt || !prof.membershipExpiresAt) {
-        const startIso = (!needsRealDateMigration && prof.subscribedAt) ? prof.subscribedAt : nowIso;
-        const startTime = new Date(startIso).getTime();
-        const validStartTime = isNaN(startTime) ? nowMs : startTime;
-        prof.membershipPlan = plan;
-        if (!prof.membershipStatus || prof.membershipStatus === 'none') {
-          prof.membershipStatus = 'active';
+    if (!isExplicitlyPurchased) {
+      if (prof.membershipPlan || prof.membershipStatus === 'active' || prof.subscribedAt || prof.membershipExpiresAt) {
+        prof.membershipPlan = undefined;
+        prof.membershipStatus = prof.membershipStatus === 'cancelled' ? 'cancelled' : 'none';
+        prof.subscribedAt = undefined;
+        prof.membershipExpiresAt = undefined;
+        if (prof.role !== 'admin') {
+          prof.tier = 'Invitado';
         }
+        hasChanges = true;
+      }
+    } else if (prof.membershipStatus === 'active' && prof.membershipPlan) {
+      const durationMs = (prof.membershipPlan === 'annual' ? 365 : 30) * 86400000;
+      if (!prof.subscribedAt || !prof.membershipExpiresAt) {
+        const startTime = prof.subscribedAt ? new Date(prof.subscribedAt).getTime() : nowMs;
+        const validStartTime = isNaN(startTime) ? nowMs : startTime;
         prof.subscribedAt = new Date(validStartTime).toISOString();
         prof.membershipExpiresAt = new Date(validStartTime + durationMs).toISOString();
         hasChanges = true;
@@ -197,10 +187,9 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
     }
   }
 
-  if (needsRealDateMigration) {
+  if (needsRealDateMigration || hasChanges) {
     try {
       localStorage.setItem(REAL_DATES_MIGRATION_KEY, 'true');
-      // Sincronizar también la sesión activa si corresponde a una de las cuentas actualizadas
       const rawSession = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
       if (rawSession) {
         const sessionUser = JSON.parse(rawSession) as UserProfile;
@@ -411,6 +400,7 @@ export const firebaseService = {
     if (updatedProf) {
       try {
         localStorage.removeItem(`vault_cancelled_at_${updatedProf.uid}`);
+        localStorage.setItem(`vault_purchased_membership_${updatedProf.uid}`, 'true');
       } catch {}
 
       const currentSession = this.getLocalSession();
@@ -469,11 +459,15 @@ export const firebaseService = {
 
     if (foundKey && accounts[foundKey]) {
       const isUserAdmin = accounts[foundKey].profile.role === 'admin';
+      try {
+        localStorage.removeItem(`vault_purchased_membership_${accounts[foundKey].profile.uid}`);
+      } catch {}
       const updatedProf: UserProfile = {
         ...accounts[foundKey].profile,
         membershipPlan: undefined,
         membershipStatus: 'none',
         tier: isUserAdmin ? 'Bóveda Diamante' : 'Invitado',
+        subscribedAt: undefined,
         membershipExpiresAt: undefined,
         customStatus: reason ? `Membresía no aprobada: ${reason}` : undefined,
       };
@@ -515,26 +509,19 @@ export const firebaseService = {
             }
             sessionChanged = true;
           }
-          // Sincronizar fechas reales de membresía si están vacías en sesión pero existen en el registro (y no fue cancelada)
-          const matchedRecord = user.email ? accounts[user.email.toLowerCase().trim()] : undefined;
-          if (
-            matchedRecord &&
-            matchedRecord.profile &&
-            user.membershipStatus !== 'cancelled' &&
-            user.membershipStatus !== 'none'
-          ) {
-            if (!user.subscribedAt && matchedRecord.profile.subscribedAt) {
-              user.subscribedAt = matchedRecord.profile.subscribedAt;
-              sessionChanged = true;
+          let isExplicitlyPurchased = false;
+          try {
+            isExplicitlyPurchased = localStorage.getItem(`vault_purchased_membership_${user.uid}`) === 'true';
+          } catch {}
+          if (!isExplicitlyPurchased && (user.membershipPlan || user.membershipStatus === 'active')) {
+            user.membershipPlan = undefined;
+            user.membershipStatus = 'none';
+            user.subscribedAt = undefined;
+            user.membershipExpiresAt = undefined;
+            if (user.role !== 'admin') {
+              user.tier = 'Invitado';
             }
-            if (!user.membershipExpiresAt && matchedRecord.profile.membershipExpiresAt) {
-              user.membershipExpiresAt = matchedRecord.profile.membershipExpiresAt;
-              sessionChanged = true;
-            }
-            if (!user.membershipPlan && matchedRecord.profile.membershipPlan) {
-              user.membershipPlan = matchedRecord.profile.membershipPlan;
-              sessionChanged = true;
-            }
+            sessionChanged = true;
           }
           if (sessionChanged) {
             this.saveSession(user);
@@ -554,11 +541,9 @@ export const firebaseService = {
     const isAdmin = isAuthorizedAdminEmail(email);
     const userDocRef = doc(db, 'users', fbUser.uid);
 
-    let tier: 'Bóveda Diamante' | 'Acceso VIP' | 'Invitado' = isAdmin ? 'Bóveda Diamante' : 'Acceso VIP';
-    let displayName = fbUser.displayName || (email.split('@')[0] ? email.split('@')[0] : 'Miembro VIP');
+    let tier: 'Bóveda Diamante' | 'Acceso VIP' | 'Invitado' = isAdmin ? 'Bóveda Diamante' : 'Invitado';
+    let displayName = fbUser.displayName || (email.split('@')[0] ? email.split('@')[0] : 'Usuario');
     const nowIso = new Date().toISOString();
-    const defaultPlan: MembershipPlanType = isAdmin ? 'annual' : 'monthly';
-    const defaultExpiresIso = new Date(Date.now() + (defaultPlan === 'annual' ? 365 : 30) * 86400000).toISOString();
 
     const profile: UserProfile = {
       uid: fbUser.uid,
@@ -568,10 +553,7 @@ export const firebaseService = {
       avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${fbUser.uid}`,
       joinedAt: nowIso.split('T')[0],
       tier,
-      membershipPlan: defaultPlan,
-      membershipStatus: 'active',
-      subscribedAt: nowIso,
-      membershipExpiresAt: defaultExpiresIso,
+      membershipStatus: 'none',
     };
 
     // Check local profile first to retain customizations & exact real membership dates
@@ -600,18 +582,21 @@ export const firebaseService = {
         ]);
         if (snap && snap.exists()) {
           const data = snap.data();
-          if (data.tier) profile.tier = isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : data.tier);
+          const isPurchased = localStorage.getItem(`vault_purchased_membership_${fbUser.uid}`) === 'true';
           if (data.displayName) profile.displayName = data.displayName;
           if (data.avatarUrl) profile.avatarUrl = data.avatarUrl;
           if (data.bio) profile.bio = data.bio;
           if (data.phone) profile.phone = data.phone;
           if (data.customStatus) profile.customStatus = data.customStatus;
           if (data.instagram) profile.instagram = data.instagram;
-          if (data.membershipPlan) profile.membershipPlan = data.membershipPlan;
-          if (data.membershipStatus) profile.membershipStatus = data.membershipStatus;
-          if (data.membershipExpiresAt) profile.membershipExpiresAt = data.membershipExpiresAt;
-          if (data.subscribedAt) profile.subscribedAt = data.subscribedAt;
-          if (data.lastPaymentAmount) profile.lastPaymentAmount = data.lastPaymentAmount;
+          if (isPurchased) {
+            if (data.tier) profile.tier = isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : data.tier);
+            if (data.membershipPlan) profile.membershipPlan = data.membershipPlan;
+            if (data.membershipStatus) profile.membershipStatus = data.membershipStatus;
+            if (data.membershipExpiresAt) profile.membershipExpiresAt = data.membershipExpiresAt;
+            if (data.subscribedAt) profile.subscribedAt = data.subscribedAt;
+            if (data.lastPaymentAmount) profile.lastPaymentAmount = data.lastPaymentAmount;
+          }
         } else {
           await setDoc(userDocRef, {
             uid: fbUser.uid,
@@ -725,10 +710,11 @@ export const firebaseService = {
     const newProfile: UserProfile = {
       uid: uniqueUid,
       email: normalizedEmail,
-      displayName: displayName?.trim() || normalizedEmail.split('@')[0] || (isAdmin ? 'Administrador' : 'Miembro VIP'),
+      displayName: displayName?.trim() || normalizedEmail.split('@')[0] || (isAdmin ? 'Administrador' : 'Usuario'),
       role: isAdmin ? 'admin' : 'vip_member',
       avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(uniqueUid)}`,
-      tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
+      tier: isAdmin ? 'Bóveda Diamante' : 'Invitado',
+      membershipStatus: 'none',
       joinedAt: new Date().toISOString().split('T')[0],
     };
 

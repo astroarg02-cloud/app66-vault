@@ -64,18 +64,12 @@ export const MembershipScreen: React.FC<MembershipScreenProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Membership status checks
+  // Membership status checks: only active if the user has actually purchased/activated a membership plan
   const isSubscribed = Boolean(
-    currentUser.membershipStatus !== 'cancelled' &&
-    currentUser.membershipStatus !== 'none' &&
-    (currentUser.membershipStatus === 'active' ||
-      currentUser.membershipPlan ||
-      currentUser.tier === 'Acceso VIP' ||
-      currentUser.tier === 'Bóveda Diamante' ||
-      currentUser.role === 'admin')
+    currentUser.membershipStatus === 'active' &&
+    currentUser.membershipPlan
   );
-  const activePlan: MembershipPlanType = (currentUser.membershipPlan as MembershipPlanType) || 
-    (currentUser.role === 'admin' || currentUser.tier === 'Bóveda Diamante' ? 'annual' : 'monthly');
+  const activePlan: MembershipPlanType = (currentUser.membershipPlan as MembershipPlanType) || 'monthly';
 
   // Ensure exact real start date (subscribedAt) and expiration date (membershipExpiresAt) are permanently recorded on the profile
   useEffect(() => {
@@ -356,11 +350,12 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
   const handleConfirmCancel = async () => {
     try {
       localStorage.setItem(`vault_cancelled_at_${currentUser.uid}`, new Date().toISOString());
+      localStorage.removeItem(`vault_purchased_membership_${currentUser.uid}`);
     } catch {}
 
     const updatedUser: UserProfile = {
       ...currentUser,
-      tier: 'Invitado',
+      tier: currentUser.role === 'admin' ? 'Bóveda Diamante' : 'Invitado',
       membershipStatus: 'cancelled',
       membershipPlan: undefined,
       subscribedAt: undefined,
@@ -391,6 +386,7 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
 
     try {
       localStorage.removeItem(`vault_cancelled_at_${currentUser.uid}`);
+      localStorage.setItem(`vault_purchased_membership_${currentUser.uid}`, 'true');
     } catch {}
 
     const now = new Date();

@@ -49,6 +49,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onNavigateToVault,
 }) => {
   const { setTheme, isDark } = useTheme();
+  const hasPurchasedMembership = Boolean(
+    currentUser.membershipStatus === 'active' &&
+    currentUser.membershipPlan
+  );
   
   // Tabs internas del perfil (Por defecto 'settings' para ver Ajustes y Sistema de inmediato)
   const [activeProfileTab, setActiveProfileTab] = useState<'settings' | 'info' | 'activity'>('settings');
@@ -269,11 +273,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </h3>
               {currentUser.role === 'admin' ? (
                 <VerifiedBadge className="w-4 h-4 text-[#0066FF] shrink-0" />
-              ) : (
+              ) : hasPurchasedMembership ? (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
                   VIP
                 </span>
-              )}
+              ) : null}
             </div>
 
             <p className={`text-xs ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
@@ -292,25 +296,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </p>
             )}
 
-            {/* Badges de Rol y Membresía */}
-            <div className="flex items-center justify-center sm:justify-start gap-1.5 flex-wrap pt-1.5">
-              <span
-                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                  currentUser.role === 'admin'
-                    ? 'bg-[#0066FF]/15 text-[#0066FF]'
-                    : 'bg-emerald-500/15 text-emerald-500'
-                }`}
-              >
-                {currentUser.role === 'admin' ? 'ADMINISTRADOR' : 'MIEMBRO VIP'}
-              </span>
+            {/* Badges de Rol y Membresía (Solo aparece lo de la membresía si la tienen comprada) */}
+            {(currentUser.role === 'admin' || hasPurchasedMembership) && (
+              <div className="flex items-center justify-center sm:justify-start gap-1.5 flex-wrap pt-1.5">
+                {currentUser.role === 'admin' && (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-[#0066FF]/15 text-[#0066FF]">
+                    ADMINISTRADOR
+                  </span>
+                )}
 
-              {currentUser.membershipPlan && (
-                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/15 text-amber-500 border border-amber-500/30 flex items-center gap-1">
-                  <Crown className="w-3 h-3" />
-                  {currentUser.membershipPlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'}
-                </span>
-              )}
-            </div>
+                {hasPurchasedMembership && (
+                  <>
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-emerald-500/15 text-emerald-500">
+                      MIEMBRO VIP
+                    </span>
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/15 text-amber-500 border border-amber-500/30 flex items-center gap-1">
+                      <Crown className="w-3 h-3" />
+                      {currentUser.membershipPlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -404,68 +411,68 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* SECCIÓN 1: INFORMACIÓN DETALLADA */}
       {activeProfileTab === 'info' && (
         <div className="space-y-3">
-          {/* Tarjeta de Membresía Actual */}
-          <div className={`p-4 rounded-2xl border transition-colors ${
-            isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
-          }`}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-500">
-                  <Crown className="w-4 h-4" />
+          {/* Tarjeta de Membresía Actual (Solo se muestra si tiene la membresía comprada) */}
+          {hasPurchasedMembership && (
+            <div className={`p-4 rounded-2xl border transition-colors ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+            }`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-500">
+                    <Crown className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                      Estado de la Membresía
+                    </h4>
+                    <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                      Suscripción Activa ({currentUser.membershipPlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'})
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                    Estado de la Membresía
-                  </h4>
-                  <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                    {currentUser.membershipPlan && currentUser.membershipStatus !== 'cancelled' && currentUser.membershipStatus !== 'none'
-                      ? `Suscripción Activa (${currentUser.membershipPlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'})`
-                      : 'Sin membresía VIP activa'}
-                  </p>
-                </div>
+
+                {onNavigateToMembership && (
+                  <button
+                    onClick={onNavigateToMembership}
+                    className="px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-all"
+                  >
+                    <span>Ver Plan</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
-              {onNavigateToMembership && (
-                <button
-                  onClick={onNavigateToMembership}
-                  className="px-3 py-1.5 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-all"
-                >
-                  <span>{currentUser.membershipPlan ? 'Ver Plan' : 'Adquirir VIP'}</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              )}
+              {currentUser.membershipExpiresAt && (() => {
+                const expireDate = new Date(currentUser.membershipExpiresAt);
+                const startDate = currentUser.subscribedAt ? new Date(currentUser.subscribedAt) : new Date();
+                const daysLeft = Math.max(0, Math.ceil((expireDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                return (
+                  <div className={`p-2.5 rounded-xl space-y-1.5 text-xs ${
+                    isDark ? 'bg-[#121216]' : 'bg-slate-50'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha exacta de inicio:</span>
+                      <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                        {startDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })} ({startDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha exacta de vencimiento:</span>
+                      <span className="font-mono font-bold text-emerald-400">
+                        {expireDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })} ({expireDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                      <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Vigencia restante:</span>
+                      <span className="text-[#0066FF] font-mono font-bold">
+                        {daysLeft} {daysLeft === 1 ? 'día restante' : 'días restantes'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
-
-            {currentUser.membershipExpiresAt && (() => {
-              const expireDate = new Date(currentUser.membershipExpiresAt);
-              const startDate = currentUser.subscribedAt ? new Date(currentUser.subscribedAt) : new Date();
-              const daysLeft = Math.max(0, Math.ceil((expireDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-              return (
-                <div className={`p-2.5 rounded-xl space-y-1.5 text-xs ${
-                  isDark ? 'bg-[#121216]' : 'bg-slate-50'
-                }`}>
-                  <div className="flex items-center justify-between">
-                    <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha exacta de inicio:</span>
-                    <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                      {startDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })} ({startDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs)
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha exacta de vencimiento:</span>
-                    <span className="font-mono font-bold text-emerald-400">
-                      {expireDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })} ({expireDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs)
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                    <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Vigencia restante:</span>
-                    <span className="text-[#0066FF] font-mono font-bold">
-                      {daysLeft} {daysLeft === 1 ? 'día restante' : 'días restantes'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+          )}
 
           {/* Tarjeta de Biografía & Datos de Contacto */}
           <div className={`p-4 rounded-2xl border transition-colors space-y-3 ${

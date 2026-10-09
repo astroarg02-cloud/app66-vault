@@ -27,11 +27,7 @@ export const INITIAL_ADMIN_USER: UserProfile = {
   role: 'admin',
   joinedAt: '2025-01-01',
   tier: 'Bóveda Diamante',
-  membershipPlan: 'annual',
-  membershipStatus: 'active',
-  subscribedAt: new Date().toISOString(),
-  membershipExpiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
-  lastPaymentAmount: 12,
+  membershipStatus: 'none',
   avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
 };
 
@@ -41,12 +37,8 @@ export const INITIAL_MEMBER_USER: UserProfile = {
   displayName: 'Alex Vance',
   role: 'vip_member',
   joinedAt: '2025-02-14',
-  tier: 'Acceso VIP',
-  membershipPlan: 'monthly',
-  membershipStatus: 'active',
-  subscribedAt: new Date().toISOString(),
-  membershipExpiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
-  lastPaymentAmount: 1,
+  tier: 'Invitado',
+  membershipStatus: 'none',
   avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
 };
 

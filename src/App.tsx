@@ -899,11 +899,11 @@ function AppContent() {
               </span>
               {currentUser.role === 'admin' ? (
                 <VerifiedBadge className="w-3.5 h-3.5 text-[#0066FF] shrink-0" />
-              ) : (
+              ) : currentUser.membershipStatus === 'active' && currentUser.membershipPlan ? (
                 <span className="px-1 py-0.2 rounded-full text-[8.5px] font-extrabold bg-[#0066FF]/15 text-[#0066FF] shrink-0">
                   VIP
                 </span>
-              )}
+              ) : null}
             </motion.button>
 
             {/* Theme Toggle */}
