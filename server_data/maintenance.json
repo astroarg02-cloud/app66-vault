@@ -1,5 +1,5 @@
 {
-  "isMaintenance": true,
-  "message": "Estamos realizando mantenimiento en la plataforma. Solo administradores con key pueden acceder.",
-  "updatedAt": "2026-09-27T17:28:42.963Z"
+  "isMaintenance": false,
+  "message": "Estamos realizando labores de mantenimiento.",
+  "updatedAt": "2026-10-09T18:18:00Z"
 }

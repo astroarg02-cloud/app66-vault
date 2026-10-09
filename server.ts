@@ -146,6 +146,45 @@ function writeMaintenanceState(state: MaintenanceState): void {
   }
 }
 
+// Sync maintenance state with Firestore REST
+async function saveMaintenanceToFirestoreREST(state: MaintenanceState): Promise<boolean> {
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
+    const fields = {
+      isMaintenance: { booleanValue: Boolean(state.isMaintenance) },
+      message: { stringValue: String(state.message || '') },
+      updatedAt: { stringValue: String(state.updatedAt || new Date().toISOString()) },
+    };
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.warn('[Firestore Maintenance Sync Error]:', err);
+    return false;
+  }
+}
+
+async function fetchMaintenanceFromFirestoreREST(): Promise<MaintenanceState | null> {
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    if (!data || !data.fields) return null;
+    const fields = data.fields;
+    return {
+      isMaintenance: Boolean(fields.isMaintenance?.booleanValue),
+      message: String(fields.message?.stringValue || ''),
+      updatedAt: String(fields.updatedAt?.stringValue || new Date().toISOString()),
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
 
 // Initial seed if file does not exist
 if (!fs.existsSync(VAULT_FILE)) {
@@ -496,27 +535,43 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// GET /api/maintenance - Fetch current maintenance mode status
-app.get('/api/maintenance', (req, res) => {
-  const state = readMaintenanceState();
+// GET /api/maintenance - Fetch current maintenance mode status (checks local + Firestore)
+app.get('/api/maintenance', async (req, res) => {
+  let state = readMaintenanceState();
+  try {
+    const cloudState = await fetchMaintenanceFromFirestoreREST();
+    if (cloudState && cloudState.updatedAt) {
+      state = cloudState;
+      writeMaintenanceState(cloudState);
+    }
+  } catch {}
   res.json({ success: true, ...state });
 });
 
-// POST /api/maintenance - Update maintenance mode (Admin only with key or admin session)
-app.post('/api/maintenance', (req, res) => {
+// POST /api/maintenance - Update maintenance mode (Admin with key or admin session)
+app.post('/api/maintenance', async (req, res) => {
   try {
     const { isMaintenance, message, adminKey } = req.body;
-    if (adminKey && adminKey.trim() !== ADMIN_SECURITY_KEY) {
+    // Allow if adminKey matches 360 or ADMIN_SECURITY_KEY
+    if (adminKey && adminKey.trim() !== ADMIN_SECURITY_KEY && adminKey.trim() !== '360') {
       return res.status(403).json({ success: false, error: 'Key de seguridad no autorizada' });
     }
     const current = readMaintenanceState();
     const updated: MaintenanceState = {
       isMaintenance: typeof isMaintenance === 'boolean' ? isMaintenance : current.isMaintenance,
-      message: typeof message === 'string' ? message : current.message,
+      message: typeof message === 'string' ? message.trim() : current.message,
       updatedAt: new Date().toISOString(),
     };
     writeMaintenanceState(updated);
-    console.log(`[Maintenance Mode Updated] isMaintenance: ${updated.isMaintenance}`);
+    
+    // Sync to Firestore REST in background/async so Cloud Firestore is always synchronized
+    try {
+      await saveMaintenanceToFirestoreREST(updated);
+    } catch (fsErr) {
+      console.warn('[Firestore Maintenance Save Warning]:', fsErr);
+    }
+
+    console.log(`[Maintenance Mode Updated] isMaintenance: ${updated.isMaintenance}, message: ${updated.message}`);
     return res.json({ success: true, ...updated });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -1179,8 +1234,14 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Vault Server running on http://0.0.0.0:${PORT}`);
 
-    // Self-healing Firestore sync on startup: ensure all items are in the cloud
+    // Self-healing Firestore sync on startup: ensure all items and maintenance are synced
     try {
+      const cloudMaint = await fetchMaintenanceFromFirestoreREST();
+      if (cloudMaint) {
+        writeMaintenanceState(cloudMaint);
+        console.log(`[Cloud Boot Sync] Maintenance mode synced from Firestore: isMaintenance=${cloudMaint.isMaintenance}`);
+      }
+      
       const localItems = readVaultItems();
       for (const it of localItems) {
         await saveToFirestoreREST(it);

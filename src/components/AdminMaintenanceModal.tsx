@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Wrench,
@@ -35,6 +35,14 @@ export const AdminMaintenanceModal: React.FC<AdminMaintenanceModalProps> = ({
   const [message, setMessage] = useState(initialMessage || '');
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsMaintenance(initialIsMaintenance);
+      setMessage(initialMessage || '');
+      setFeedback(null);
+    }
+  }, [isOpen, initialIsMaintenance, initialMessage]);
 
   if (!isOpen) return null;
 

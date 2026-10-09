@@ -1181,4 +1181,103 @@ export const firebaseService = {
 
     return null;
   },
+
+  // Real-time listener for Maintenance Mode in Firestore
+  onMaintenanceSnapshot(callback: (maint: { isMaintenance: boolean; message: string; updatedAt?: string }) => void) {
+    try {
+      const docRef = doc(db, 'system_config', 'maintenance');
+      return onSnapshot(
+        docRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            callback({
+              isMaintenance: Boolean(data.isMaintenance),
+              message: String(data.message || ''),
+              updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
+            });
+          }
+        },
+        (err) => {
+          console.warn('Firestore maintenance onSnapshot warning:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('Could not attach Firestore maintenance listener:', err);
+      return () => {};
+    }
+  },
+
+  // Save Maintenance Mode state to Firestore (Web SDK + REST fallback)
+  async saveMaintenance(isMaintenance: boolean, message: string): Promise<boolean> {
+    const cleanMessage = String(message || '').trim();
+    const payload = {
+      isMaintenance: Boolean(isMaintenance),
+      message: cleanMessage,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. Try Firestore Web SDK
+    try {
+      const docRef = doc(db, 'system_config', 'maintenance');
+      await setDoc(docRef, { ...payload, serverTimestamp: serverTimestamp() }, { merge: true });
+      return true;
+    } catch (sdkErr) {
+      console.warn('Web SDK saveMaintenance failed, trying REST:', sdkErr);
+    }
+
+    // 2. Try Firestore REST API fallback
+    try {
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${firebaseConfig.apiKey}`;
+      const fields = {
+        isMaintenance: { booleanValue: Boolean(isMaintenance) },
+        message: { stringValue: cleanMessage },
+        updatedAt: { stringValue: payload.updatedAt },
+      };
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+      });
+      return res.ok;
+    } catch (restErr) {
+      console.warn('Firestore REST saveMaintenance error:', restErr);
+      return false;
+    }
+  },
+
+  // Fetch Maintenance Mode state from Firestore (SDK + REST fallback)
+  async fetchMaintenance(): Promise<{ isMaintenance: boolean; message: string } | null> {
+    try {
+      const docRef = doc(db, 'system_config', 'maintenance');
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          isMaintenance: Boolean(data.isMaintenance),
+          message: String(data.message || ''),
+        };
+      }
+    } catch (e) {
+      console.warn('Web SDK fetchMaintenance failed, trying REST:', e);
+    }
+
+    try {
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${firebaseConfig.apiKey}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data && data.fields) {
+          return {
+            isMaintenance: Boolean(data.fields.isMaintenance?.booleanValue),
+            message: String(data.fields.message?.stringValue || ''),
+          };
+        }
+      }
+    } catch (restErr) {
+      console.warn('Firestore REST fetchMaintenance error:', restErr);
+    }
+
+    return null;
+  },
 };
