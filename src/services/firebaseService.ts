@@ -25,6 +25,7 @@ import {
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, VaultItem, VaultList, MembershipPlanType } from '../types';
 import { isAuthorizedAdminEmail, isAuthorizedAdminKey, INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, ADMIN_SECURITY_KEY, INITIAL_VAULT_LISTS } from '../data/initialVaultData';
+import { generateUniqueUserId } from '../utils/vaultHelpers';
 
 // Configuración de Firebase que prioriza las variables de Vercel/Vite y usa el config local de respaldo
 const firebaseConfig = {
@@ -53,37 +54,93 @@ export interface RegisteredAccountRecord {
 }
 
 export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountRecord> {
+  let accounts: Record<string, RegisteredAccountRecord> = {};
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-        return parsed;
+        accounts = parsed;
       }
     }
   } catch (e) {
     console.warn('Could not read registered accounts store:', e);
   }
 
-  // Cuentas iniciales independientes preconfiguradas para que cada usuario tenga su perfil diferente
-  const initialSeeds: Record<string, RegisteredAccountRecord> = {
+  // Cuentas iniciales preconfiguradas con IDs de usuario estrictamente diferentes
+  const defaultSeeds: Record<string, RegisteredAccountRecord> = {
     [INITIAL_ADMIN_USER.email.toLowerCase()]: {
       email: INITIAL_ADMIN_USER.email.toLowerCase(),
       password: ADMIN_SECURITY_KEY,
       profile: {
         ...INITIAL_ADMIN_USER,
+        uid: 'admin_master_astro',
         bio: 'Administrador central de Bóveda App 66. Gestión de contenidos y verificaciones.',
         phone: '+54 9 11 6554-6038',
         customStatus: '🛡️ En línea - Modo Administrador',
       },
       registeredAt: '2025-01-01T00:00:00.000Z',
     },
+    'cuentaninja989@gmail.com': {
+      email: 'cuentaninja989@gmail.com',
+      password: ADMIN_SECURITY_KEY,
+      profile: {
+        uid: 'admin_ninja_989',
+        email: 'cuentaninja989@gmail.com',
+        displayName: 'Administrador (Cuenta Ninja)',
+        role: 'admin',
+        joinedAt: '2025-01-15',
+        tier: 'Bóveda Diamante',
+        avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+        customStatus: '🛡️ Administrador Secundario',
+      },
+      registeredAt: '2025-01-15T00:00:00.000Z',
+    },
+    [INITIAL_MEMBER_USER.email.toLowerCase()]: {
+      email: INITIAL_MEMBER_USER.email.toLowerCase(),
+      password: 'password123',
+      profile: {
+        ...INITIAL_MEMBER_USER,
+        uid: 'vip_user_449',
+        bio: 'Miembro VIP de la comunidad. Acceso a recursos exclusivos.',
+        customStatus: '💎 Miembro VIP',
+      },
+      registeredAt: '2025-02-14T00:00:00.000Z',
+    },
   };
 
-  try {
-    localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(initialSeeds));
-  } catch (e) {}
-  return initialSeeds;
+  // Agregar semillas por defecto si no existen
+  for (const [key, seed] of Object.entries(defaultSeeds)) {
+    if (!accounts[key]) {
+      accounts[key] = seed;
+    }
+  }
+
+  // Garantizar que cada usuario en el registro tenga un ID de usuario único sin colisiones
+  const seenUids = new Set<string>();
+  let hasChanges = false;
+
+  for (const [emailKey, record] of Object.entries(accounts)) {
+    if (!record || !record.profile) continue;
+
+    const currentUid = record.profile.uid;
+    // Si el ID está vacío o repetido por otro usuario, se genera un ID único e irrepetible
+    if (!currentUid || seenUids.has(currentUid)) {
+      const isAdm = record.profile.role === 'admin' || isAuthorizedAdminEmail(record.email);
+      const uniqueId = generateUniqueUserId(isAdm ? 'admin' : 'usr');
+      record.profile.uid = uniqueId;
+      hasChanges = true;
+    }
+    seenUids.add(record.profile.uid);
+  }
+
+  if (hasChanges || !localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY)) {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+    } catch (e) {}
+  }
+
+  return accounts;
 }
 
 export function storeRegisteredAccount(record: RegisteredAccountRecord): void {
@@ -294,7 +351,14 @@ export const firebaseService = {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
       if (stored) {
-        return JSON.parse(stored) as UserProfile;
+        const user = JSON.parse(stored) as UserProfile;
+        if (user && typeof user === 'object') {
+          if (!user.uid) {
+            user.uid = generateUniqueUserId(user.role === 'admin' ? 'admin' : 'usr');
+            this.saveSession(user);
+          }
+          return user;
+        }
       }
     } catch (e) {
       console.warn('LocalStorage load error:', e);
@@ -391,7 +455,41 @@ export const firebaseService = {
       const cred = await signInWithEmailAndPassword(auth, normalizedEmail, cleanPassword);
       return await this.mapFirebaseUserToProfile(cred.user);
     } catch (err: any) {
-      // If Firebase Auth returns that user is not found or invalid credential, re-throw so user is alerted
+      const registeredAccounts = getStoredRegisteredAccounts();
+      const existingRecord = registeredAccounts[normalizedEmail];
+
+      if (existingRecord) {
+        if (existingRecord.password === cleanPassword) {
+          this.saveSession(existingRecord.profile);
+          return existingRecord.profile;
+        }
+        const passError = new Error('Contraseña incorrecta. Por favor verifica tus datos.');
+        (passError as any).code = 'auth/wrong-password';
+        throw passError;
+      }
+
+      // If pre-configured admin email
+      if (isAuthorizedAdminEmail(normalizedEmail) && cleanPassword === ADMIN_SECURITY_KEY) {
+        let uniqueAdminUid = 'admin_master_astro';
+        if (normalizedEmail.includes('ninja')) uniqueAdminUid = 'admin_ninja_989';
+        else if (normalizedEmail.includes('vault.private')) uniqueAdminUid = 'admin_vault_private';
+
+        const adminUser: UserProfile = {
+          ...INITIAL_ADMIN_USER,
+          uid: uniqueAdminUid,
+          email: normalizedEmail,
+          displayName: `Administrador (${normalizedEmail.split('@')[0]})`,
+        };
+        storeRegisteredAccount({
+          email: normalizedEmail,
+          password: cleanPassword,
+          profile: adminUser,
+          registeredAt: new Date().toISOString(),
+        });
+        this.saveSession(adminUser);
+        return adminUser;
+      }
+
       if (
         err?.code === 'auth/user-not-found' ||
         err?.code === 'auth/wrong-password' ||
@@ -403,41 +501,13 @@ export const firebaseService = {
         throw notFoundError;
       }
 
-      // If Firebase Email/Password is disabled in Console (auth/operation-not-allowed) or offline:
-      if (err?.code === 'auth/operation-not-allowed' || !navigator.onLine) {
-        const registeredAccounts = getStoredRegisteredAccounts();
-        const existingRecord = registeredAccounts[normalizedEmail];
-
-        // If the user never registered, reject login immediately!
-        if (!existingRecord) {
-          // Allow pre-configured admin email if valid
-          if (isAuthorizedAdminEmail(normalizedEmail)) {
-            const adminUser = { ...INITIAL_ADMIN_USER, email: normalizedEmail };
-            this.saveSession(adminUser);
-            return adminUser;
-          }
-
-          const notRegError = new Error('Esta cuenta no está registrada. Por favor ve a la pestaña "Registrarse" para crear tu cuenta.');
-          (notRegError as any).code = 'auth/user-not-found';
-          throw notRegError;
-        }
-
-        // Verify password
-        if (existingRecord.password !== cleanPassword) {
-          const passError = new Error('Contraseña incorrecta. Por favor verifica tus datos.');
-          (passError as any).code = 'auth/wrong-password';
-          throw passError;
-        }
-
-        this.saveSession(existingRecord.profile);
-        return existingRecord.profile;
-      }
-
-      throw err;
+      const notRegError = new Error('Esta cuenta no está registrada. Por favor ve a la pestaña "Registrarse" para crear tu cuenta.');
+      (notRegError as any).code = 'auth/user-not-found';
+      throw notRegError;
     }
   },
 
-  // Firebase Email/Password Register (Creates a new user account)
+  // Firebase Email/Password Register (Creates a new user account with unique user ID)
   async registerWithEmail(email: string, password: string, displayName?: string): Promise<UserProfile> {
     const normalizedEmail = email.toLowerCase().trim();
     const cleanPassword = password.trim();
@@ -450,66 +520,59 @@ export const firebaseService = {
       throw alreadyExistsError;
     }
 
+    const isAdmin = isAuthorizedAdminEmail(normalizedEmail);
+    // Generar ID de usuario único, diferente e irrepetible para cada usuario
+    const uniqueUid = generateUniqueUserId(isAdmin ? 'admin' : 'usr');
+
+    const newProfile: UserProfile = {
+      uid: uniqueUid,
+      email: normalizedEmail,
+      displayName: displayName?.trim() || normalizedEmail.split('@')[0] || (isAdmin ? 'Administrador' : 'Miembro VIP'),
+      role: isAdmin ? 'admin' : 'vip_member',
+      avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(uniqueUid)}`,
+      tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
+      joinedAt: new Date().toISOString().split('T')[0],
+    };
+
     try {
       const cred = await createUserWithEmailAndPassword(auth, normalizedEmail, cleanPassword);
       if (displayName) {
         try {
           await updateProfile(cred.user, { displayName });
-        } catch {
-          // ignore profile update warning
-        }
+        } catch {}
       }
-      const profile = await this.mapFirebaseUserToProfile(cred.user);
-      storeRegisteredAccount({
-        email: normalizedEmail,
-        password: cleanPassword,
-        profile,
-        registeredAt: new Date().toISOString(),
-      });
-      return profile;
+      if (cred && cred.user && cred.user.uid) {
+        newProfile.uid = cred.user.uid;
+        newProfile.avatarUrl = cred.user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cred.user.uid)}`;
+      }
     } catch (err: any) {
       if (err?.code === 'auth/email-already-in-use') {
         throw err;
       }
-
-      if (err?.code === 'auth/operation-not-allowed' || !navigator.onLine) {
-        const isAdmin = isAuthorizedAdminEmail(normalizedEmail);
-        const uid = 'user_' + btoa(normalizedEmail).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
-        const newProfile: UserProfile = {
-          uid,
-          email: normalizedEmail,
-          displayName: displayName?.trim() || normalizedEmail.split('@')[0] || 'Miembro VIP',
-          role: isAdmin ? 'admin' : 'vip_member',
-          avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(normalizedEmail)}`,
-          tier: isAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
-          joinedAt: new Date().toISOString().split('T')[0],
-        };
-
-        // Persist in registered accounts registry
-        storeRegisteredAccount({
-          email: normalizedEmail,
-          password: cleanPassword,
-          profile: newProfile,
-          registeredAt: new Date().toISOString(),
-        });
-
-        // Also save to Firestore users collection
-        try {
-          const userDocRef = doc(db, 'users', uid);
-          setDoc(userDocRef, {
-            ...newProfile,
-            createdAt: serverTimestamp(),
-            lastLoginAt: serverTimestamp(),
-          }, { merge: true }).catch(() => {});
-        } catch (e) {
-          // fallback
-        }
-
-        this.saveSession(newProfile);
-        return newProfile;
-      }
-      throw err;
+      // If Firebase Auth operation fails or offline, newProfile uses the unique generated UID
+      console.warn('Fallback registering user with unique local ID:', uniqueUid, err?.message);
     }
+
+    // Persist in registered accounts registry
+    storeRegisteredAccount({
+      email: normalizedEmail,
+      password: cleanPassword,
+      profile: newProfile,
+      registeredAt: new Date().toISOString(),
+    });
+
+    // Also save to Firestore users collection
+    try {
+      const userDocRef = doc(db, 'users', newProfile.uid);
+      setDoc(userDocRef, {
+        ...newProfile,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      }, { merge: true }).catch(() => {});
+    } catch (e) {}
+
+    this.saveSession(newProfile);
+    return newProfile;
   },
 
   // Firebase Google Popup Sign-in / Register
@@ -522,6 +585,16 @@ export const firebaseService = {
   async loginAsAdminWithKey(adminKey: string): Promise<UserProfile> {
     if (!isAuthorizedAdminKey(adminKey)) {
       throw new Error('Key de seguridad incorrecta. Se requiere la clave de Administrador.');
+    }
+    const currentSession = this.getLocalSession();
+    if (currentSession && currentSession.role === 'admin' && currentSession.uid) {
+      return currentSession;
+    }
+    const accounts = getStoredRegisteredAccounts();
+    const adminRecord = accounts[INITIAL_ADMIN_USER.email.toLowerCase()];
+    if (adminRecord && adminRecord.profile) {
+      this.saveSession(adminRecord.profile);
+      return adminRecord.profile;
     }
     const adminUser = { ...INITIAL_ADMIN_USER };
     this.saveSession(adminUser);

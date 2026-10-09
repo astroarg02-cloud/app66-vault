@@ -1,4 +1,5 @@
 import { UserProfile } from '../types';
+import { generateUniqueUserId } from '../utils/vaultHelpers';
 import { isAuthorizedAdminEmail } from '../data/initialVaultData';
 
 // OAuth Client ID from Google Cloud Console configuration
@@ -128,7 +129,7 @@ export const googleAuthService = {
       const randomId = Math.floor(1000 + Math.random() * 9000);
       const email = existingEmail.includes('@') ? existingEmail : `usuario_${randomId}@gmail.com`;
       const fallbackUser: UserProfile = {
-        uid: `google_${Date.now()}`,
+        uid: generateUniqueUserId('usr'),
         email: email,
         displayName: existingName.includes('Google') ? existingName : `${existingName} (Google VIP)`,
         role: 'vip_member',
@@ -230,7 +231,7 @@ export const googleAuthService = {
     const email = googleUser.email.toLowerCase().trim();
 
     return {
-      uid: googleUser.sub || `google_${Date.now()}`,
+      uid: googleUser.sub || generateUniqueUserId('usr'),
       email: googleUser.email,
       displayName: googleUser.name || 'Miembro VIP',
       role: 'vip_member',

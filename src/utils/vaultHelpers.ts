@@ -19,3 +19,20 @@ export function hasVaultItemFile(item?: VaultItem | null): boolean {
   }
   return false;
 }
+
+/**
+ * Generates a guaranteed unique, non-colliding User ID (e.g. usr_m3k2f89a1b4c or admin_m3k2f89a1b4c)
+ */
+export function generateUniqueUserId(prefix: 'usr' | 'admin' | 'vip' | 'guest' = 'usr'): string {
+  const timestamp = Date.now().toString(36);
+  const randomChunk = Math.random().toString(36).substring(2, 7);
+  let cryptoHex = '';
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(4);
+    crypto.getRandomValues(bytes);
+    cryptoHex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  } else {
+    cryptoHex = Math.random().toString(36).substring(2, 6);
+  }
+  return `${prefix}_${timestamp}${randomChunk}${cryptoHex}`;
+}

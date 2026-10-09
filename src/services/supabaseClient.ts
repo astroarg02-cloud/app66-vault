@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient, User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { VaultItem, UserProfile } from '../types';
 import { INITIAL_VAULT_ITEMS, isAuthorizedAdminEmail, isAuthorizedAdminKey, ADMIN_AUTHORIZED_EMAIL, ADMIN_SECURITY_KEY } from '../data/initialVaultData';
+import { generateUniqueUserId } from '../utils/vaultHelpers';
 
 // Vite environment accessor safe for TypeScript
 const env = (import.meta as any).env || {};
@@ -134,7 +135,7 @@ export const supabaseService = {
 
     if (!supabase) {
       const user: UserProfile = {
-        uid: isAdmin ? 'admin_master_astro' : `user_${Date.now()}`,
+        uid: isAdmin ? 'admin_master_astro' : generateUniqueUserId('usr'),
         email,
         displayName: displayName || (isAdmin ? 'Administrador Root' : 'Miembro VIP'),
         role: isAdmin ? 'admin' : 'vip_member',
@@ -188,7 +189,7 @@ export const supabaseService = {
     if (!supabase) {
       const fallbackName = email ? email.split('@')[0] : 'Usuario';
       const user: UserProfile = {
-        uid: isAdmin ? 'admin_master_astro' : `user_${Date.now()}`,
+        uid: isAdmin ? 'admin_master_astro' : generateUniqueUserId('usr'),
         email,
         displayName: isAdmin ? 'Administrador Root' : `${fallbackName} (VIP)`,
         role: isAdmin ? 'admin' : 'vip_member',
@@ -229,7 +230,7 @@ export const supabaseService = {
     const avatar = customAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}&backgroundColor=0066fe,0052ff`;
 
     const user: UserProfile = {
-      uid: `google_${Date.now()}`,
+      uid: generateUniqueUserId('usr'),
       email,
       displayName: `${formattedName} (Google VIP)`,
       role: 'vip_member',

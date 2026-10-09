@@ -6,7 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import rawFirebaseConfig from './firebase-applet-config.json';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // High body limits for API payloads
 app.use(express.json({ limit: '2048mb' }));

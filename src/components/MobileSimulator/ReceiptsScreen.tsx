@@ -309,7 +309,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
             </div>
             <p className={`text-xs ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
               {isAdmin 
-                ? 'Panel de verificación y aprobación de comprobantes' 
+                ? 'Verificación y registro de comprobantes' 
                 : 'Sube tu comprobante tras abonar por WhatsApp para activar tu VIP'}
             </p>
           </div>
@@ -346,39 +346,6 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
 
       {/* Main Content Area */}
       <div className="flex-1 p-3 sm:p-6 max-w-4xl w-full mx-auto space-y-6">
-
-        {/* Admin Shortcut Banner */}
-        {isAdmin && onNavigateToApprovals && (
-          <div className={`p-4 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md ${
-            isDark 
-              ? 'bg-gradient-to-r from-teal-950/40 via-emerald-950/20 to-[#0A0A0C] border-teal-500/30' 
-              : 'bg-teal-50/80 border-teal-300'
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-teal-500/20 text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/30">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-xs font-black text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Panel de Aprobación de Membresías</span>
-                  <span className="px-1.5 py-0.2 rounded-md bg-teal-500/20 text-teal-300 text-[10px]">SOLO ADMINS</span>
-                </p>
-                <p className="text-xs mt-0.5 text-slate-300">
-                  {pendingCount > 0 
-                    ? `Tienes ${pendingCount} comprobante${pendingCount > 1 ? 's' : ''} pendiente${pendingCount > 1 ? 's' : ''} por aprobar o denegar.`
-                    : 'Gestiona la activación o denegación de membresías de los comprobantes subidos.'}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onNavigateToApprovals}
-              className="px-4 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-black shadow-md shadow-teal-500/25 flex items-center gap-1.5 cursor-pointer shrink-0 active:scale-95"
-            >
-              <span>Ir a Aprobaciones</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
 
         {/* Informative WhatsApp banner */}
         <div className={`p-4 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${

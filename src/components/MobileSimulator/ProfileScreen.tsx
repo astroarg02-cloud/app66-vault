@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Moon, Sun, Palette, Shield, Sparkles, AlertCircle,
   Edit3, Camera, Phone, Heart, FileText, Crown, Users, Check,
   ChevronRight, ArrowRight, ExternalLink, RefreshCw, Upload, Image as ImageIcon,
-  Instagram, Settings
+  Instagram, Settings, Copy
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VerifiedBadge } from '../VerifiedBadge';
@@ -74,15 +74,42 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     return receiptService.getReceiptsByUser(currentUser.uid);
   });
 
+  const [copiedUid, setCopiedUid] = useState(false);
+  const [registeredAccounts, setRegisteredAccounts] = useState<Record<string, any>>(() => {
+    return firebaseService.getRegisteredAccounts();
+  });
+
+  const handleCopyUserId = async () => {
+    try {
+      if (currentUser?.uid) {
+        await navigator.clipboard.writeText(currentUser.uid);
+        setCopiedUid(true);
+        setTimeout(() => setCopiedUid(false), 2000);
+      }
+    } catch {}
+  };
+
+  const handleSwitchAccount = (email: string) => {
+    const switched = firebaseService.switchAccount(email);
+    if (switched && onUpdateUser) {
+      onUpdateUser(switched);
+    }
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sincronizar comprobantes cuando cambien
   useEffect(() => {
     const handleReceiptsUpdate = () => {
       setUserReceipts(receiptService.getReceiptsByUser(currentUser.uid));
+      setRegisteredAccounts(firebaseService.getRegisteredAccounts());
     };
     window.addEventListener('vault_receipts_changed', handleReceiptsUpdate);
-    return () => window.removeEventListener('vault_receipts_changed', handleReceiptsUpdate);
+    window.addEventListener('vault_profile_updated', handleReceiptsUpdate);
+    return () => {
+      window.removeEventListener('vault_receipts_changed', handleReceiptsUpdate);
+      window.removeEventListener('vault_profile_updated', handleReceiptsUpdate);
+    };
   }, [currentUser.uid]);
 
   // Publicaciones favoritas (guardadas por este usuario)
@@ -447,16 +474,25 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               )}
             </div>
 
-            {currentUser.membershipExpiresAt && (
-              <div className={`p-2.5 rounded-xl flex items-center justify-between text-xs ${
-                isDark ? 'bg-[#121216]' : 'bg-slate-50'
-              }`}>
-                <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Fecha de Renovación:</span>
-                <span className="font-bold text-[#0066FF]">
-                  {new Date(currentUser.membershipExpiresAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}
-                </span>
-              </div>
-            )}
+            {currentUser.membershipExpiresAt && (() => {
+              const expireDate = new Date(currentUser.membershipExpiresAt);
+              const daysLeft = Math.max(0, Math.ceil((expireDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+              return (
+                <div className={`p-2.5 rounded-xl flex items-center justify-between text-xs ${
+                  isDark ? 'bg-[#121216]' : 'bg-slate-50'
+                }`}>
+                  <span className={isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}>Vigencia restante:</span>
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span className="text-[#0066FF] font-mono">
+                      {daysLeft} {daysLeft === 1 ? 'día restante' : 'días restantes'}
+                    </span>
+                    <span className="text-[10px] text-neutral-400">
+                      ({expireDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })})
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Tarjeta de Biografía & Datos de Contacto */}
@@ -853,14 +889,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   : 'bg-white border-[#E2E8F0] divide-[#E2E8F0] shadow-sm'
               }`}
             >
-              <div className="p-3 flex items-center justify-between">
+              <div className="p-3 flex items-center justify-between gap-2">
                 <span className={`flex items-center gap-2 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
                   <Key className="w-3.5 h-3.5 text-[#0066FF]" />
                   <span>ID de Usuario</span>
                 </span>
-                <span className={`font-mono text-[11px] truncate max-w-[140px] ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                  {currentUser.uid}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
+                    ID ÚNICO
+                  </span>
+                  <span className={`font-mono text-[11px] truncate max-w-[150px] font-semibold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    {currentUser.uid}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyUserId}
+                    className="p-1 rounded-md hover:bg-[#0066FF]/15 text-slate-400 hover:text-[#0066FF] transition-colors cursor-pointer"
+                    title="Copiar ID de Usuario"
+                  >
+                    {copiedUid ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
 
               <div className="p-3 flex items-center justify-between">
@@ -885,6 +934,56 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Cuentas registradas con IDs únicos */}
+          {Object.keys(registeredAccounts).length > 1 && (
+            <div className="space-y-2">
+              <div className={`text-[11px] font-bold tracking-wider uppercase flex items-center justify-between ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-[#0066FF]" />
+                  <span>Cuentas con ID Diferente ({Object.keys(registeredAccounts).length})</span>
+                </span>
+                <span className="text-[10px] text-emerald-400 font-bold">IDs Independientes</span>
+              </div>
+
+              <div className={`border rounded-xl divide-y text-xs overflow-hidden ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24] divide-[#1E1E24]' : 'bg-white border-[#E2E8F0] divide-[#E2E8F0] shadow-sm'
+              }`}>
+                {Object.values(registeredAccounts).map((acc: any) => {
+                  const isCurrent = acc?.profile?.uid === currentUser.uid;
+                  return (
+                    <div key={acc?.profile?.uid || acc?.email} className="p-2.5 flex items-center justify-between gap-2 hover:bg-slate-500/5 transition-colors">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <img
+                          src={acc?.profile?.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${acc?.profile?.uid}`}
+                          alt={acc?.profile?.displayName}
+                          className="w-6 h-6 rounded-full object-cover shrink-0 border border-slate-700"
+                        />
+                        <div className="min-w-0">
+                          <p className={`text-[11px] font-bold truncate ${isCurrent ? 'text-[#0066FF]' : isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                            {acc?.profile?.displayName} {isCurrent && '(Activo)'}
+                          </p>
+                          <p className="text-[9.5px] font-mono text-slate-400 truncate">
+                            ID: <span className="text-[#0066FF] font-semibold">{acc?.profile?.uid}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      {!isCurrent && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchAccount(acc.email)}
+                          className="px-2.5 py-1 rounded-lg bg-[#0066FF]/15 hover:bg-[#0066FF] text-[#0066FF] hover:text-white text-[10px] font-bold transition-all cursor-pointer shrink-0"
+                        >
+                          Cambiar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
