@@ -159,9 +159,9 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
     }
   };
 
-  const handleOpenCheckout = (plan: MembershipPlanType, method: 'instant' | 'whatsapp' = 'instant') => {
+  const handleOpenCheckout = (plan: MembershipPlanType) => {
     setTargetPlan(plan);
-    setCheckoutPaymentMethod(method);
+    setCheckoutPaymentMethod('whatsapp');
     setShowCheckoutModal(true);
   };
 
@@ -249,35 +249,6 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
       `¡Membresía ${plan === 'annual' ? 'Anual (365 días)' : 'Mensual (30 días)'} adquirida y activada con éxito! Tu barra de días restantes ya está activa.`,
       'success'
     );
-  };
-
-  // Extend active membership by adding days
-  const handleExtendMembership = async (daysToAdd = 30) => {
-    const currentExpire = currentUser.membershipExpiresAt ? new Date(currentUser.membershipExpiresAt) : new Date();
-    const baseDate = isNaN(currentExpire.getTime()) || currentExpire.getTime() < Date.now() ? new Date() : currentExpire;
-    const newExpires = new Date(baseDate.getTime() + daysToAdd * 86400000);
-
-    const updatedUser: UserProfile = {
-      ...currentUser,
-      tier: 'Acceso VIP',
-      membershipStatus: 'active',
-      membershipExpiresAt: newExpires.toISOString(),
-      subscribedAt: currentUser.subscribedAt || new Date().toISOString(),
-      lastPaymentAmount: daysToAdd >= 365 ? 12 : 1,
-    };
-
-    try {
-      await firebaseService.updateUserProfile(updatedUser);
-    } catch {
-      firebaseService.saveSession(updatedUser);
-    }
-
-    if (onUpdateUser) {
-      onUpdateUser(updatedUser);
-    }
-
-    triggerConfetti();
-    showNotification(`¡Membresía extendida por +${daysToAdd} días! La barra ha sumado los nuevos días.`, 'success');
   };
 
   const handleDirectActivate = (plan: MembershipPlanType) => {
@@ -512,15 +483,16 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
 
               {/* Action buttons */}
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Extend / Renew button */}
-                <button
-                  type="button"
-                  onClick={() => handleExtendMembership(activePlan === 'annual' ? 365 : 30)}
-                  className="px-3 py-2 rounded-xl text-xs font-black bg-emerald-500 hover:bg-emerald-600 text-black flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>{membershipTiming.isExpired ? 'Renovar Membresía' : 'Extender (+días)'}</span>
-                </button>
+                {membershipTiming.isExpired && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCheckout(activePlan || 'monthly')}
+                    className="px-3 py-2 rounded-xl text-xs font-black bg-[#25D366] hover:bg-[#20ba59] text-black flex items-center gap-1.5 shadow-md shadow-[#25D366]/20 transition-all cursor-pointer"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 fill-black" />
+                    <span>Renovar por WhatsApp</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -682,10 +654,11 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleExtendMembership(30)}
-                  className="px-3.5 py-1.5 rounded-xl font-bold bg-red-500 hover:bg-red-600 text-white shrink-0 shadow-md cursor-pointer"
+                  onClick={() => handleOpenCheckout('monthly')}
+                  className="px-3.5 py-1.5 rounded-xl font-bold bg-[#25D366] hover:bg-[#20ba59] text-black shrink-0 shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
-                  Renovar Membresía (+30 Días)
+                  <MessageCircle className="w-3.5 h-3.5 fill-black" />
+                  <span>Renovar por WhatsApp</span>
                 </button>
               </div>
             )}
@@ -768,44 +741,23 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
               </div>
             </div>
 
-            {/* Action Buttons: Primary Buy & WhatsApp */}
-            <div className="pt-6 space-y-2.5">
+            {/* Action Buttons: WhatsApp */}
+            <div className="pt-6">
               {activePlan === 'monthly' && isSubscribed ? (
-                <div className="space-y-2">
-                  <div className="w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>Plan Mensual Activo ({membershipTiming.daysRemaining} días restantes)</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleExtendMembership(30)}
-                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-[#0066FF] hover:bg-blue-600 text-white flex items-center justify-center gap-1.5 transition-all shadow-md shadow-[#0066FF]/20 cursor-pointer"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Extender +30 Días ($1 USD)</span>
-                  </button>
+                <div className="w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Plan Mensual Activo ({membershipTiming.daysRemaining} días restantes)</span>
                 </div>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenCheckout('monthly', 'instant')}
-                    className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#0066FF] hover:bg-[#0055D4] text-white shadow-lg shadow-[#0066FF]/30 hover:scale-[1.01] cursor-pointer"
-                  >
-                    <Crown className="w-4 h-4" />
-                    <span>Comprar Membresía Mensual ($1 USD)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenCheckout('monthly', 'whatsapp')}
-                    className="w-full py-2.5 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/40 text-[#25D366] cursor-pointer"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5 fill-current" />
-                    <span>Pagar por WhatsApp ($1 al mes)</span>
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => handleOpenCheckout('monthly')}
+                  className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#25D366] hover:bg-[#20ba59] text-black shadow-lg shadow-[#25D366]/25 hover:scale-[1.01] cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4 fill-black" />
+                  <span>Pagar por WhatsApp ($1 al mes)</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
               )}
             </div>
           </motion.div>
@@ -892,44 +844,23 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
               </div>
             </div>
 
-            {/* Action Buttons: Primary Buy & WhatsApp */}
-            <div className="pt-6 space-y-2.5">
+            {/* Action Buttons: WhatsApp */}
+            <div className="pt-6">
               {activePlan === 'annual' && isSubscribed ? (
-                <div className="space-y-2">
-                  <div className="w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                    <Crown className="w-4 h-4 text-amber-400" />
-                    <span>Plan Anual Activo ({membershipTiming.daysRemaining} días restantes)</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleExtendMembership(365)}
-                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-black font-extrabold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Extender +365 Días ($12 USD)</span>
-                  </button>
+                <div className="w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  <Crown className="w-4 h-4 text-amber-400" />
+                  <span>Plan Anual Activo ({membershipTiming.daysRemaining} días restantes)</span>
                 </div>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenCheckout('annual', 'instant')}
-                    className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black shadow-lg shadow-amber-500/30 hover:scale-[1.01] cursor-pointer"
-                  >
-                    <Crown className="w-4 h-4" />
-                    <span>Comprar Membresía Anual ($12 USD)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenCheckout('annual', 'whatsapp')}
-                    className="w-full py-2.5 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/40 text-[#25D366] cursor-pointer"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5 fill-current" />
-                    <span>Pagar por WhatsApp ($12 al año)</span>
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => handleOpenCheckout('annual')}
+                  className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#25D366] hover:bg-[#20ba59] text-black shadow-lg shadow-[#25D366]/25 hover:scale-[1.01] cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4 fill-black" />
+                  <span>Pagar por WhatsApp ($12 al año)</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
               )}
             </div>
           </motion.div>
@@ -1129,20 +1060,12 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 isDark ? 'border-[#1E1E24]' : 'border-slate-100'
               }`}>
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
-                    checkoutPaymentMethod === 'instant' 
-                      ? 'bg-[#0066FF]/15 text-[#0066FF]' 
-                      : 'bg-[#25D366]/15 text-[#25D366]'
-                  }`}>
-                    {checkoutPaymentMethod === 'instant' ? (
-                      <CreditCard className="w-5 h-5" />
-                    ) : (
-                      <MessageCircle className="w-5 h-5 fill-current" />
-                    )}
+                  <div className="w-9 h-9 rounded-2xl flex items-center justify-center bg-[#25D366]/15 text-[#25D366]">
+                    <MessageCircle className="w-5 h-5 fill-current" />
                   </div>
                   <div>
                     <h3 className="text-sm sm:text-base font-bold">
-                      {checkoutPaymentMethod === 'instant' ? 'Adquirir y Activar Membresía' : 'Pago por WhatsApp'}
+                      Pago por WhatsApp
                     </h3>
                     <p className={`text-[11px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
                       {targetPlan === 'monthly' ? 'Plan Mensual ($1.00 USD • 30 días)' : 'Plan Anual ($12.00 USD • 365 días)'}
@@ -1161,39 +1084,6 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                 >
                   <X className="w-4 h-4" />
                 </button>
-              </div>
-
-              {/* Payment Method Selector Tabs */}
-              <div className="px-4 sm:px-5 pt-3">
-                <div className={`p-1 rounded-xl border grid grid-cols-2 gap-1 ${
-                  isDark ? 'bg-black/60 border-white/10' : 'bg-slate-100 border-slate-200'
-                }`}>
-                  <button
-                    type="button"
-                    onClick={() => setCheckoutPaymentMethod('instant')}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      checkoutPaymentMethod === 'instant'
-                        ? 'bg-[#0066FF] text-white shadow-md'
-                        : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
-                    }`}
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>Pago Digital Rápido</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCheckoutPaymentMethod('whatsapp')}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      checkoutPaymentMethod === 'whatsapp'
-                        ? 'bg-[#25D366] text-black shadow-md'
-                        : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-black'
-                    }`}
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>Vía WhatsApp</span>
-                  </button>
-                </div>
               </div>
 
               {/* Modal Body */}
@@ -1226,163 +1116,104 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                   </span>
                 </div>
 
-                {checkoutPaymentMethod === 'instant' ? (
-                  /* Option 1: Instant digital card purchase */
-                  <div className="space-y-3">
-                    <div className={`p-4 rounded-2xl border space-y-3 ${
-                      isDark ? 'bg-[#121218] border-[#20202A]' : 'bg-slate-50 border-slate-200'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-black uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          Pasarela Digital Segura
-                        </span>
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                          Activación Inmediata
-                        </span>
-                      </div>
+                {/* WhatsApp Chat Method */}
+                <div className="space-y-3">
+                  {/* WhatsApp Contact Box */}
+                  <div className={`p-4 rounded-2xl border space-y-3 ${
+                    isDark ? 'bg-[#121218] border-[#20202A]' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
+                        Número de Contacto
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyPhone}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#25D366] hover:underline cursor-pointer"
+                      >
+                        {copiedPhone ? (
+                          <>
+                            <CheckCheck className="w-3.5 h-3.5" />
+                            <span>¡Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copiar</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
 
-                      <div className="space-y-1.5 text-xs text-neutral-300">
-                        <div className="flex justify-between py-1 border-b border-white/5">
-                          <span className="text-neutral-400">Titular:</span>
-                          <span className="font-bold">{currentUser.displayName || 'Usuario VIP'}</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[#25D366]/20 text-[#25D366] flex items-center justify-center shrink-0">
+                        <MessageCircle className="w-5 h-5 fill-current" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <div className="text-base font-black font-mono tracking-tight text-white">
+                          {WHATSAPP_CONTACT_PHONE}
                         </div>
-                        <div className="flex justify-between py-1 border-b border-white/5">
-                          <span className="text-neutral-400">ID de Usuario:</span>
-                          <span className="font-mono text-emerald-400">#{currentUser.uid}</span>
-                        </div>
-                        <div className="flex justify-between py-1 border-b border-white/5">
-                          <span className="text-neutral-400">Beneficio:</span>
-                          <span className="text-emerald-400 font-bold">Barra de Días Restantes + VIP</span>
-                        </div>
-                        <div className="flex justify-between py-1">
-                          <span className="text-neutral-400">Periodo garantizado:</span>
-                          <span>{targetPlan === 'annual' ? '365 días completos' : '30 días completos'}</span>
+                        <div className="text-[11px] text-neutral-400 truncate">
+                          Atención directa con el creador
                         </div>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      disabled={isProcessingPayment}
-                      onClick={() => handlePurchasePlan(targetPlan)}
-                      className={`w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg ${
-                        targetPlan === 'annual'
-                          ? 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black shadow-amber-500/25'
-                          : 'bg-[#0066FF] hover:bg-blue-600 text-white shadow-[#0066FF]/30'
-                      }`}
-                    >
-                      {isProcessingPayment ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Procesando pago seguro...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-4 h-4 stroke-[3]" />
-                          <span>
-                            Confirmar y Pagar {targetPlan === 'annual' ? '$12.00 USD' : '$1.00 USD'}
-                          </span>
-                          <ArrowRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </button>
                   </div>
-                ) : (
-                  /* Option 2: WhatsApp chat method */
-                  <div className="space-y-3">
-                    {/* WhatsApp Contact Box */}
-                    <div className={`p-4 rounded-2xl border space-y-3 ${
-                      isDark ? 'bg-[#121218] border-[#20202A]' : 'bg-slate-50 border-slate-200'
+
+                  {/* Message preview snippet */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
+                        Mensaje Automático Listo
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleCopyMessage}
+                        className="text-[10px] font-bold text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedMsg ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedMsg ? 'Mensaje copiado' : 'Copiar texto'}</span>
+                      </button>
+                    </div>
+
+                    <div className={`p-3 rounded-xl border text-[11px] font-mono leading-relaxed line-clamp-3 select-all ${
+                      isDark ? 'bg-black/40 border-[#1E1E24] text-neutral-300' : 'bg-white border-slate-200 text-slate-700'
                     }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
-                          Número de Contacto
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleCopyPhone}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#25D366] hover:underline cursor-pointer"
-                        >
-                          {copiedPhone ? (
-                            <>
-                              <CheckCheck className="w-3.5 h-3.5" />
-                              <span>¡Copiado!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copiar</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-[#25D366]/20 text-[#25D366] flex items-center justify-center shrink-0">
-                          <MessageCircle className="w-5 h-5 fill-current" />
-                        </div>
-                        <div className="overflow-hidden">
-                          <div className="text-base font-black font-mono tracking-tight text-white">
-                            {WHATSAPP_CONTACT_PHONE}
-                          </div>
-                          <div className="text-[11px] text-neutral-400 truncate">
-                            Atención directa con el creador
-                          </div>
-                        </div>
-                      </div>
+                      {getWhatsAppMessage(targetPlan)}
                     </div>
+                  </div>
 
-                    {/* Message preview snippet */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
-                          Mensaje Automático Listo
-                        </label>
-                        <button
-                          type="button"
-                          onClick={handleCopyMessage}
-                          className="text-[10px] font-bold text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                        >
-                          {copiedMsg ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedMsg ? 'Mensaje copiado' : 'Copiar texto'}</span>
-                        </button>
-                      </div>
+                  {/* Primary Button: Open WhatsApp */}
+                  <a
+                    href={getWhatsAppUrl(targetPlan)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#25D366] hover:bg-[#20ba5a] text-black shadow-lg shadow-[#25D366]/30 cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-black" />
+                    <span>Abrir Chat en WhatsApp y Coordinar Pago</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
 
-                      <div className={`p-3 rounded-xl border text-[11px] font-mono leading-relaxed line-clamp-3 select-all ${
-                        isDark ? 'bg-black/40 border-[#1E1E24] text-neutral-300' : 'bg-white border-slate-200 text-slate-700'
-                      }`}>
-                        {getWhatsAppMessage(targetPlan)}
-                      </div>
-                    </div>
-
-                    {/* Primary Button: Open WhatsApp */}
-                    <a
-                      href={getWhatsAppUrl(targetPlan)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-3.5 px-4 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all bg-[#25D366] hover:bg-[#20ba5a] text-black shadow-lg shadow-[#25D366]/30 cursor-pointer"
-                    >
-                      <MessageCircle className="w-4 h-4 fill-black" />
-                      <span>Abrir Chat en WhatsApp y Coordinar Pago</span>
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-
-                    {/* Instant Activate fallback button */}
+                  {/* Go to upload receipt */}
+                  {onNavigateToReceipts && (
                     <button
                       type="button"
-                      onClick={() => handlePurchasePlan(targetPlan)}
+                      onClick={() => {
+                        setShowCheckoutModal(false);
+                        onNavigateToReceipts();
+                      }}
                       className={`w-full py-2.5 px-4 rounded-2xl text-xs font-bold border flex items-center justify-center gap-2 transition-all cursor-pointer ${
                         isDark 
-                          ? 'border-[#0066FF]/40 bg-[#0066FF]/15 hover:bg-[#0066FF]/25 text-[#0066FF]' 
-                          : 'border-[#0066FF]/30 bg-blue-50 hover:bg-blue-100 text-[#0066FF]'
+                          ? 'border-white/10 bg-neutral-900 hover:bg-neutral-800 text-neutral-300' 
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
                       }`}
                     >
-                      <Sparkles className="w-4 h-4" />
-                      <span>Activar Directamente {targetPlan === 'annual' ? 'Plan Anual (365 días)' : 'Plan Mensual (30 días)'}</span>
+                      <FileText className="w-4 h-4" />
+                      <span>Ya pagué por WhatsApp, subir comprobante</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
 
               </div>
             </motion.div>
