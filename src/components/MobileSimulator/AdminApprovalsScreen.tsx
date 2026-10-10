@@ -26,7 +26,9 @@ import {
   UserCheck,
   UserX,
   Lock,
-  ArrowUpRight
+  ArrowUpRight,
+  Trash2,
+  Upload
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { UserProfile, PaymentReceipt, ReceiptStatus, MembershipPlanType } from '../../types';
@@ -39,6 +41,7 @@ interface AdminApprovalsScreenProps {
   onUpdateCurrentUser?: (user: UserProfile) => void;
   onNavigateToVault?: () => void;
   onNavigateToMembership?: () => void;
+  onNavigateToReceipts?: () => void;
 }
 
 export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
@@ -46,14 +49,18 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
   onUpdateCurrentUser,
   onNavigateToVault,
   onNavigateToMembership,
+  onNavigateToReceipts,
 }) => {
   const { isDark } = useTheme();
 
-  // Receipt list state
+  // Receipt list state — default filter to 'all' so admin immediately sees all uploaded receipts
   const [receipts, setReceipts] = useState<PaymentReceipt[]>(() => receiptService.getAllReceipts());
-  const [statusFilter, setStatusFilter] = useState<ReceiptStatus | 'all'>('pending');
+  const [statusFilter, setStatusFilter] = useState<ReceiptStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>(() =>
+    new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  );
 
   // Modal states
   const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string } | null>(null);
@@ -73,26 +80,86 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
     setTimeout(() => setToast(null), 4000);
   };
 
-  const reloadReceipts = () => {
+  const reloadReceipts = async (silent = false) => {
     setIsRefreshing(true);
-    const updated = receiptService.getAllReceipts();
-    setReceipts(updated);
-    receiptService.syncFromServer().then((synced) => {
-      if (synced && synced.length > 0) {
-        setReceipts(synced);
+    const localImmediate = receiptService.getAllReceipts();
+    setReceipts(localImmediate);
+
+    try {
+      const [synced] = await Promise.all([
+        receiptService.syncFromServer(),
+        firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, silent ? 150 : 400)),
+      ]);
+
+      const finalReceipts = Array.isArray(synced) ? synced : receiptService.getAllReceipts();
+      setReceipts(finalReceipts);
+      const nowStr = new Date().toLocaleTimeString('es-AR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+      setLastUpdatedTime(nowStr);
+
+      if (!silent) {
+        const pendingTotal = finalReceipts.filter((r) => r.status === 'pending').length;
+        if (finalReceipts.length > 0) {
+          showToast(
+            `¡Comprobantes actualizados! (${finalReceipts.length} subido${finalReceipts.length === 1 ? '' : 's'}, ${pendingTotal} pendiente${pendingTotal === 1 ? '' : 's'})`,
+            'success'
+          );
+        } else {
+          showToast('Lista sincronizada con la base de datos. No hay comprobantes subidos todavía.', 'info');
+        }
       }
+    } catch (err) {
+      console.warn('Error refreshing receipts:', err);
+      if (!silent) {
+        showToast('Comprobantes locales actualizados.', 'info');
+      }
+    } finally {
       setIsRefreshing(false);
-    }).catch(() => {
-      setIsRefreshing(false);
-    });
+    }
   };
 
   useEffect(() => {
+    // 1. Initial sync from Server + Firebase Firestore on mount
+    reloadReceipts(true);
+
+    // 2. Real-time Firestore snapshot listener for payment_receipts
+    const unsubFirestore = receiptService.onReceiptsSnapshot((liveReceipts) => {
+      setReceipts(liveReceipts);
+      setLastUpdatedTime(
+        new Date().toLocaleTimeString('es-AR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        })
+      );
+    });
+
+    // 3. Local custom event listener
     const handleUpdate = () => {
       setReceipts(receiptService.getAllReceipts());
     };
     window.addEventListener('vault_receipts_changed', handleUpdate);
-    return () => window.removeEventListener('vault_receipts_changed', handleUpdate);
+
+    // 4. Periodic background sync every 6 seconds while Admin Approvals is open
+    const pollInterval = setInterval(() => {
+      receiptService.syncFromServer().then((synced) => {
+        if (Array.isArray(synced)) {
+          setReceipts(synced);
+        }
+      }).catch(() => {});
+    }, 6000);
+
+    return () => {
+      unsubFirestore();
+      window.removeEventListener('vault_receipts_changed', handleUpdate);
+      clearInterval(pollInterval);
+    };
   }, []);
 
   // Copy code helper
@@ -109,20 +176,34 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
   const rejectedList = receipts.filter((r) => r.status === 'rejected');
   const totalRevenue = approvedList.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
-  // Filtered receipts
-  const filteredReceipts = receipts.filter((r) => {
-    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
-    if (!searchQuery.trim()) return true;
+  // Filtered receipts (sorted with pending first, then newest createdAt)
+  const filteredReceipts = receipts
+    .filter((r) => {
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (!searchQuery.trim()) return true;
 
-    const query = searchQuery.toLowerCase().trim();
-    return (
-      r.userDisplayName?.toLowerCase().includes(query) ||
-      r.userEmail?.toLowerCase().includes(query) ||
-      r.referenceCode?.toLowerCase().includes(query) ||
-      r.paymentMethod?.toLowerCase().includes(query) ||
-      r.id.toLowerCase().includes(query)
-    );
-  });
+      const query = searchQuery.toLowerCase().trim();
+      return (
+        r.userDisplayName?.toLowerCase().includes(query) ||
+        r.userEmail?.toLowerCase().includes(query) ||
+        r.referenceCode?.toLowerCase().includes(query) ||
+        r.paymentMethod?.toLowerCase().includes(query) ||
+        r.id.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+
+  const handleDeleteReceiptAdmin = (receipt: PaymentReceipt) => {
+    if (confirm(`¿Eliminar definitivamente el comprobante #${receipt.id.slice(-6)} de ${receipt.userDisplayName}?`)) {
+      receiptService.deleteReceipt(receipt.id);
+      showToast(`Comprobante #${receipt.id.slice(-6)} eliminado.`, 'info');
+      reloadReceipts(true);
+    }
+  };
 
   // Action: Open Approval Modal
   const openApproveModal = (receipt: PaymentReceipt) => {
@@ -279,18 +360,42 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
         </div>
 
         {/* Top actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-[10px] font-mono hidden sm:inline-block ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Sincronizado: {lastUpdatedTime}
+          </span>
+
+          {onNavigateToReceipts && (
+            <button
+              type="button"
+              onClick={onNavigateToReceipts}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+                isDark
+                  ? 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-200'
+                  : 'bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700'
+              }`}
+              title="Ir a Subir / Ver Comprobantes"
+            >
+              <Upload className="w-3.5 h-3.5 text-[#0066FF]" />
+              <span className="hidden sm:inline">Subir Comprobante</span>
+            </button>
+          )}
+
           <button
-            onClick={reloadReceipts}
+            id="admin-approvals-refresh-btn"
+            type="button"
+            onClick={() => reloadReceipts(false)}
             disabled={isRefreshing}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-              isDark 
-                ? 'bg-white/5 border-white/10 hover:bg-white/10 text-white' 
-                : 'bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-800'
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-sm ${
+              isRefreshing
+                ? 'bg-[#0066FF]/20 border-[#0066FF]/50 text-[#0066FF]'
+                : isDark 
+                ? 'bg-[#0066FF] hover:bg-[#0055D4] border-[#0066FF] text-white shadow-[#0066FF]/20' 
+                : 'bg-[#0066FF] hover:bg-[#0055D4] border-[#0066FF] text-white shadow-[#0066FF]/20'
             }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[#0066FF]' : ''}`} />
-            <span>Actualizar</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{isRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
           </button>
         </div>
       </div>
@@ -451,27 +556,49 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
             isDark ? 'bg-[#0E0E12] border-[#1E1E24]' : 'bg-white border-slate-200'
           }`}>
             <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-              <CheckCircle2 className="w-6 h-6" />
+              <FileText className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold">No hay comprobantes en este filtro</h3>
-              <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                {statusFilter === 'pending'
+              <h3 className="text-base font-bold">
+                {receipts.length === 0
+                  ? 'Aún no hay comprobantes subidos'
+                  : 'No hay comprobantes en este filtro'}
+              </h3>
+              <p className={`text-xs mt-1 max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                {receipts.length === 0
+                  ? 'Cuando un usuario suba su captura o comprobante de pago desde el apartado de Comprobantes, aparecerá aquí automáticamente para que puedas aprobar o denegar su membresía.'
+                  : statusFilter === 'pending'
                   ? '¡Excelente! No tienes comprobantes pendientes de aprobación en este momento.'
                   : 'No se encontraron registros que coincidan con la búsqueda.'}
               </p>
             </div>
-            {statusFilter !== 'all' && (
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              {statusFilter !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setSearchQuery('');
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0066FF] text-white hover:bg-blue-600 cursor-pointer transition-all"
+                >
+                  Ver todos los comprobantes ({receipts.length})
+                </button>
+              )}
               <button
-                onClick={() => {
-                  setStatusFilter('all');
-                  setSearchQuery('');
-                }}
-                className="mt-2 px-4 py-2 rounded-xl text-xs font-bold bg-[#0066FF] text-white hover:bg-blue-600 cursor-pointer"
+                type="button"
+                onClick={() => reloadReceipts(false)}
+                disabled={isRefreshing}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  isDark
+                    ? 'bg-white/5 border-white/15 hover:bg-white/10 text-white'
+                    : 'bg-slate-100 border-slate-300 hover:bg-slate-200 text-slate-800'
+                }`}
               >
-                Ver todos los comprobantes
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[#0066FF]' : ''}`} />
+                <span>{isRefreshing ? 'Buscando comprobantes...' : 'Actualizar ahora'}</span>
               </button>
-            )}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -636,35 +763,66 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
                     {/* Receipt Image Thumbnail Column */}
                     <div className="flex flex-col gap-2 items-center justify-center">
                       <div 
-                        onClick={() => setLightboxImage({ url: receipt.receiptImageUrl, title: `Comprobante de ${receipt.userDisplayName}` })}
-                        className={`w-full h-32 sm:h-36 rounded-2xl border overflow-hidden relative group cursor-pointer ${
-                          isDark ? 'bg-black/60 border-white/10' : 'bg-slate-100 border-slate-200'
+                        onClick={() => setLightboxImage({ url: receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`, title: `Comprobante de ${receipt.userDisplayName} (${receipt.receiptFileName || 'comprobante.jpg'})` })}
+                        className={`w-full h-36 sm:h-40 rounded-2xl border overflow-hidden relative group cursor-pointer ${
+                          isDark ? 'bg-black/60 border-white/15' : 'bg-slate-100 border-slate-200'
                         }`}
                       >
                         <img
-                          src={receipt.receiptImageUrl}
-                          alt="Comprobante"
+                          src={receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`}
+                          alt={`Comprobante de ${receipt.userDisplayName}`}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            const fallbackUrl = `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`;
+                            if (!target.src.endsWith(fallbackUrl)) {
+                              target.src = fallbackUrl;
+                            }
+                          }}
                         />
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white gap-1 backdrop-blur-xs">
+                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-lg bg-black/75 text-white text-[10px] font-bold backdrop-blur-xs flex items-center gap-1">
+                          <FileText className="w-3 h-3 text-emerald-400" />
+                          <span className="truncate max-w-[140px]">{receipt.receiptFileName || 'Comprobante subido'}</span>
+                        </div>
+                        <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white gap-1 backdrop-blur-xs">
                           <Eye className="w-5 h-5" />
-                          <span className="text-[10px] font-bold">Ver en tamaño completo</span>
+                          <span className="text-[10px] font-bold">Ampliar comprobante</span>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setLightboxImage({ url: receipt.receiptImageUrl, title: `Comprobante de ${receipt.userDisplayName}` })}
-                        className="text-[11px] font-bold text-[#0066FF] hover:underline flex items-center gap-1"
-                      >
-                        <Eye className="w-3 h-3" />
-                        <span>Inspeccionar comprobante</span>
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setLightboxImage({ url: receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`, title: `Comprobante de ${receipt.userDisplayName}` })}
+                          className="text-[11px] font-bold text-[#0066FF] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Ver comprobante</span>
+                        </button>
+                        <a
+                          href={receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`}
+                          download={receipt.receiptFileName || `comprobante_${receipt.id}.jpg`}
+                          className="text-[11px] font-bold text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Descargar</span>
+                        </a>
+                      </div>
                     </div>
                   </div>
 
                   {/* Admin Decision Action Bar */}
                   <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[10px] font-mono text-slate-500">ID: #{receipt.id}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-slate-500">ID: #{receipt.id}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteReceiptAdmin(receipt)}
+                        className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        title="Eliminar comprobante"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
                     <div className="flex flex-wrap items-center gap-2">
                       {isPending ? (

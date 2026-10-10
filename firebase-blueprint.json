@@ -49,6 +49,35 @@
         "lastPaymentAmount": { "type": "number" }
       },
       "required": ["uid", "email"]
+    },
+    "PaymentReceipt": {
+      "title": "PaymentReceipt",
+      "description": "Payment receipt uploaded by a user for VIP membership approval",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "plan": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "referenceCode": { "type": "string" },
+        "receiptImageUrl": { "type": "string" },
+        "receiptFileName": { "type": "string" },
+        "notes": { "type": "string" },
+        "whatsappContact": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "reviewedAt": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "adminNote": { "type": "string" },
+        "membershipStartsAt": { "type": "string" },
+        "membershipExpiresAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "plan", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -59,6 +88,10 @@
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "Registered user profile records"
+    },
+    "/payment_receipts/{receiptId}": {
+      "schema": "PaymentReceipt",
+      "description": "Uploaded payment receipts for membership approval"
     }
   }
 }

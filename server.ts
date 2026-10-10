@@ -20,6 +20,7 @@ const VAULT_LISTS_FILE = path.join(DATA_DIR, 'vault_lists.json');
 const DELETED_LISTS_FILE = path.join(DATA_DIR, 'deleted_lists.json');
 const MAINTENANCE_FILE = path.join(DATA_DIR, 'maintenance.json');
 const RECEIPTS_FILE = path.join(DATA_DIR, 'receipts.json');
+const DELETED_RECEIPTS_FILE = path.join(DATA_DIR, 'deleted_receipts.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ADMIN_SECURITY_KEY = '360';
 
@@ -1108,13 +1109,61 @@ app.post('/api/vault/lists/:id/toggle-item', async (req, res) => {
   }
 });
 
+// --- PAYMENT RECEIPTS PERSISTENCE (Server File + Disk Image + Firestore REST) ---
+
+if (!fs.existsSync(RECEIPTS_FILE)) {
+  fs.writeFileSync(RECEIPTS_FILE, JSON.stringify([], null, 2), 'utf-8');
+}
+
+function readDeletedReceiptIds(): Set<string> {
+  try {
+    if (fs.existsSync(DELETED_RECEIPTS_FILE)) {
+      const raw = fs.readFileSync(DELETED_RECEIPTS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.map(String));
+      }
+    }
+  } catch (err) {
+    console.error('Error reading deleted receipt ids:', err);
+  }
+  return new Set<string>();
+}
+
+function addDeletedReceiptId(id: string): void {
+  try {
+    const current = readDeletedReceiptIds();
+    current.add(id);
+    fs.writeFileSync(DELETED_RECEIPTS_FILE, JSON.stringify(Array.from(current), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error recording deleted receipt id:', err);
+  }
+}
+
+function removeDeletedReceiptId(id: string): void {
+  try {
+    const current = readDeletedReceiptIds();
+    if (current.has(id)) {
+      current.delete(id);
+      fs.writeFileSync(DELETED_RECEIPTS_FILE, JSON.stringify(Array.from(current), null, 2), 'utf-8');
+    }
+  } catch (err) {
+    console.error('Error removing deleted receipt id:', err);
+  }
+}
+
 // Helper to read payment receipts safely
 function readReceipts(): any[] {
   try {
+    const deletedSet = readDeletedReceiptIds();
     if (fs.existsSync(RECEIPTS_FILE)) {
       const raw = fs.readFileSync(RECEIPTS_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (r) => r && r.id && !deletedSet.has(r.id) && !String(r.id).startsWith('rec-demo')
+        );
+      }
     }
   } catch (err) {
     console.error('Error reading receipts from file:', err);
@@ -1125,7 +1174,11 @@ function readReceipts(): any[] {
 // Helper to write payment receipts safely
 function writeReceipts(receipts: any[]): boolean {
   try {
-    fs.writeFileSync(RECEIPTS_FILE, JSON.stringify(receipts, null, 2), 'utf-8');
+    const deletedSet = readDeletedReceiptIds();
+    const clean = (Array.isArray(receipts) ? receipts : []).filter(
+      (r) => r && r.id && !deletedSet.has(r.id) && !String(r.id).startsWith('rec-demo')
+    );
+    fs.writeFileSync(RECEIPTS_FILE, JSON.stringify(clean, null, 2), 'utf-8');
     return true;
   } catch (err) {
     console.error('Error writing receipts to file:', err);
@@ -1133,23 +1186,259 @@ function writeReceipts(receipts: any[]): boolean {
   }
 }
 
-// GET /api/vault/receipts - Fetch all payment receipts
-app.get('/api/vault/receipts', (_req, res) => {
+// Save receipt image to disk if it's a base64 data URL so it can always be served even if large
+function saveReceiptImageToDisk(receipt: any): void {
   try {
+    if (!receipt || !receipt.id || !receipt.receiptImageUrl) return;
+    const imgStr = String(receipt.receiptImageUrl);
+    if (!imgStr.startsWith('data:image/')) return;
+    const matches = imgStr.match(/^data:(image\/[A-Za-z0-9.+-]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      const buffer = Buffer.from(matches[2], 'base64');
+      const safeId = String(receipt.id).replace(/[^a-zA-Z0-9_-]/g, '');
+      const filePath = path.join(UPLOADS_DIR, `receipt_${safeId}.bin`);
+      const metaPath = path.join(UPLOADS_DIR, `receipt_${safeId}.meta.json`);
+      fs.writeFileSync(filePath, buffer);
+      fs.writeFileSync(metaPath, JSON.stringify({ mimeType: matches[1], dataUrl: imgStr }), 'utf-8');
+    }
+  } catch (err) {
+    console.warn('Could not save receipt image backup to disk:', err);
+  }
+}
+
+function loadReceiptImageFromDisk(receiptId: string): string | null {
+  try {
+    const safeId = String(receiptId).replace(/[^a-zA-Z0-9_-]/g, '');
+    const metaPath = path.join(UPLOADS_DIR, `receipt_${safeId}.meta.json`);
+    if (fs.existsSync(metaPath)) {
+      const parsed = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      if (parsed && parsed.dataUrl) return parsed.dataUrl;
+    }
+  } catch {}
+  return null;
+}
+
+function receiptToFirestoreFields(rec: any): Record<string, any> {
+  const id = String(rec?.id || `rec-${Date.now()}`);
+  const fields: Record<string, any> = {
+    id: { stringValue: id },
+    userId: { stringValue: String(rec?.userId || 'user') },
+    userDisplayName: { stringValue: String(rec?.userDisplayName || 'Usuario') },
+    userEmail: { stringValue: String(rec?.userEmail || '') },
+    plan: { stringValue: String(rec?.plan || 'monthly') },
+    amount: { doubleValue: Number(rec?.amount) || 1 },
+    currency: { stringValue: String(rec?.currency || 'USD') },
+    paymentMethod: { stringValue: String(rec?.paymentMethod || 'Transferencia') },
+    referenceCode: { stringValue: String(rec?.referenceCode || '') },
+    receiptFileName: { stringValue: String(rec?.receiptFileName || 'comprobante.jpg') },
+    notes: { stringValue: String(rec?.notes || '') },
+    whatsappContact: { stringValue: String(rec?.whatsappContact || '+54 9 11 6554-6038') },
+    status: { stringValue: String(rec?.status || 'pending') },
+    createdAt: { stringValue: String(rec?.createdAt || new Date().toISOString()) },
+    updatedAt: { stringValue: new Date().toISOString() },
+  };
+
+  if (rec?.userAvatar && String(rec.userAvatar).length < 250000) {
+    fields.userAvatar = { stringValue: String(rec.userAvatar) };
+  }
+  // Firestore documents have a 1MB limit; if the image dataURL is < 750KB, store directly in Firestore,
+  // otherwise store the server endpoint URL `/api/vault/receipts/${id}/image` so Firestore always succeeds!
+  const imgUrl = String(rec?.receiptImageUrl || '');
+  if (imgUrl && imgUrl.length < 750000) {
+    fields.receiptImageUrl = { stringValue: imgUrl };
+  } else if (imgUrl) {
+    fields.receiptImageUrl = { stringValue: `/api/vault/receipts/${encodeURIComponent(id)}/image` };
+  }
+
+  if (rec?.reviewedAt) fields.reviewedAt = { stringValue: String(rec.reviewedAt) };
+  if (rec?.reviewedBy) fields.reviewedBy = { stringValue: String(rec.reviewedBy) };
+  if (rec?.adminNote !== undefined) fields.adminNote = { stringValue: String(rec.adminNote) };
+  if (rec?.membershipStartsAt) fields.membershipStartsAt = { stringValue: String(rec.membershipStartsAt) };
+  if (rec?.membershipExpiresAt) fields.membershipExpiresAt = { stringValue: String(rec.membershipExpiresAt) };
+
+  return fields;
+}
+
+async function saveReceiptToFirestoreREST(rec: any): Promise<boolean> {
+  try {
+    if (!rec || !rec.id) return false;
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(rec.id)}?key=${rawFirebaseConfig.apiKey}`;
+    const fields = receiptToFirestoreFields(rec);
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.warn('[Firestore Receipt Sync Error]:', err);
+    return false;
+  }
+}
+
+async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolean> {
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
+    const response = await fetch(url, { method: 'DELETE' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchAllReceiptsFromFirestoreREST(): Promise<any[]> {
+  const result: any[] = [];
+  try {
+    const deletedSet = readDeletedReceiptIds();
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
+    const res = await fetch(url);
+    if (!res.ok) return result;
+    const data: any = await res.json();
+    if (!data || !Array.isArray(data.documents)) return result;
+
+    for (const docSnap of data.documents) {
+      const fields = docSnap.fields || {};
+      const docId = docSnap.name.split('/').pop() || '';
+      const id = fields.id?.stringValue || docId;
+      if (!id || deletedSet.has(id) || String(id).startsWith('rec-demo')) continue;
+
+      const amountVal =
+        fields.amount?.doubleValue !== undefined
+          ? Number(fields.amount.doubleValue)
+          : fields.amount?.integerValue !== undefined
+          ? Number(fields.amount.integerValue)
+          : 1;
+
+      let imgUrl = fields.receiptImageUrl?.stringValue || '';
+      if (!imgUrl || imgUrl.startsWith('/api/vault/receipts/')) {
+        const diskImg = loadReceiptImageFromDisk(id);
+        if (diskImg) imgUrl = diskImg;
+      }
+
+      const rec: Record<string, any> = {
+        id,
+        userId: fields.userId?.stringValue || 'user',
+        userDisplayName: fields.userDisplayName?.stringValue || 'Usuario',
+        userEmail: fields.userEmail?.stringValue || '',
+        plan: fields.plan?.stringValue || 'monthly',
+        amount: amountVal,
+        currency: fields.currency?.stringValue || 'USD',
+        paymentMethod: fields.paymentMethod?.stringValue || 'Transferencia',
+        referenceCode: fields.referenceCode?.stringValue || '',
+        receiptImageUrl: imgUrl,
+        receiptFileName: fields.receiptFileName?.stringValue || 'comprobante.jpg',
+        notes: fields.notes?.stringValue || '',
+        whatsappContact: fields.whatsappContact?.stringValue || '+54 9 11 6554-6038',
+        status: fields.status?.stringValue || 'pending',
+        createdAt: fields.createdAt?.stringValue || new Date().toISOString(),
+      };
+
+      if (fields.userAvatar?.stringValue) rec.userAvatar = fields.userAvatar.stringValue;
+      if (fields.reviewedAt?.stringValue) rec.reviewedAt = fields.reviewedAt.stringValue;
+      if (fields.reviewedBy?.stringValue) rec.reviewedBy = fields.reviewedBy.stringValue;
+      if (fields.adminNote?.stringValue !== undefined) rec.adminNote = fields.adminNote.stringValue;
+      if (fields.membershipStartsAt?.stringValue) rec.membershipStartsAt = fields.membershipStartsAt.stringValue;
+      if (fields.membershipExpiresAt?.stringValue) rec.membershipExpiresAt = fields.membershipExpiresAt.stringValue;
+
+      result.push(rec);
+    }
+  } catch (err) {
+    console.warn('Error fetching Firestore REST receipts:', err);
+  }
+  return result;
+}
+
+function mergeReceiptRecords(existing: any, incoming: any): any {
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+
+  const existingTime = existing.reviewedAt ? new Date(existing.reviewedAt).getTime() : 0;
+  const incomingTime = incoming.reviewedAt ? new Date(incoming.reviewedAt).getTime() : 0;
+
+  const base = incomingTime >= existingTime ? { ...existing, ...incoming } : { ...incoming, ...existing };
+
+  // Always preserve the full data:image URL if one record has it and the other only has a path or empty string
+  const existingImg = String(existing.receiptImageUrl || '');
+  const incomingImg = String(incoming.receiptImageUrl || '');
+  if (existingImg.startsWith('data:image/') && !incomingImg.startsWith('data:image/')) {
+    base.receiptImageUrl = existingImg;
+  } else if (incomingImg.startsWith('data:image/')) {
+    base.receiptImageUrl = incomingImg;
+  }
+
+  return base;
+}
+
+// GET /api/vault/receipts/:id/image - Serve stored receipt image
+app.get('/api/vault/receipts/:id/image', (req, res) => {
+  try {
+    const { id } = req.params;
+    const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '');
+    const binPath = path.join(UPLOADS_DIR, `receipt_${safeId}.bin`);
+    const metaPath = path.join(UPLOADS_DIR, `receipt_${safeId}.meta.json`);
+    if (fs.existsSync(binPath) && fs.existsSync(metaPath)) {
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      res.setHeader('Content-Type', meta.mimeType || 'image/jpeg');
+      return res.sendFile(binPath);
+    }
+
     const receipts = readReceipts();
-    return res.json({ success: true, receipts });
+    const found = receipts.find((r) => r.id === id);
+    if (found && found.receiptImageUrl && String(found.receiptImageUrl).startsWith('data:image/')) {
+      const matches = String(found.receiptImageUrl).match(/^data:(image\/[A-Za-z0-9.+-]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        res.setHeader('Content-Type', matches[1]);
+        return res.send(Buffer.from(matches[2], 'base64'));
+      }
+    }
+    return res.status(404).send('Imagen no encontrada');
+  } catch {
+    return res.status(500).send('Error al cargar imagen');
+  }
+});
+
+// GET /api/vault/receipts - Fetch all payment receipts (Merged from Server File + Firestore REST)
+app.get('/api/vault/receipts', async (_req, res) => {
+  try {
+    const deletedSet = readDeletedReceiptIds();
+    const localReceipts = readReceipts();
+    const firestoreReceipts = await fetchAllReceiptsFromFirestoreREST();
+
+    const receiptMap = new Map<string, any>();
+    for (const r of localReceipts) {
+      if (r && r.id && !deletedSet.has(r.id)) {
+        receiptMap.set(r.id, r);
+      }
+    }
+    for (const r of firestoreReceipts) {
+      if (r && r.id && !deletedSet.has(r.id)) {
+        const existing = receiptMap.get(r.id);
+        receiptMap.set(r.id, mergeReceiptRecords(existing, r));
+      }
+    }
+
+    const merged = Array.from(receiptMap.values()).sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+
+    writeReceipts(merged);
+    return res.json({ success: true, receipts: merged, total: merged.length });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    const localReceipts = readReceipts();
+    return res.json({ success: true, receipts: localReceipts, total: localReceipts.length });
   }
 });
 
 // POST /api/vault/receipts - Create or update a payment receipt
-app.post('/api/vault/receipts', (req, res) => {
+app.post('/api/vault/receipts', async (req, res) => {
   try {
     const newReceipt = req.body;
     if (!newReceipt || !newReceipt.id || !newReceipt.userId) {
       return res.status(400).json({ success: false, error: 'Datos de comprobante incompletos' });
     }
+
+    removeDeletedReceiptId(newReceipt.id);
+    saveReceiptImageToDisk(newReceipt);
 
     const currentReceipts = readReceipts();
     const existingIndex = currentReceipts.findIndex((r) => r.id === newReceipt.id);
@@ -1157,60 +1446,150 @@ app.post('/api/vault/receipts', (req, res) => {
 
     if (existingIndex >= 0) {
       updatedReceipts = [...currentReceipts];
-      updatedReceipts[existingIndex] = { ...updatedReceipts[existingIndex], ...newReceipt };
+      updatedReceipts[existingIndex] = mergeReceiptRecords(updatedReceipts[existingIndex], newReceipt);
     } else {
       updatedReceipts = [newReceipt, ...currentReceipts];
     }
 
+    updatedReceipts.sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+
     writeReceipts(updatedReceipts);
-    return res.json({ success: true, receipt: newReceipt, receipts: updatedReceipts });
+    const firestoreSynced = await saveReceiptToFirestoreREST(
+      existingIndex >= 0 ? updatedReceipts[existingIndex] : newReceipt
+    );
+
+    return res.json({
+      success: true,
+      receipt: existingIndex >= 0 ? updatedReceipts[existingIndex] : newReceipt,
+      receipts: updatedReceipts,
+      firestoreSynced,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/vault/receipts/sync - Two-way batch sync of receipts between Client, Server, and Firestore
+app.post('/api/vault/receipts/sync', async (req, res) => {
+  try {
+    const { receipts: incomingReceipts } = req.body;
+    const deletedSet = readDeletedReceiptIds();
+    const localReceipts = readReceipts();
+    const firestoreReceipts = await fetchAllReceiptsFromFirestoreREST();
+
+    const receiptMap = new Map<string, any>();
+
+    for (const r of localReceipts) {
+      if (r && r.id && !deletedSet.has(r.id)) {
+        receiptMap.set(r.id, r);
+      }
+    }
+    for (const r of firestoreReceipts) {
+      if (r && r.id && !deletedSet.has(r.id)) {
+        receiptMap.set(r.id, mergeReceiptRecords(receiptMap.get(r.id), r));
+      }
+    }
+    if (Array.isArray(incomingReceipts)) {
+      for (const r of incomingReceipts) {
+        if (r && r.id && !deletedSet.has(r.id) && !String(r.id).startsWith('rec-demo')) {
+          saveReceiptImageToDisk(r);
+          receiptMap.set(r.id, mergeReceiptRecords(receiptMap.get(r.id), r));
+        }
+      }
+    }
+
+    const merged = Array.from(receiptMap.values()).sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+
+    writeReceipts(merged);
+
+    // Sync all receipts to Firestore in background
+    (async () => {
+      for (const r of merged) {
+        await saveReceiptToFirestoreREST(r);
+      }
+    })().catch(() => {});
+
+    return res.json({
+      success: true,
+      receipts: merged,
+      deletedIds: Array.from(deletedSet),
+      total: merged.length,
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // PATCH /api/vault/receipts/:id/status - Update approval status (Admin)
-app.patch('/api/vault/receipts/:id/status', (req, res) => {
+app.patch('/api/vault/receipts/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, adminNote, reviewerName } = req.body;
+    const { status, adminNote, reviewerName, receipt: fullReceipt } = req.body;
 
     if (!['pending', 'approved', 'rejected'].includes(status)) {
       return res.status(400).json({ success: false, error: 'Estado de comprobante inválido' });
     }
 
     const currentReceipts = readReceipts();
-    const targetIndex = currentReceipts.findIndex((r) => r.id === id);
+    let targetIndex = currentReceipts.findIndex((r) => r.id === id);
+
+    // If receipt was not yet on server disk, check Firestore or use fullReceipt provided in body
+    if (targetIndex < 0 && fullReceipt && fullReceipt.id === id) {
+      currentReceipts.unshift(fullReceipt);
+      targetIndex = 0;
+    } else if (targetIndex < 0) {
+      const fsReceipts = await fetchAllReceiptsFromFirestoreREST();
+      const foundFs = fsReceipts.find((r) => r.id === id);
+      if (foundFs) {
+        currentReceipts.unshift(foundFs);
+        targetIndex = 0;
+      }
+    }
 
     if (targetIndex < 0) {
       return res.status(404).json({ success: false, error: 'Comprobante no encontrado' });
     }
 
+    const target = currentReceipts[targetIndex];
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const durationDays = target.plan === 'annual' ? 365 : 30;
+    const expiresIso = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
     const updated = {
-      ...currentReceipts[targetIndex],
+      ...target,
       status,
-      adminNote: adminNote !== undefined ? adminNote : currentReceipts[targetIndex].adminNote,
-      reviewedAt: new Date().toISOString(),
+      adminNote: adminNote !== undefined ? adminNote : target.adminNote,
+      reviewedAt: nowIso,
       reviewedBy: reviewerName || 'Administrador',
+      membershipStartsAt: status === 'approved' ? nowIso : undefined,
+      membershipExpiresAt: status === 'approved' ? expiresIso : undefined,
     };
 
     currentReceipts[targetIndex] = updated;
     writeReceipts(currentReceipts);
+    await saveReceiptToFirestoreREST(updated);
 
-    return res.json({ success: true, receipt: updated });
+    return res.json({ success: true, receipt: updated, receipts: currentReceipts });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // DELETE /api/vault/receipts/:id - Delete receipt
-app.delete('/api/vault/receipts/:id', (req, res) => {
+app.delete('/api/vault/receipts/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    addDeletedReceiptId(id);
     const currentReceipts = readReceipts();
     const updated = currentReceipts.filter((r) => r.id !== id);
     writeReceipts(updated);
-    return res.json({ success: true, deletedId: id });
+    await deleteReceiptFromFirestoreREST(id);
+    return res.json({ success: true, deletedId: id, receipts: updated });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -1585,6 +1964,23 @@ async function startServer() {
         await saveUserToFirestoreREST(userRecord);
       }
       console.log(`[Cloud Boot Sync] Successfully verified and synced ${Object.keys(mergedUsers).length} user accounts to Firebase Firestore.`);
+
+      // Sync all payment receipts on server startup
+      const localReceipts = readReceipts();
+      const cloudReceipts = await fetchAllReceiptsFromFirestoreREST();
+      const receiptMap = new Map<string, any>();
+      for (const r of localReceipts) {
+        if (r && r.id) receiptMap.set(r.id, r);
+      }
+      for (const r of cloudReceipts) {
+        if (r && r.id) receiptMap.set(r.id, mergeReceiptRecords(receiptMap.get(r.id), r));
+      }
+      const mergedReceipts = Array.from(receiptMap.values());
+      writeReceipts(mergedReceipts);
+      for (const rec of mergedReceipts) {
+        await saveReceiptToFirestoreREST(rec);
+      }
+      console.log(`[Cloud Boot Sync] Successfully verified and synced ${mergedReceipts.length} payment receipts to Firebase Firestore.`);
     } catch (bootErr) {
       console.warn('[Cloud Boot Sync Error]:', bootErr);
     }

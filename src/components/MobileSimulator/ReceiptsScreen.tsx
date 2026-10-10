@@ -65,6 +65,7 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
 
   // Selected receipt for detailed preview
   const [viewingReceipt, setViewingReceipt] = useState<PaymentReceipt | null>(null);
+  const [isRefreshingReceipts, setIsRefreshingReceipts] = useState(false);
 
   // Notification Toast
   const [toast, setToast] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
@@ -76,17 +77,49 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     if (isAdmin) {
       setReceipts(receiptService.getAllReceipts());
     } else {
-      setReceipts(receiptService.getReceiptsByUser(currentUser.uid));
+      setReceipts(receiptService.getReceiptsByUser(currentUser.uid, currentUser.email));
+    }
+  };
+
+  const handleManualSyncReceipts = async (silent = false) => {
+    setIsRefreshingReceipts(true);
+    refreshReceipts();
+    try {
+      const [synced] = await Promise.all([
+        receiptService.syncFromServer(),
+        new Promise((r) => setTimeout(r, silent ? 100 : 350)),
+      ]);
+      if (isAdmin) {
+        setReceipts(synced);
+      } else {
+        setReceipts(receiptService.getReceiptsByUser(currentUser.uid, currentUser.email));
+      }
+      if (!silent) {
+        showToast('¡Lista de comprobantes actualizada!', 'info');
+      }
+    } catch {
+      refreshReceipts();
+    } finally {
+      setIsRefreshingReceipts(false);
     }
   };
 
   useEffect(() => {
+    handleManualSyncReceipts(true);
+
+    const unsubFirestore = receiptService.onReceiptsSnapshot(() => {
+      refreshReceipts();
+    });
+
     const handleUpdate = () => {
       refreshReceipts();
     };
     window.addEventListener('vault_receipts_changed', handleUpdate);
-    return () => window.removeEventListener('vault_receipts_changed', handleUpdate);
-  }, [currentUser.uid, isAdmin]);
+    return () => {
+      unsubFirestore();
+      window.removeEventListener('vault_receipts_changed', handleUpdate);
+    };
+  }, [currentUser.uid, currentUser.email, isAdmin]);
 
   // Adjust amount when plan changes
   useEffect(() => {
@@ -102,28 +135,29 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     setTimeout(() => setToast(null), 4500);
   };
 
-  // Handle file selection and read as base64
+  // Handle file selection and read + compress as base64
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      showToast('El archivo supera los 15MB. Elige una imagen más liviana.', 'error');
+    if (file.size > 25 * 1024 * 1024) {
+      showToast('El archivo supera los 25MB. Elige una imagen más liviana.', 'error');
       return;
     }
 
     setFileName(file.name);
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       if (typeof reader.result === 'string') {
-        setPreviewImage(reader.result);
+        const compressed = await receiptService.compressReceiptImage(reader.result);
+        setPreviewImage(compressed || reader.result);
       }
     };
     reader.readAsDataURL(file);
   };
 
   // Submit new receipt
-  const handleSubmitReceipt = (e: React.FormEvent) => {
+  const handleSubmitReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!previewImage) {
@@ -134,7 +168,7 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     setIsSubmitting(true);
 
     try {
-      const newRec = receiptService.createReceipt({
+      const newRec = await receiptService.createReceiptAsync({
         userId: currentUser.uid,
         userDisplayName: currentUser.displayName,
         userEmail: currentUser.email,
@@ -156,7 +190,7 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
         origin: { y: 0.6 }
       });
 
-      showToast('¡Comprobante subido con éxito! Está en cola de verificación rápida.', 'success');
+      showToast('¡Comprobante subido y guardado en la base de datos! Ya está disponible para aprobación del administrador.', 'success');
 
       // If user chose to notify on WhatsApp
       if (sendWhatsAppAlert) {
@@ -707,8 +741,31 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                 </span>
               </h2>
 
-              {/* Status Filters */}
-              <div className="flex items-center gap-1.5 text-xs font-bold">
+              {/* Status Filters & Refresh */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleManualSyncReceipts(false)}
+                  disabled={isRefreshingReceipts}
+                  className={`px-2.5 py-1 rounded-xl border flex items-center gap-1 cursor-pointer transition-all ${
+                    isDark
+                      ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                      : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-800'
+                  }`}
+                >
+                  <RefreshCw className={`w-3 h-3 ${isRefreshingReceipts ? 'animate-spin text-[#0066FF]' : ''}`} />
+                  <span>{isRefreshingReceipts ? 'Actualizando...' : 'Actualizar'}</span>
+                </button>
+                {isAdmin && onNavigateToApprovals && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToApprovals}
+                    className="px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30 flex items-center gap-1 cursor-pointer transition-all"
+                  >
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>Ir a Aprobación de Membresías</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setStatusFilter('all')}
                   className={`px-2.5 py-1 rounded-xl transition-all ${

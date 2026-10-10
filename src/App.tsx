@@ -238,6 +238,11 @@ function AppContent() {
       }
     });
 
+    // Real-time Firestore receipts listener
+    const unsubFirestoreReceipts = receiptService.onReceiptsSnapshot(() => {
+      setPendingApprovalsCount(receiptService.getPendingCount());
+    });
+
     // Real-time Firestore maintenance mode listener (disabled since no user has admin)
     const unsubFirestoreMaintenance = () => {};
 
@@ -252,6 +257,11 @@ function AppContent() {
         firebaseService.syncAllRegisteredAccountsToDatabase().catch((err) => {
           console.warn('Error syncing registered accounts to database:', err);
         });
+
+        // Sync all uploaded payment receipts with Database (Server + Firestore)
+        receiptService.syncFromServer().then(() => {
+          setPendingApprovalsCount(receiptService.getPendingCount());
+        }).catch(() => {});
 
         // 0. Fetch permanently deleted list IDs from server so deleted lists NEVER resurrect on reload
         try {
@@ -333,6 +343,9 @@ function AppContent() {
     const interval = setInterval(async () => {
       try {
         firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
+        receiptService.syncFromServer().then(() => {
+          setPendingApprovalsCount(receiptService.getPendingCount());
+        }).catch(() => {});
 
         // Sync deleted lists first
         try {
@@ -369,6 +382,7 @@ function AppContent() {
       unsubFirestoreItems();
       unsubFirestoreLists();
       unsubFirestoreUsers();
+      unsubFirestoreReceipts();
       unsubFirestoreMaintenance();
       clearInterval(interval);
     };
@@ -1073,6 +1087,7 @@ function AppContent() {
                   onUpdateCurrentUser={(updated) => setCurrentUser(updated)}
                   onNavigateToVault={() => setCurrentTab('vault')}
                   onNavigateToMembership={() => setCurrentTab('membership')}
+                  onNavigateToReceipts={() => setCurrentTab('receipts')}
                 />
               </motion.div>
             )}
