@@ -75,7 +75,8 @@ export function handleFirestoreError(err: any): void {
     code.includes('resource-exhausted') ||
     msg.includes('resource-exhausted') ||
     msg.includes('Quota exceeded') ||
-    msg.includes('429')
+    msg.includes('429') ||
+    msg.includes('Firestore SDK timeout')
   ) {
     // Pause Firestore direct calls for 15 minutes and disable SDK background WebChannel retries
     const until = Date.now() + 15 * 60 * 1000;
@@ -87,6 +88,27 @@ export function handleFirestoreError(err: any): void {
       disableNetwork(db).catch(() => {});
     } catch {}
   }
+}
+
+export function withFirestoreTimeout<T>(promise: Promise<T>, timeoutMs = 1200): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const timeoutErr = { code: 'resource-exhausted', message: 'Firestore SDK timeout' };
+      handleFirestoreError(timeoutErr);
+      reject(timeoutErr);
+    }, timeoutMs);
+
+    promise
+      .then((val) => {
+        clearTimeout(timer);
+        resolve(val);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        handleFirestoreError(err);
+        reject(err);
+      });
+  });
 }
 
 if (isFirestoreQuotaExhausted()) {
@@ -521,13 +543,16 @@ export const firebaseService = {
       try {
         const userDocRef = doc(db, 'users', uid);
         const cleanData = this.sanitizeUserRecordForFirestore(normalizedRecord);
-        await setDoc(
-          userDocRef,
-          {
-            ...cleanData,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
+        await withFirestoreTimeout(
+          setDoc(
+            userDocRef,
+            {
+              ...cleanData,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          ),
+          1200
         );
         saved = true;
       } catch (sdkErr) {
@@ -590,7 +615,7 @@ export const firebaseService = {
     if (!isFirestoreQuotaExhausted()) {
       try {
         const colRef = collection(db, 'users');
-        const snap = await getDocs(colRef);
+        const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
         if (!snap.empty) {
           snap.forEach((docSnap) => {
             const data = docSnap.data();
@@ -1674,16 +1699,25 @@ export const firebaseService = {
       }
 
       // 1. Try Web SDK
-      try {
-        const itemDocRef = doc(db, 'vault_items', item.id);
-        const cleanData = this.sanitizeItemForFirestore(item);
-        await setDoc(itemDocRef, {
-          ...cleanData,
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-        return true;
-      } catch (sdkErr: any) {
-        console.warn('[Firestore Web SDK setDoc Warning, falling back to REST]:', sdkErr?.message || sdkErr);
+      if (!isFirestoreQuotaExhausted()) {
+        try {
+          const itemDocRef = doc(db, 'vault_items', item.id);
+          const cleanData = this.sanitizeItemForFirestore(item);
+          await withFirestoreTimeout(
+            setDoc(
+              itemDocRef,
+              {
+                ...cleanData,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ),
+            1200
+          );
+          return true;
+        } catch (sdkErr: any) {
+          handleFirestoreError(sdkErr);
+        }
       }
 
       // 2. Direct REST write fallback only if Web SDK failed
@@ -1830,7 +1864,7 @@ export const firebaseService = {
     try {
       // 1. Try Web SDK
       const colRef = collection(db, 'vault_items');
-      const snap = await getDocs(colRef);
+      const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
       if (!snap.empty) {
         const items: VaultItem[] = [];
         snap.forEach((docSnap) => {
@@ -2089,7 +2123,7 @@ export const firebaseService = {
     if (isFirestoreQuotaExhausted()) return null;
     try {
       const colRef = collection(db, 'vault_lists');
-      const snap = await getDocs(colRef);
+      const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
       if (!snap.empty) {
         const lists: VaultList[] = [];
         snap.forEach((docSnap) => {

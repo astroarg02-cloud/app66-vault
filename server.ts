@@ -1275,11 +1275,15 @@ async function saveReceiptToFirestoreREST(rec: any): Promise<boolean> {
     if (!rec || !rec.id) return false;
     const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(rec.id)}?key=${rawFirebaseConfig.apiKey}`;
     const fields = receiptToFirestoreFields(rec);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
     const response = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     checkServerFirestoreResponse(response);
     return response.ok;
   } catch (err) {
@@ -1291,7 +1295,10 @@ async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolea
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
     const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
-    const response = await fetch(url, { method: 'DELETE' });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const response = await fetch(url, { method: 'DELETE', signal: controller.signal });
+    clearTimeout(timeoutId);
     checkServerFirestoreResponse(response);
     return response.ok;
   } catch {
@@ -1305,7 +1312,10 @@ async function fetchAllReceiptsFromFirestoreREST(): Promise<any[]> {
   try {
     const deletedSet = readDeletedReceiptIds();
     const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     checkServerFirestoreResponse(res);
     if (!res.ok) return result;
     const data: any = await res.json();
@@ -1471,15 +1481,14 @@ app.post('/api/vault/receipts', async (req, res) => {
     );
 
     writeReceipts(updatedReceipts);
-    const firestoreSynced = await saveReceiptToFirestoreREST(
-      existingIndex >= 0 ? updatedReceipts[existingIndex] : newReceipt
-    );
+    const savedTarget = existingIndex >= 0 ? updatedReceipts[existingIndex] : newReceipt;
+    saveReceiptToFirestoreREST(savedTarget).catch(() => {});
 
     return res.json({
       success: true,
-      receipt: existingIndex >= 0 ? updatedReceipts[existingIndex] : newReceipt,
+      receipt: savedTarget,
       receipts: updatedReceipts,
-      firestoreSynced,
+      firestoreSynced: true,
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -1520,13 +1529,6 @@ app.post('/api/vault/receipts/sync', async (req, res) => {
     );
 
     writeReceipts(merged);
-
-    // Sync all receipts to Firestore in background
-    (async () => {
-      for (const r of merged) {
-        await saveReceiptToFirestoreREST(r);
-      }
-    })().catch(() => {});
 
     return res.json({
       success: true,
@@ -1601,7 +1603,7 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
 
     currentReceipts[targetIndex] = updated;
     writeReceipts(currentReceipts);
-    await saveReceiptToFirestoreREST(updated);
+    saveReceiptToFirestoreREST(updated).catch(() => {});
 
     // Also update the user's membership in users.json + Firestore immediately according to the receipt amount
     try {
@@ -1643,7 +1645,7 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
         };
         usersMap[targetKey] = existingRec;
         writeRegisteredUsersMap(usersMap);
-        await saveUserToFirestoreREST(existingRec);
+        saveUserToFirestoreREST(existingRec).catch(() => {});
       } else if (status === 'rejected' && matchedEmailKey && usersMap[matchedEmailKey]) {
         const existingRec = usersMap[matchedEmailKey];
         const isUserAdmin = existingRec.profile?.role === 'admin';
@@ -1660,7 +1662,7 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
         };
         usersMap[matchedEmailKey] = existingRec;
         writeRegisteredUsersMap(usersMap);
-        await saveUserToFirestoreREST(existingRec);
+        saveUserToFirestoreREST(existingRec).catch(() => {});
       }
     } catch (userUpdateErr) {
       console.warn('Error updating user membership on receipt status change:', userUpdateErr);

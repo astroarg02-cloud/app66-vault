@@ -86,10 +86,12 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
     setReceipts(localImmediate);
 
     try {
+      // Sync user accounts in background without blocking receipt list refresh
+      firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
+
       const [synced] = await Promise.all([
         receiptService.syncFromServer(),
-        firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, silent ? 150 : 400)),
+        new Promise((resolve) => setTimeout(resolve, silent ? 80 : 250)),
       ]);
 
       const finalReceipts = Array.isArray(synced) ? synced : receiptService.getAllReceipts();

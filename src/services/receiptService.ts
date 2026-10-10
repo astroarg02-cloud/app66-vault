@@ -8,7 +8,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { PaymentReceipt, ReceiptStatus, MembershipPlanType } from '../types';
-import { db, isFirestoreQuotaExhausted, handleFirestoreError } from './firebaseService';
+import { db, isFirestoreQuotaExhausted, handleFirestoreError, withFirestoreTimeout } from './firebaseService';
 
 const STORAGE_KEY = 'vault_payment_receipts_v1';
 const DELETED_RECEIPTS_KEY = 'vault_deleted_receipts_v1';
@@ -149,7 +149,7 @@ async function saveReceiptToFirestoreSDK(receipt: PaymentReceipt): Promise<boole
     if (receipt.membershipStartsAt) payload.membershipStartsAt = receipt.membershipStartsAt;
     if (receipt.membershipExpiresAt) payload.membershipExpiresAt = receipt.membershipExpiresAt;
 
-    await setDoc(docRef, payload, { merge: true });
+    await withFirestoreTimeout(setDoc(docRef, payload, { merge: true }), 1200);
     return true;
   } catch (err) {
     handleFirestoreError(err);
@@ -161,7 +161,7 @@ async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
   if (!db || isFirestoreQuotaExhausted()) return [];
   try {
     const deletedSet = getDeletedReceiptIds();
-    const snap = await getDocs(collection(db, RECEIPTS_COLLECTION));
+    const snap = await withFirestoreTimeout(getDocs(collection(db, RECEIPTS_COLLECTION)), 1200);
     const list: PaymentReceipt[] = [];
     snap.forEach((docSnap) => {
       const data = docSnap.data() as any;
@@ -203,6 +203,15 @@ export const receiptService = {
   async compressReceiptImage(dataUrl: string, maxDimension = 1280, quality = 0.78): Promise<string> {
     if (!dataUrl || !dataUrl.startsWith('data:image/')) return dataUrl;
     return new Promise((resolve) => {
+      let settled = false;
+      const done = (result: string) => {
+        if (!settled) {
+          settled = true;
+          resolve(result);
+        }
+      };
+      const safetyTimer = setTimeout(() => done(dataUrl), 1500);
+
       try {
         const img = new Image();
         img.onload = () => {
@@ -222,7 +231,8 @@ export const receiptService = {
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             if (!ctx) {
-              resolve(dataUrl);
+              clearTimeout(safetyTimer);
+              done(dataUrl);
               return;
             }
             ctx.fillStyle = '#FFFFFF';
@@ -233,15 +243,21 @@ export const receiptService = {
             if (compressed.length > 550000) {
               compressed = canvas.toDataURL('image/jpeg', 0.6);
             }
-            resolve(compressed);
+            clearTimeout(safetyTimer);
+            done(compressed);
           } catch {
-            resolve(dataUrl);
+            clearTimeout(safetyTimer);
+            done(dataUrl);
           }
         };
-        img.onerror = () => resolve(dataUrl);
+        img.onerror = () => {
+          clearTimeout(safetyTimer);
+          done(dataUrl);
+        };
         img.src = dataUrl;
       } catch {
-        resolve(dataUrl);
+        clearTimeout(safetyTimer);
+        done(dataUrl);
       }
     });
   },
@@ -385,21 +401,12 @@ export const receiptService = {
       }
     }
 
-    // 1. Fetch from Firebase Firestore SDK directly
-    try {
-      const fsReceipts = await fetchReceiptsFromFirestoreSDK();
-      for (const r of fsReceipts) {
-        if (isValidRealReceipt(r, deletedSet)) {
-          map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
-        }
-      }
-    } catch (e) {
-      console.warn('Error syncing receipts from Firestore SDK:', e);
-    }
-
-    // 2. Two-way sync with Central Server (/api/vault/receipts/sync) + cache-busted GET fallback
+    // 1. Primary Two-Way Sync with Central Server (/api/vault/receipts/sync & /api/vault/receipts) FIRST so Admin never waits on Firestore
     try {
       const currentCandidates = Array.from(map.values());
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
       const syncRes = await fetch(`/api/vault/receipts/sync?t=${Date.now()}`, {
         method: 'POST',
         headers: {
@@ -407,7 +414,9 @@ export const receiptService = {
           'Cache-Control': 'no-cache',
         },
         body: JSON.stringify({ receipts: currentCandidates }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (syncRes.ok) {
         const data = await syncRes.json();
@@ -426,7 +435,6 @@ export const receiptService = {
           }
         }
       } else {
-        // Fallback to GET /api/vault/receipts
         const getRes = await fetch(`/api/vault/receipts?t=${Date.now()}`, {
           headers: { 'Cache-Control': 'no-cache' },
         });
@@ -442,7 +450,34 @@ export const receiptService = {
         }
       }
     } catch (e) {
-      console.warn('Server receipts sync warning:', e);
+      // Fallback to fast GET if POST failed or timed out
+      try {
+        const getRes = await fetch(`/api/vault/receipts?t=${Date.now()}`, {
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        if (getRes.ok) {
+          const getData = await getRes.json();
+          if (getData && Array.isArray(getData.receipts)) {
+            for (const r of getData.receipts) {
+              if (isValidRealReceipt(r, deletedSet)) {
+                map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Optional Firestore SDK fetch (strictly bounded by 1.2s timeout and quota check)
+    if (!isFirestoreQuotaExhausted()) {
+      try {
+        const fsReceipts = await fetchReceiptsFromFirestoreSDK();
+        for (const r of fsReceipts) {
+          if (isValidRealReceipt(r, deletedSet)) {
+            map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
+          }
+        }
+      } catch {}
     }
 
     const merged = Array.from(map.values())
@@ -635,17 +670,48 @@ export const receiptService = {
       new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: updated } })
     );
 
-    await Promise.allSettled([
-      fetch('/api/vault/receipts', {
+    // 1. Persist to Central Server API with a 3.5s safety timeout so submission never hangs
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch('/api/vault/receipts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newReceipt),
-      }),
-      saveReceiptToFirestoreSDK(newReceipt),
-    ]);
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.receipts)) {
+          const deletedSet = getDeletedReceiptIds();
+          const map = new Map<string, PaymentReceipt>();
+          for (const r of updated) {
+            if (isValidRealReceipt(r, deletedSet)) map.set(r.id, r);
+          }
+          for (const r of json.receipts) {
+            if (isValidRealReceipt(r, deletedSet)) {
+              map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
+            }
+          }
+          const finalMerged = Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+          saveReceiptsToLocalStore(finalMerged);
+          window.dispatchEvent(
+            new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: finalMerged } })
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('Server receipt upload warning (saved locally):', err);
+    }
+
+    // 2. Persist to Firebase Firestore in background so it never blocks UI confirmation
+    saveReceiptToFirestoreSDK(newReceipt).catch(() => {});
 
     window.dispatchEvent(
-      new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: updated } })
+      new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: this.getAllReceipts() } })
     );
 
     return newReceipt;

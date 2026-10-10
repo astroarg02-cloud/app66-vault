@@ -61,7 +61,7 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [sendWhatsAppAlert, setSendWhatsAppAlert] = useState(true);
+  const [sendWhatsAppAlert, setSendWhatsAppAlert] = useState(false);
 
   // Selected receipt for detailed preview
   const [viewingReceipt, setViewingReceipt] = useState<PaymentReceipt | null>(null);
@@ -154,8 +154,14 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     const reader = new FileReader();
     reader.onload = async () => {
       if (typeof reader.result === 'string') {
-        const compressed = await receiptService.compressReceiptImage(reader.result);
-        setPreviewImage(compressed || reader.result);
+        const rawDataUrl = reader.result;
+        setPreviewImage(rawDataUrl);
+        try {
+          const compressed = await receiptService.compressReceiptImage(rawDataUrl);
+          if (compressed) {
+            setPreviewImage(compressed);
+          }
+        } catch {}
       }
     };
     reader.readAsDataURL(file);
@@ -173,7 +179,7 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     setIsSubmitting(true);
 
     try {
-      const newRec = await receiptService.createReceiptAsync({
+      const payload = {
         userId: currentUser.uid,
         userDisplayName: currentUser.displayName,
         userEmail: currentUser.email,
@@ -186,21 +192,28 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
         receiptFileName: fileName || 'comprobante_pago.jpg',
         notes: notes.trim() || undefined,
         whatsappContact: whatsappPhone.trim() || undefined,
-      });
+      };
+
+      const newRec = await receiptService.createReceiptAsync(payload);
+
+      // Trigger background sync so central server and admin panel receive it immediately
+      receiptService.syncFromServer().catch(() => {});
 
       // Confetti burst
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 }
-      });
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 60,
+          origin: { y: 0.6 },
+        });
+      } catch {}
 
       showToast(
-        `¡Comprobante por $${newRec.amount} USD subido! Al ser aprobado por el admin se activará: ${resolvedUploadMembership.planName} (${resolvedUploadMembership.durationLabel}).`,
+        `¡Comprobante #${newRec.id.slice(-6)} por $${newRec.amount} USD enviado con éxito! Ya está disponible para aprobación del administrador.`,
         'success'
       );
 
-      // If user chose to notify on WhatsApp
+      // If user explicitly checked WhatsApp notification
       if (sendWhatsAppAlert) {
         const planText = `${resolvedUploadMembership.planName.toUpperCase()} (${resolvedUploadMembership.durationLabel})`;
         const refText = newRec.referenceCode ? `\n• Ref/Operación: ${newRec.referenceCode}` : '';
@@ -218,14 +231,17 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
         const waUrl = `https://wa.me/${WHATSAPP_PHONE_RAW}?text=${encodeURIComponent(msg)}`;
         setTimeout(() => {
           window.open(waUrl, '_blank');
-        }, 600);
+        }, 400);
       }
 
-      // Reset form
+      // Reset form and switch to history view immediately
       setPreviewImage(null);
       setFileName('');
       setReferenceCode('');
       setNotes('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       refreshReceipts();
       setActiveTab('history');
     } catch (err) {
