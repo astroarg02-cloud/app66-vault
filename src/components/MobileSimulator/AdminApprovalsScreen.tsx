@@ -94,6 +94,7 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
 
       const finalReceipts = Array.isArray(synced) ? synced : receiptService.getAllReceipts();
       setReceipts(finalReceipts);
+      firebaseService.reconcileApprovedReceiptsWithUsers(finalReceipts);
       const nowStr = new Date().toLocaleTimeString('es-AR', {
         hour: '2-digit',
         minute: '2-digit',
@@ -208,8 +209,10 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
   // Action: Open Approval Modal
   const openApproveModal = (receipt: PaymentReceipt) => {
     setApprovingReceipt(receipt);
-    const planName = receipt.plan === 'annual' ? 'ANUAL' : 'MENSUAL';
-    setApprovalNote(`Comprobante verificado. Membresía VIP ${planName} activada con éxito.`);
+    const resolved = receiptService.resolveMembershipByAmount(receipt.amount, receipt.plan);
+    setApprovalNote(
+      `Comprobante verificado por $${resolved.amount} USD. Membresía VIP (${resolved.planName} • ${resolved.durationLabel}) activada con éxito.`
+    );
   };
 
   // Action: Confirm Approval
@@ -217,29 +220,47 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
     if (!approvingReceipt) return;
 
     const receipt = approvingReceipt;
+    const resolved = receiptService.resolveMembershipByAmount(receipt.amount, receipt.plan);
+
     const updated = receiptService.updateReceiptStatus(
       receipt.id,
       'approved',
-      approvalNote.trim() || 'Comprobante verificado correctamente. Membresía VIP activada.',
-      currentUser.displayName || 'Administrador'
+      approvalNote.trim() ||
+        `Comprobante verificado por $${resolved.amount} USD. Membresía VIP (${resolved.planName} • ${resolved.durationLabel}) activada.`,
+      currentUser.displayName || 'Administrador',
+      resolved.amount
     );
 
     if (updated) {
-      // 1. Upgrade user account in Firebase / persistent store
-      firebaseService.upgradeUserMembershipByUidOrEmail(receipt.userId, receipt.userEmail, receipt.plan);
+      // 1. Upgrade user account in Firebase / persistent store depending on the amount established by the user
+      const upgradedProfile = firebaseService.upgradeUserMembershipByUidOrEmail(
+        receipt.userId,
+        receipt.userEmail,
+        resolved.plan,
+        updated.membershipStartsAt,
+        resolved.amount,
+        updated.membershipExpiresAt
+      );
 
       // 2. If the admin happens to be approving their own or currently active user
-      if (currentUser.uid === receipt.userId && onUpdateCurrentUser) {
-        onUpdateCurrentUser({
-          ...currentUser,
-          role: 'vip_member',
-          tier: 'Acceso VIP',
-          membershipPlan: receipt.plan,
-          membershipStatus: 'active',
-          subscribedAt: new Date().toISOString(),
-          membershipExpiresAt: new Date(Date.now() + (receipt.plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString(),
-          lastPaymentAmount: receipt.amount,
-        });
+      if (
+        (currentUser.uid === receipt.userId ||
+          (receipt.userEmail && currentUser.email.toLowerCase() === receipt.userEmail.toLowerCase())) &&
+        onUpdateCurrentUser
+      ) {
+        onUpdateCurrentUser(
+          upgradedProfile || {
+            ...currentUser,
+            tier: currentUser.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP',
+            membershipPlan: resolved.plan,
+            membershipStatus: 'active',
+            subscribedAt: updated.membershipStartsAt || new Date().toISOString(),
+            membershipExpiresAt:
+              updated.membershipExpiresAt ||
+              new Date(Date.now() + resolved.durationDays * 24 * 60 * 60 * 1000).toISOString(),
+            lastPaymentAmount: resolved.amount,
+          }
+        );
       }
 
       // 3. Visual feedback
@@ -249,9 +270,12 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
         origin: { y: 0.5 },
       });
 
-      showToast(`¡Membresía VIP activada con éxito para ${receipt.userDisplayName}!`, 'success');
+      showToast(
+        `¡Membresía ${resolved.planName} (${resolved.durationLabel} por $${resolved.amount} USD) activada para ${receipt.userDisplayName}!`,
+        'success'
+      );
       setApprovingReceipt(null);
-      reloadReceipts();
+      reloadReceipts(true);
     }
   };
 
@@ -633,17 +657,22 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
                         }}
                       />
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-sm sm:text-base font-black tracking-tight">{receipt.userDisplayName}</h3>
-                          {/* Plan Badge */}
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase flex items-center gap-1 ${
-                            receipt.plan === 'annual'
-                              ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-black font-extrabold shadow-sm shadow-amber-500/30'
-                              : 'bg-[#0066FF]/20 text-[#0066FF] border border-[#0066FF]/35'
-                          }`}>
-                            <Crown className="w-2.5 h-2.5" />
-                            {receipt.plan === 'annual' ? 'VIP ANUAL ($12)' : 'VIP MENSUAL ($1)'}
-                          </span>
+                          {/* Plan Badge calculated from user's amount */}
+                          {(() => {
+                            const resolved = receiptService.resolveMembershipByAmount(receipt.amount, receipt.plan);
+                            return (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase flex items-center gap-1 ${
+                                resolved.plan === 'annual'
+                                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-black font-extrabold shadow-sm shadow-amber-500/30'
+                                  : 'bg-[#0066FF]/20 text-[#0066FF] border border-[#0066FF]/35'
+                              }`}>
+                                <Crown className="w-2.5 h-2.5" />
+                                {resolved.planName} • {resolved.durationLabel} (${resolved.amount} USD)
+                              </span>
+                            );
+                          })()}
                         </div>
                         <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                           {receipt.userEmail}
@@ -681,8 +710,11 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {/* Monto */}
                         <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
-                          <span className={`text-[10px] block font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Monto Abonado</span>
+                          <span className={`text-[10px] block font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Monto Establecido</span>
                           <span className="text-sm font-black text-emerald-400">${receipt.amount} USD</span>
+                          <span className="text-[10px] block font-bold text-[#0066FF] mt-0.5">
+                            {receiptService.resolveMembershipByAmount(receipt.amount, receipt.plan).durationLabel}
+                          </span>
                         </div>
 
                         {/* Medio de pago */}
@@ -924,26 +956,40 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
               </div>
 
               {/* User summary */}
-              <div className={`p-3.5 rounded-2xl border space-y-2 ${isDark ? 'bg-black/50 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Usuario a activar:</span>
-                  <span className="text-xs font-black">{approvingReceipt.userDisplayName}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Correo:</span>
-                  <span className="text-xs font-mono">{approvingReceipt.userEmail}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Plan asignado:</span>
-                  <span className="text-xs font-black text-amber-400 uppercase">
-                    {approvingReceipt.plan === 'annual' ? 'Acceso VIP ANUAL (12 Meses)' : 'Acceso VIP MENSUAL (30 Días)'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Monto verificado:</span>
-                  <span className="text-xs font-black text-emerald-400">${approvingReceipt.amount} USD</span>
-                </div>
-              </div>
+              {(() => {
+                const resolved = receiptService.resolveMembershipByAmount(
+                  approvingReceipt.amount,
+                  approvingReceipt.plan
+                );
+                return (
+                  <div className={`p-3.5 rounded-2xl border space-y-2 ${isDark ? 'bg-black/50 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Usuario a activar:</span>
+                      <span className="text-xs font-black">{approvingReceipt.userDisplayName}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Correo:</span>
+                      <span className="text-xs font-mono">{approvingReceipt.userEmail}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Monto establecido por el usuario:</span>
+                      <span className="text-xs font-black text-emerald-400">${resolved.amount} USD</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Membresía a activar según monto:</span>
+                      <span className="text-xs font-black text-amber-400 uppercase">
+                        Acceso VIP — {resolved.planName}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Vigencia exacta asignada:</span>
+                      <span className="text-xs font-black text-[#0066FF]">
+                        {resolved.durationLabel}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Admin Note Input */}
               <div className="space-y-1.5">

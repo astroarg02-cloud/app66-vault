@@ -1528,7 +1528,7 @@ app.post('/api/vault/receipts/sync', async (req, res) => {
 app.patch('/api/vault/receipts/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, adminNote, reviewerName, receipt: fullReceipt } = req.body;
+    const { status, amount: bodyAmount, adminNote, reviewerName, receipt: fullReceipt } = req.body;
 
     if (!['pending', 'approved', 'rejected'].includes(status)) {
       return res.status(400).json({ success: false, error: 'Estado de comprobante inválido' });
@@ -1557,11 +1557,25 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
     const target = currentReceipts[targetIndex];
     const now = new Date();
     const nowIso = now.toISOString();
-    const durationDays = target.plan === 'annual' ? 365 : 30;
+
+    const rawAmount = Number(bodyAmount ?? fullReceipt?.amount ?? target.amount);
+    const validAmount =
+      !isNaN(rawAmount) && rawAmount > 0
+        ? Math.round(rawAmount * 100) / 100
+        : target.plan === 'annual'
+        ? 12
+        : 1;
+    const resolvedPlan = validAmount >= 12 ? 'annual' : 'monthly';
+    const durationDays =
+      validAmount >= 12
+        ? Math.max(365, Math.round((validAmount / 12) * 365))
+        : Math.max(1, Math.round(validAmount * 30));
     const expiresIso = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
 
     const updated = {
       ...target,
+      plan: resolvedPlan,
+      amount: validAmount,
       status,
       adminNote: adminNote !== undefined ? adminNote : target.adminNote,
       reviewedAt: nowIso,
@@ -1573,6 +1587,69 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
     currentReceipts[targetIndex] = updated;
     writeReceipts(currentReceipts);
     await saveReceiptToFirestoreREST(updated);
+
+    // Also update the user's membership in users.json + Firestore immediately according to the receipt amount
+    try {
+      const usersMap = readRegisteredUsersMap();
+      const userEmailKey = String(updated.userEmail || '').toLowerCase().trim();
+      let matchedEmailKey = userEmailKey && usersMap[userEmailKey] ? userEmailKey : '';
+      if (!matchedEmailKey && updated.userId) {
+        for (const [k, rec] of Object.entries(usersMap)) {
+          if (rec?.profile?.uid === updated.userId) {
+            matchedEmailKey = k;
+            break;
+          }
+        }
+      }
+
+      if (status === 'approved') {
+        const targetKey = matchedEmailKey || userEmailKey || `${updated.userId}@vault.user`;
+        const existingRec = usersMap[targetKey] || {
+          email: targetKey,
+          password: 'password123',
+          registeredAt: nowIso,
+          profile: {
+            uid: updated.userId || `usr_${Date.now()}`,
+            email: targetKey,
+            displayName: updated.userDisplayName || targetKey.split('@')[0] || 'Miembro VIP',
+            role: 'vip_member',
+            joinedAt: nowIso.split('T')[0],
+          },
+        };
+        const isUserAdmin = existingRec.profile?.role === 'admin';
+        existingRec.profile = {
+          ...(existingRec.profile || {}),
+          membershipPlan: resolvedPlan,
+          membershipStatus: 'active',
+          tier: isUserAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
+          subscribedAt: nowIso,
+          membershipExpiresAt: expiresIso,
+          lastPaymentAmount: validAmount,
+        };
+        usersMap[targetKey] = existingRec;
+        writeRegisteredUsersMap(usersMap);
+        await saveUserToFirestoreREST(existingRec);
+      } else if (status === 'rejected' && matchedEmailKey && usersMap[matchedEmailKey]) {
+        const existingRec = usersMap[matchedEmailKey];
+        const isUserAdmin = existingRec.profile?.role === 'admin';
+        existingRec.profile = {
+          ...(existingRec.profile || {}),
+          membershipPlan: undefined,
+          membershipStatus: 'none',
+          tier: isUserAdmin ? 'Bóveda Diamante' : 'Invitado',
+          subscribedAt: undefined,
+          membershipExpiresAt: undefined,
+          customStatus: updated.adminNote
+            ? `Membresía no aprobada: ${updated.adminNote}`
+            : undefined,
+        };
+        usersMap[matchedEmailKey] = existingRec;
+        writeRegisteredUsersMap(usersMap);
+        await saveUserToFirestoreREST(existingRec);
+      }
+    } catch (userUpdateErr) {
+      console.warn('Error updating user membership on receipt status change:', userUpdateErr);
+    }
 
     return res.json({ success: true, receipt: updated, receipts: currentReceipts });
   } catch (err: any) {
@@ -1680,6 +1757,25 @@ function writeRegisteredUsersMap(usersMap: Record<string, any>): boolean {
   }
 }
 
+function mergeUserProfileOnServer(existingProf: any, incomingProf: any): any {
+  const base = { ...(existingProf || {}), ...(incomingProf || {}) };
+  // Preserve active membership if existingProf has an active membership and incomingProf has 'none' (from a stale client sync)
+  if (
+    existingProf?.membershipStatus === 'active' &&
+    existingProf?.subscribedAt &&
+    incomingProf?.membershipStatus === 'none' &&
+    !String(incomingProf?.customStatus || '').startsWith('Membresía no aprobada:')
+  ) {
+    base.membershipStatus = 'active';
+    base.membershipPlan = existingProf.membershipPlan;
+    base.subscribedAt = existingProf.subscribedAt;
+    base.membershipExpiresAt = existingProf.membershipExpiresAt;
+    base.lastPaymentAmount = existingProf.lastPaymentAmount;
+    base.tier = existingProf.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP';
+  }
+  return base;
+}
+
 function userRecordToFirestoreFields(record: any): Record<string, any> {
   const prof = record?.profile || record || {};
   const email = String(record?.email || prof?.email || '').toLowerCase().trim();
@@ -1706,7 +1802,9 @@ function userRecordToFirestoreFields(record: any): Record<string, any> {
   if (prof?.subscribedAt) fields.subscribedAt = { stringValue: String(prof.subscribedAt) };
   if (prof?.membershipExpiresAt) fields.membershipExpiresAt = { stringValue: String(prof.membershipExpiresAt) };
   if (typeof prof?.lastPaymentAmount === 'number') {
-    fields.lastPaymentAmount = { integerValue: String(Math.round(prof.lastPaymentAmount)) };
+    fields.lastPaymentAmount = Number.isInteger(prof.lastPaymentAmount)
+      ? { integerValue: String(prof.lastPaymentAmount) }
+      : { doubleValue: Number(prof.lastPaymentAmount) };
   }
 
   return fields;
@@ -1765,7 +1863,9 @@ async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
       if (fields.membershipPlan?.stringValue) profile.membershipPlan = fields.membershipPlan.stringValue;
       if (fields.subscribedAt?.stringValue) profile.subscribedAt = fields.subscribedAt.stringValue;
       if (fields.membershipExpiresAt?.stringValue) profile.membershipExpiresAt = fields.membershipExpiresAt.stringValue;
-      if (fields.lastPaymentAmount?.integerValue) {
+      if (fields.lastPaymentAmount?.doubleValue !== undefined) {
+        profile.lastPaymentAmount = Number(fields.lastPaymentAmount.doubleValue);
+      } else if (fields.lastPaymentAmount?.integerValue !== undefined) {
         profile.lastPaymentAmount = Number(fields.lastPaymentAmount.integerValue);
       }
 
@@ -1798,10 +1898,7 @@ app.get('/api/vault/users', async (_req, res) => {
           ...existing,
           ...fsRecord,
           password: fsRecord.password && fsRecord.password !== 'password123' ? fsRecord.password : (existing.password || fsRecord.password || 'password123'),
-          profile: {
-            ...(existing.profile || {}),
-            ...(fsRecord.profile || {}),
-          },
+          profile: mergeUserProfileOnServer(existing.profile, fsRecord.profile),
         };
       }
     }
@@ -1869,10 +1966,7 @@ app.post('/api/vault/users/sync', async (req, res) => {
       } else {
         currentMap[emailKey] = {
           ...currentMap[emailKey],
-          profile: {
-            ...(fsRecord.profile || {}),
-            ...(currentMap[emailKey].profile || {}),
-          },
+          profile: mergeUserProfileOnServer(currentMap[emailKey].profile, fsRecord.profile),
         };
       }
     }
@@ -1896,8 +1990,7 @@ app.post('/api/vault/users/sync', async (req, res) => {
         password: entry?.password || existing?.password || 'password123',
         registeredAt: entry?.registeredAt || existing?.registeredAt || new Date().toISOString(),
         profile: {
-          ...(existing?.profile || {}),
-          ...(prof || {}),
+          ...mergeUserProfileOnServer(existing?.profile, prof),
           email: emailKey,
         },
       };

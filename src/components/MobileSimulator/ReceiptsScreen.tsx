@@ -121,14 +121,19 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     };
   }, [currentUser.uid, currentUser.email, isAdmin]);
 
-  // Adjust amount when plan changes
-  useEffect(() => {
-    if (selectedPlan === 'monthly') {
-      setAmount(1);
-    } else {
-      setAmount(12);
+  const resolvedUploadMembership = receiptService.resolveMembershipByAmount(amount, selectedPlan);
+
+  const handleSelectPlanCard = (plan: MembershipPlanType) => {
+    setSelectedPlan(plan);
+    setAmount(plan === 'annual' ? 12 : 1);
+  };
+
+  const handleAmountChange = (val: number) => {
+    setAmount(val);
+    if (!isNaN(val) && val > 0) {
+      setSelectedPlan(val >= 12 ? 'annual' : 'monthly');
     }
-  }, [selectedPlan]);
+  };
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ type, message });
@@ -173,8 +178,8 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
         userDisplayName: currentUser.displayName,
         userEmail: currentUser.email,
         userAvatar: currentUser.avatarUrl,
-        plan: selectedPlan,
-        amount: Number(amount) || (selectedPlan === 'monthly' ? 1 : 12),
+        plan: resolvedUploadMembership.plan,
+        amount: resolvedUploadMembership.amount,
         paymentMethod,
         referenceCode: referenceCode.trim() || undefined,
         receiptImageUrl: previewImage,
@@ -190,11 +195,14 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
         origin: { y: 0.6 }
       });
 
-      showToast('¡Comprobante subido y guardado en la base de datos! Ya está disponible para aprobación del administrador.', 'success');
+      showToast(
+        `¡Comprobante por $${newRec.amount} USD subido! Al ser aprobado por el admin se activará: ${resolvedUploadMembership.planName} (${resolvedUploadMembership.durationLabel}).`,
+        'success'
+      );
 
       // If user chose to notify on WhatsApp
       if (sendWhatsAppAlert) {
-        const planText = selectedPlan === 'monthly' ? (isSubscribed ? 'MENSUAL' : 'MENSUAL (1$ USD)') : (isSubscribed ? 'ANUAL' : 'ANUAL (12$ USD)');
+        const planText = `${resolvedUploadMembership.planName.toUpperCase()} (${resolvedUploadMembership.durationLabel})`;
         const refText = newRec.referenceCode ? `\n• Ref/Operación: ${newRec.referenceCode}` : '';
         const msg = `¡Hola! Acabo de subir mi comprobante de pago en App 66 📄✨
         
@@ -228,37 +236,57 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
     }
   };
 
-  // Admin action: Approve receipt and activate VIP
+  // Admin action: Approve receipt and activate VIP depending on the user's established amount
   const handleApproveReceipt = (receipt: PaymentReceipt) => {
+    const resolved = receiptService.resolveMembershipByAmount(receipt.amount, receipt.plan);
     const updated = receiptService.updateReceiptStatus(
-      receipt.id, 
-      'approved', 
-      'Comprobante verificado con éxito. Membresía VIP activada.',
-      currentUser.displayName
+      receipt.id,
+      'approved',
+      `Comprobante verificado por $${resolved.amount} USD. Membresía VIP (${resolved.planName} • ${resolved.durationLabel}) activada.`,
+      currentUser.displayName,
+      resolved.amount
     );
 
     if (updated) {
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
-      showToast(`¡Comprobante #${receipt.id.slice(-6)} aprobado y VIP activado!`, 'success');
+      showToast(
+        `¡Comprobante #${receipt.id.slice(-6)} aprobado! Se activó ${resolved.planName} (${resolved.durationLabel}) por $${resolved.amount} USD.`,
+        'success'
+      );
       refreshReceipts();
       if (viewingReceipt && viewingReceipt.id === receipt.id) {
         setViewingReceipt(updated);
       }
 
-      // Upgrade the specific user account associated with the receipt
-      firebaseService.upgradeUserMembershipByUidOrEmail(receipt.userId, receipt.userEmail, receipt.plan);
+      // Upgrade the specific user account associated with the receipt according to the amount established by the user
+      const upgradedProfile = firebaseService.upgradeUserMembershipByUidOrEmail(
+        receipt.userId,
+        receipt.userEmail,
+        resolved.plan,
+        updated.membershipStartsAt,
+        resolved.amount,
+        updated.membershipExpiresAt
+      );
 
       // If the current user happens to be the one who owns it, also update in-memory
-      if (currentUser.uid === receipt.userId && onUpdateUser) {
-        onUpdateUser({
-          ...currentUser,
-          role: 'vip_member',
-          tier: 'Acceso VIP',
-          membershipPlan: receipt.plan,
-          membershipStatus: 'active',
-          subscribedAt: new Date().toISOString(),
-          membershipExpiresAt: new Date(Date.now() + (receipt.plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString(),
-        });
+      if (
+        (currentUser.uid === receipt.userId ||
+          (receipt.userEmail && currentUser.email.toLowerCase() === receipt.userEmail.toLowerCase())) &&
+        onUpdateUser
+      ) {
+        onUpdateUser(
+          upgradedProfile || {
+            ...currentUser,
+            tier: currentUser.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP',
+            membershipPlan: resolved.plan,
+            membershipStatus: 'active',
+            subscribedAt: updated.membershipStartsAt || new Date().toISOString(),
+            membershipExpiresAt:
+              updated.membershipExpiresAt ||
+              new Date(Date.now() + resolved.durationDays * 24 * 60 * 60 * 1000).toISOString(),
+            lastPaymentAmount: resolved.amount,
+          }
+        );
       }
     }
   };
@@ -457,7 +485,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Plan Mensual */}
                   <div
-                    onClick={() => setSelectedPlan('monthly')}
+                    onClick={() => handleSelectPlanCard('monthly')}
                     className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                       selectedPlan === 'monthly'
                         ? 'border-[#0066FF] bg-[#0066FF]/10 ring-2 ring-[#0066FF]/30'
@@ -472,7 +500,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                       </div>
                       <div>
                         <p className="text-xs font-black">Plan Mensual</p>
-                        <p className="text-[11px] text-emerald-400 font-bold">{isSubscribed ? 'Ciclo de 30 días' : '1$ USD al mes'}</p>
+                        <p className="text-[11px] text-emerald-400 font-bold">{isSubscribed ? 'Ciclo de 30 días ($1 USD/mes)' : '1$ USD al mes (30 días)'}</p>
                       </div>
                     </div>
                     {selectedPlan === 'monthly' && (
@@ -482,7 +510,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
 
                   {/* Plan Anual */}
                   <div
-                    onClick={() => setSelectedPlan('annual')}
+                    onClick={() => handleSelectPlanCard('annual')}
                     className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                       selectedPlan === 'annual'
                         ? 'border-[#0066FF] bg-[#0066FF]/10 ring-2 ring-[#0066FF]/30'
@@ -502,7 +530,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                             Ahorro
                           </span>
                         </div>
-                        <p className="text-[11px] text-emerald-400 font-bold">{isSubscribed ? 'Ciclo de 365 días' : '12$ USD al año'}</p>
+                        <p className="text-[11px] text-emerald-400 font-bold">{isSubscribed ? 'Ciclo de 365 días ($12 USD/año)' : '12$ USD al año (365 días)'}</p>
                       </div>
                     </div>
                     {selectedPlan === 'annual' && (
@@ -538,16 +566,16 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                 {/* Amount */}
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 opacity-80">
-                    Monto Abonado (USD o equivalente)
+                    Monto Establecido (USD o equivalente)
                   </label>
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-emerald-400">$</span>
                     <input
                       type="number"
                       step="0.5"
-                      min="1"
+                      min="0.5"
                       value={amount}
-                      onChange={(e) => setAmount(Number(e.target.value))}
+                      onChange={(e) => handleAmountChange(Number(e.target.value))}
                       className={`w-full pl-8 pr-12 py-2.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#0066FF] transition-all ${
                         isDark ? 'bg-black/60 border-[#1E1E24] text-white' : 'bg-white border-[#E2E8F0] text-black'
                       }`}
@@ -557,6 +585,37 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                       USD
                     </span>
                   </div>
+
+                  {/* Quick amount presets + live preview of membership that will be activated */}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                    {[
+                      { val: 1, label: '$1 (1 Mes)' },
+                      { val: 3, label: '$3 (3 Meses)' },
+                      { val: 6, label: '$6 (6 Meses)' },
+                      { val: 12, label: '$12 (1 Año)' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.val}
+                        type="button"
+                        onClick={() => handleAmountChange(preset.val)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          Number(amount) === preset.val
+                            ? 'bg-[#0066FF] border-[#0066FF] text-white'
+                            : isDark
+                            ? 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] font-bold text-emerald-400 mt-1.5">
+                    Al aprobarse tu monto de ${resolvedUploadMembership.amount} USD se activará:{' '}
+                    <span className="text-[#0066FF]">
+                      {resolvedUploadMembership.planName} ({resolvedUploadMembership.durationLabel})
+                    </span>
+                  </p>
                 </div>
               </div>
 

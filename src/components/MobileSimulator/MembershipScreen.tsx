@@ -635,8 +635,14 @@ Por favor, envíame los medios de pago para coordinar la activación inmediata. 
                     )}
 
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30">
-                      {activePlan === 'annual' ? 'Plan Anual (365 Días)' : 'Plan Mensual (30 Días)'}
+                      {activePlan === 'annual' ? 'Plan Anual' : 'Plan Mensual'} ({membershipTiming.totalDays} Días)
                     </span>
+
+                    {typeof currentUser.lastPaymentAmount === 'number' && currentUser.lastPaymentAmount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        Monto Aprobado: ${currentUser.lastPaymentAmount} USD
+                      </span>
+                    )}
 
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-neutral-800 text-neutral-300 border border-neutral-700">
                       ID: #{currentUser.uid}

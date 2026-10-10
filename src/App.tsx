@@ -206,8 +206,10 @@ function AppContent() {
     };
     window.addEventListener('vault_profile_updated', handleProfileUpdated);
 
-    const handleReceiptsChanged = () => {
+    const handleReceiptsChanged = (e: any) => {
       setPendingApprovalsCount(receiptService.getPendingCount());
+      const incomingReceipts = e?.detail?.receipts || receiptService.getAllReceipts();
+      firebaseService.reconcileApprovedReceiptsWithUsers(incomingReceipts);
     };
     window.addEventListener('vault_receipts_changed', handleReceiptsChanged);
 
@@ -239,8 +241,9 @@ function AppContent() {
     });
 
     // Real-time Firestore receipts listener
-    const unsubFirestoreReceipts = receiptService.onReceiptsSnapshot(() => {
+    const unsubFirestoreReceipts = receiptService.onReceiptsSnapshot((receipts) => {
       setPendingApprovalsCount(receiptService.getPendingCount());
+      firebaseService.reconcileApprovedReceiptsWithUsers(receipts);
     });
 
     // Real-time Firestore maintenance mode listener (disabled since no user has admin)
@@ -259,8 +262,9 @@ function AppContent() {
         });
 
         // Sync all uploaded payment receipts with Database (Server + Firestore)
-        receiptService.syncFromServer().then(() => {
+        receiptService.syncFromServer().then((syncedReceipts) => {
           setPendingApprovalsCount(receiptService.getPendingCount());
+          firebaseService.reconcileApprovedReceiptsWithUsers(syncedReceipts);
         }).catch(() => {});
 
         // 0. Fetch permanently deleted list IDs from server so deleted lists NEVER resurrect on reload

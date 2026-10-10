@@ -53,6 +53,94 @@ export interface RegisteredAccountRecord {
   registeredAt: string;
 }
 
+function hasValidPurchasedOrApprovedMembership(
+  uid?: string,
+  email?: string,
+  prof?: Partial<UserProfile>
+): boolean {
+  try {
+    if (uid && localStorage.getItem(`vault_purchased_membership_${uid}`) === 'true') {
+      return true;
+    }
+
+    // Check if there is an approved receipt in localStorage for this user
+    const rawReceipts = localStorage.getItem('vault_payment_receipts_v1');
+    if (rawReceipts) {
+      const parsed = JSON.parse(rawReceipts);
+      if (Array.isArray(parsed)) {
+        const cleanEmail = (email || prof?.email || '').toLowerCase().trim();
+        const userReceipts = parsed
+          .filter(
+            (r: any) =>
+              r &&
+              ((uid && r.userId === uid) ||
+                (cleanEmail && String(r.userEmail || '').toLowerCase().trim() === cleanEmail))
+          )
+          .sort(
+            (a: any, b: any) =>
+              new Date(b.reviewedAt || b.createdAt || 0).getTime() -
+              new Date(a.reviewedAt || a.createdAt || 0).getTime()
+          );
+
+        if (userReceipts.length > 0 && userReceipts[0].status === 'approved') {
+          if (uid) {
+            localStorage.setItem(`vault_purchased_membership_${uid}`, 'true');
+          }
+          return true;
+        }
+      }
+    }
+
+    // Also trust active membership from Database/Firestore if it has real start & expiration dates and wasn't cancelled
+    if (
+      prof?.membershipStatus === 'active' &&
+      prof?.membershipPlan &&
+      prof?.subscribedAt &&
+      prof?.membershipExpiresAt
+    ) {
+      const cancelledAt = uid ? localStorage.getItem(`vault_cancelled_at_${uid}`) : null;
+      const isCancelledAfter =
+        cancelledAt &&
+        new Date(cancelledAt).getTime() >= new Date(prof.subscribedAt).getTime();
+      if (!isCancelledAfter) {
+        if (uid) {
+          localStorage.setItem(`vault_purchased_membership_${uid}`, 'true');
+        }
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+function mergeAccountProfiles(
+  firstProf: Partial<UserProfile> | undefined,
+  secondProf: Partial<UserProfile> | undefined,
+  isAdmin: boolean
+): UserProfile {
+  const base = { ...(firstProf || {}), ...(secondProf || {}) } as UserProfile;
+  const firstActive = firstProf?.membershipStatus === 'active' && firstProf?.subscribedAt;
+  const secondActive = secondProf?.membershipStatus === 'active' && secondProf?.subscribedAt;
+  const explicitlyRejected = String(secondProf?.customStatus || '').startsWith('Membresía no aprobada:');
+
+  if (firstActive && !secondActive && secondProf?.membershipStatus !== 'cancelled' && !explicitlyRejected) {
+    base.membershipStatus = 'active';
+    base.membershipPlan = firstProf.membershipPlan;
+    base.subscribedAt = firstProf.subscribedAt;
+    base.membershipExpiresAt = firstProf.membershipExpiresAt;
+    base.lastPaymentAmount = firstProf.lastPaymentAmount;
+    base.tier = isAdmin ? 'Bóveda Diamante' : 'Acceso VIP';
+  } else if (secondActive) {
+    base.membershipStatus = 'active';
+    base.membershipPlan = secondProf.membershipPlan || firstProf?.membershipPlan;
+    base.subscribedAt = secondProf.subscribedAt || firstProf?.subscribedAt;
+    base.membershipExpiresAt = secondProf.membershipExpiresAt || firstProf?.membershipExpiresAt;
+    base.lastPaymentAmount = secondProf.lastPaymentAmount ?? firstProf?.lastPaymentAmount;
+    base.tier = isAdmin ? 'Bóveda Diamante' : 'Acceso VIP';
+  }
+  return base;
+}
+
 export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountRecord> {
   let accounts: Record<string, RegisteredAccountRecord> = {};
   try {
@@ -159,10 +247,7 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
     seenUids.add(record.profile.uid);
 
     const prof = record.profile;
-    let isExplicitlyPurchased = false;
-    try {
-      isExplicitlyPurchased = localStorage.getItem(`vault_purchased_membership_${prof.uid}`) === 'true';
-    } catch {}
+    const isExplicitlyPurchased = hasValidPurchasedOrApprovedMembership(prof.uid, record.email || prof.email, prof);
 
     if (!isExplicitlyPurchased) {
       if (prof.membershipPlan || prof.membershipStatus === 'active' || prof.subscribedAt || prof.membershipExpiresAt) {
@@ -176,7 +261,12 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
         hasChanges = true;
       }
     } else if (prof.membershipStatus === 'active' && prof.membershipPlan) {
-      const durationMs = (prof.membershipPlan === 'annual' ? 365 : 30) * 86400000;
+      const amountVal = Number(prof.lastPaymentAmount) || (prof.membershipPlan === 'annual' ? 12 : 1);
+      const durationDays =
+        amountVal >= 12
+          ? Math.max(365, Math.round((amountVal / 12) * 365))
+          : Math.max(1, Math.round(amountVal * 30));
+      const durationMs = durationDays * 86400000;
       if (!prof.subscribedAt || !prof.membershipExpiresAt) {
         const startTime = prof.subscribedAt ? new Date(prof.subscribedAt).getTime() : nowMs;
         const validStartTime = isNaN(startTime) ? nowMs : startTime;
@@ -511,7 +601,12 @@ export const firebaseService = {
                   membershipStatus: (fields.membershipStatus?.stringValue as any) || 'none',
                   subscribedAt: fields.subscribedAt?.stringValue || undefined,
                   membershipExpiresAt: fields.membershipExpiresAt?.stringValue || undefined,
-                  lastPaymentAmount: fields.lastPaymentAmount?.integerValue ? Number(fields.lastPaymentAmount.integerValue) : undefined,
+                  lastPaymentAmount:
+                    fields.lastPaymentAmount?.doubleValue !== undefined
+                      ? Number(fields.lastPaymentAmount.doubleValue)
+                      : fields.lastPaymentAmount?.integerValue !== undefined
+                      ? Number(fields.lastPaymentAmount.integerValue)
+                      : undefined,
                 },
               });
             }
@@ -532,18 +627,20 @@ export const firebaseService = {
       const activeSession = this.getLocalSession();
       if (activeSession && activeSession.email) {
         const sessionEmail = activeSession.email.toLowerCase().trim();
+        const isAdmin = isAuthorizedAdminEmail(sessionEmail);
         if (!localAccounts[sessionEmail]) {
           localAccounts[sessionEmail] = {
             email: sessionEmail,
-            password: isAuthorizedAdminEmail(sessionEmail) ? ADMIN_SECURITY_KEY : 'password123',
+            password: isAdmin ? ADMIN_SECURITY_KEY : 'password123',
             registeredAt: new Date().toISOString(),
             profile: activeSession,
           };
         } else {
-          localAccounts[sessionEmail].profile = {
-            ...localAccounts[sessionEmail].profile,
-            ...activeSession,
-          };
+          localAccounts[sessionEmail].profile = mergeAccountProfiles(
+            localAccounts[sessionEmail].profile,
+            activeSession,
+            isAdmin
+          );
         }
       }
     } catch {}
@@ -560,6 +657,7 @@ export const firebaseService = {
         if (json && json.accounts && typeof json.accounts === 'object') {
           for (const [emailKey, serverRec] of Object.entries(json.accounts) as [string, RegisteredAccountRecord][]) {
             const existing = localAccounts[emailKey];
+            const isAdmin = isAuthorizedAdminEmail(emailKey);
             if (!existing) {
               localAccounts[emailKey] = serverRec;
             } else {
@@ -570,10 +668,7 @@ export const firebaseService = {
                   existing.password && existing.password !== 'password123'
                     ? existing.password
                     : serverRec.password || existing.password || 'password123',
-                profile: {
-                  ...(serverRec.profile || {}),
-                  ...(existing.profile || {}),
-                },
+                profile: mergeAccountProfiles(existing.profile, serverRec.profile, isAdmin),
               };
             }
           }
@@ -588,6 +683,7 @@ export const firebaseService = {
       const remoteAccounts = await this.fetchUsersFromDatabase();
       for (const [emailKey, remoteRec] of Object.entries(remoteAccounts)) {
         const existing = localAccounts[emailKey];
+        const isAdmin = isAuthorizedAdminEmail(emailKey);
         if (!existing) {
           localAccounts[emailKey] = remoteRec;
         } else {
@@ -598,18 +694,26 @@ export const firebaseService = {
               existing.password && existing.password !== 'password123'
                 ? existing.password
                 : remoteRec.password || existing.password || 'password123',
-            profile: {
-              ...(remoteRec.profile || {}),
-              ...(existing.profile || {}),
-            },
+            profile: mergeAccountProfiles(existing.profile, remoteRec.profile, isAdmin),
           };
         }
       }
     } catch {}
 
-    // 3. Guardar el mapa completo fusionado en localStorage
+    // 3. Guardar el mapa completo fusionado en localStorage y actualizar sesión activa si cambió su membresía
     try {
       localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(localAccounts));
+      const rawSession = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+      if (rawSession) {
+        const sessionUser = JSON.parse(rawSession) as UserProfile;
+        if (sessionUser?.email) {
+          const matched = localAccounts[sessionUser.email.toLowerCase().trim()];
+          if (matched?.profile) {
+            this.saveSession(matched.profile);
+            window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: matched.profile } }));
+          }
+        }
+      }
     } catch {}
 
     // 4. Asegurar que cada cuenta esté guardada en Firestore (Web SDK + REST fallback)
@@ -648,7 +752,19 @@ export const firebaseService = {
               const isAdmin = isAuthorizedAdminEmail(email);
               const existing = currentAccounts[email];
 
-              const isPurchasedLocal = localStorage.getItem(`vault_purchased_membership_${uid}`) === 'true';
+              const isPurchasedOrApproved = hasValidPurchasedOrApprovedMembership(uid, email, {
+                ...(existing?.profile || {}),
+                ...(data as any),
+                uid,
+                email,
+              });
+
+              const activeStatus =
+                isPurchasedOrApproved && (data.membershipStatus === 'active' || existing?.profile?.membershipStatus === 'active')
+                  ? 'active'
+                  : isPurchasedOrApproved
+                  ? (data.membershipStatus ?? existing?.profile?.membershipStatus ?? 'none')
+                  : 'none';
 
               const mergedProfile: UserProfile = {
                 ...(existing?.profile || {}),
@@ -658,7 +774,7 @@ export const firebaseService = {
                 role: isAdmin ? 'admin' : 'vip_member',
                 tier: isAdmin
                   ? 'Bóveda Diamante'
-                  : isPurchasedLocal && data.membershipStatus === 'active'
+                  : activeStatus === 'active'
                   ? 'Acceso VIP'
                   : existing?.profile?.tier === 'Bóveda Diamante'
                   ? 'Invitado'
@@ -669,11 +785,11 @@ export const firebaseService = {
                 phone: data.phone ?? existing?.profile?.phone,
                 customStatus: data.customStatus ?? existing?.profile?.customStatus,
                 instagram: data.instagram ?? existing?.profile?.instagram,
-                membershipPlan: isPurchasedLocal ? (data.membershipPlan ?? existing?.profile?.membershipPlan) : undefined,
-                membershipStatus: isPurchasedLocal ? (data.membershipStatus ?? existing?.profile?.membershipStatus ?? 'none') : 'none',
-                subscribedAt: isPurchasedLocal ? (data.subscribedAt ?? existing?.profile?.subscribedAt) : undefined,
-                membershipExpiresAt: isPurchasedLocal ? (data.membershipExpiresAt ?? existing?.profile?.membershipExpiresAt) : undefined,
-                lastPaymentAmount: isPurchasedLocal ? (data.lastPaymentAmount ?? existing?.profile?.lastPaymentAmount) : undefined,
+                membershipPlan: isPurchasedOrApproved ? (data.membershipPlan ?? existing?.profile?.membershipPlan) : undefined,
+                membershipStatus: activeStatus,
+                subscribedAt: isPurchasedOrApproved ? (data.subscribedAt ?? existing?.profile?.subscribedAt) : undefined,
+                membershipExpiresAt: isPurchasedOrApproved ? (data.membershipExpiresAt ?? existing?.profile?.membershipExpiresAt) : undefined,
+                lastPaymentAmount: isPurchasedOrApproved ? (data.lastPaymentAmount ?? existing?.profile?.lastPaymentAmount) : undefined,
               };
 
               currentAccounts[email] = {
@@ -763,13 +879,23 @@ export const firebaseService = {
     window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile } }));
   },
 
-  // Activar o mejorar la membresía de un usuario por su UID o Email con fecha exacta y real de inicio y vencimiento
+  // Activar o mejorar la membresía de un usuario por su UID o Email dependiendo del monto establecido por el usuario
   upgradeUserMembershipByUidOrEmail(
     uid: string, 
     email?: string, 
-    plan: MembershipPlanType = 'monthly',
-    customStartDateIso?: string
+    plan?: MembershipPlanType,
+    customStartDateIso?: string,
+    amount?: number,
+    customExpiresAtIso?: string
   ): UserProfile | null {
+    // Marcar compra/aprobación antes de leer cuentas para que getStoredRegisteredAccounts no limpie el estado activo
+    try {
+      if (uid) {
+        localStorage.removeItem(`vault_cancelled_at_${uid}`);
+        localStorage.setItem(`vault_purchased_membership_${uid}`, 'true');
+      }
+    } catch {}
+
     const accounts = getStoredRegisteredAccounts();
     let foundKey: string | null = null;
 
@@ -784,39 +910,64 @@ export const firebaseService = {
       }
     }
 
+    const rawAmount = Number(amount);
+    const resolvedAmount =
+      !isNaN(rawAmount) && rawAmount > 0
+        ? Math.round(rawAmount * 100) / 100
+        : plan === 'annual'
+        ? 12
+        : 1;
+
+    const resolvedPlan: MembershipPlanType = resolvedAmount >= 12 ? 'annual' : 'monthly';
+    const durationDays =
+      resolvedAmount >= 12
+        ? Math.max(365, Math.round((resolvedAmount / 12) * 365))
+        : Math.max(1, Math.round(resolvedAmount * 30));
+
     const startD = customStartDateIso ? new Date(customStartDateIso) : new Date();
     const validStartD = isNaN(startD.getTime()) ? new Date() : startD;
     const subscribedAtIso = validStartD.toISOString();
-    const expiresAtIso = new Date(validStartD.getTime() + (plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAtIso =
+      customExpiresAtIso && !isNaN(new Date(customExpiresAtIso).getTime())
+        ? new Date(customExpiresAtIso).toISOString()
+        : new Date(validStartD.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
 
     let updatedProf: UserProfile | null = null;
 
     if (foundKey && accounts[foundKey]) {
+      const existingCustomStatus = accounts[foundKey].profile.customStatus;
+      const cleanedCustomStatus =
+        existingCustomStatus && existingCustomStatus.startsWith('Membresía no aprobada:')
+          ? undefined
+          : existingCustomStatus;
+
       updatedProf = {
         ...accounts[foundKey].profile,
-        membershipPlan: plan,
+        membershipPlan: resolvedPlan,
         membershipStatus: 'active',
         tier: accounts[foundKey].profile.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP',
         subscribedAt: subscribedAtIso,
         membershipExpiresAt: expiresAtIso,
-        lastPaymentAmount: plan === 'annual' ? 12 : 1,
+        lastPaymentAmount: resolvedAmount,
+        customStatus: cleanedCustomStatus,
       };
       accounts[foundKey].profile = updatedProf;
       localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
     } else if (email || uid) {
       const normalizedEmail = (email || `${uid}@vault.user`).toLowerCase().trim();
+      const isUserAdmin = isAuthorizedAdminEmail(normalizedEmail);
       updatedProf = {
         uid: uid || generateUniqueUserId('usr'),
         email: normalizedEmail,
         displayName: normalizedEmail.split('@')[0] || 'Miembro VIP',
-        role: 'vip_member',
-        tier: 'Acceso VIP',
+        role: isUserAdmin ? 'admin' : 'vip_member',
+        tier: isUserAdmin ? 'Bóveda Diamante' : 'Acceso VIP',
         joinedAt: validStartD.toISOString().split('T')[0],
-        membershipPlan: plan,
+        membershipPlan: resolvedPlan,
         membershipStatus: 'active',
         subscribedAt: subscribedAtIso,
         membershipExpiresAt: expiresAtIso,
-        lastPaymentAmount: plan === 'annual' ? 12 : 1,
+        lastPaymentAmount: resolvedAmount,
       };
       accounts[normalizedEmail] = {
         email: normalizedEmail,
@@ -837,6 +988,7 @@ export const firebaseService = {
       if (
         currentSession &&
         (currentSession.uid === uid ||
+          currentSession.uid === updatedProf.uid ||
           (email && currentSession.email.toLowerCase() === email.toLowerCase().trim()))
       ) {
         this.saveSession(updatedProf);
@@ -844,7 +996,7 @@ export const firebaseService = {
       }
 
       // Persistir también en la Base de Datos (Firestore + Servidor Central)
-      const targetEmail = (email || updatedProf.email || '').toLowerCase().trim();
+      const targetEmail = (foundKey || email || updatedProf.email || '').toLowerCase().trim();
       const targetRecord = accounts[targetEmail] || {
         email: targetEmail,
         password: 'password123',
@@ -855,6 +1007,86 @@ export const firebaseService = {
     }
 
     return updatedProf;
+  },
+
+  // Sincronizar automáticamente las membresías aprobadas por el admin según el monto de cada comprobante
+  reconcileApprovedReceiptsWithUsers(receipts: any[]): void {
+    if (!Array.isArray(receipts) || receipts.length === 0) return;
+    try {
+      const accounts = getStoredRegisteredAccounts();
+      let anyAccountChanged = false;
+
+      // Agrupar comprobantes por usuario y tomar el más reciente revisado
+      const byUser = new Map<string, any>();
+      for (const r of receipts) {
+        if (!r || (!r.userId && !r.userEmail)) continue;
+        if (r.status !== 'approved' && r.status !== 'rejected') continue;
+        const key = String(r.userEmail || r.userId).toLowerCase().trim();
+        const existing = byUser.get(key);
+        const rTime = new Date(r.reviewedAt || r.createdAt || 0).getTime();
+        const exTime = existing ? new Date(existing.reviewedAt || existing.createdAt || 0).getTime() : 0;
+        if (!existing || rTime >= exTime) {
+          byUser.set(key, r);
+        }
+      }
+
+      for (const latestRec of byUser.values()) {
+        if (latestRec.status !== 'approved') continue;
+
+        const emailKey = String(latestRec.userEmail || '').toLowerCase().trim();
+        let matchedKey: string | null = emailKey && accounts[emailKey] ? emailKey : null;
+        if (!matchedKey && latestRec.userId) {
+          for (const [k, acc] of Object.entries(accounts)) {
+            if (acc.profile?.uid === latestRec.userId) {
+              matchedKey = k;
+              break;
+            }
+          }
+        }
+
+        const targetUid =
+          (matchedKey && accounts[matchedKey]?.profile?.uid) || latestRec.userId;
+        const cancelledAt = targetUid ? localStorage.getItem(`vault_cancelled_at_${targetUid}`) : null;
+        const recStartIso = latestRec.membershipStartsAt || latestRec.reviewedAt || latestRec.createdAt;
+        if (
+          cancelledAt &&
+          recStartIso &&
+          new Date(cancelledAt).getTime() > new Date(recStartIso).getTime()
+        ) {
+          continue;
+        }
+
+        const currentProf = matchedKey ? accounts[matchedKey]?.profile : null;
+        const expectedAmount = Number(latestRec.amount) || (latestRec.plan === 'annual' ? 12 : 1);
+        const expectedPlan: MembershipPlanType = expectedAmount >= 12 ? 'annual' : 'monthly';
+
+        if (
+          !currentProf ||
+          currentProf.membershipStatus !== 'active' ||
+          currentProf.membershipPlan !== expectedPlan ||
+          currentProf.lastPaymentAmount !== expectedAmount
+        ) {
+          this.upgradeUserMembershipByUidOrEmail(
+            latestRec.userId,
+            latestRec.userEmail,
+            expectedPlan,
+            recStartIso,
+            expectedAmount,
+            latestRec.membershipExpiresAt
+          );
+          anyAccountChanged = true;
+        }
+      }
+
+      if (anyAccountChanged) {
+        const session = this.getLocalSession();
+        if (session) {
+          window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: session } }));
+        }
+      }
+    } catch (e) {
+      console.warn('Error reconciling approved receipts with users:', e);
+    }
   },
 
   // Denegar o revocar membresía de un usuario
@@ -930,10 +1162,7 @@ export const firebaseService = {
             }
             sessionChanged = true;
           }
-          let isExplicitlyPurchased = false;
-          try {
-            isExplicitlyPurchased = localStorage.getItem(`vault_purchased_membership_${user.uid}`) === 'true';
-          } catch {}
+          const isExplicitlyPurchased = hasValidPurchasedOrApprovedMembership(user.uid, user.email, user);
           if (!isExplicitlyPurchased && (user.membershipPlan || user.membershipStatus === 'active')) {
             user.membershipPlan = undefined;
             user.membershipStatus = 'none';
@@ -1003,7 +1232,7 @@ export const firebaseService = {
         ]);
         if (snap && snap.exists()) {
           const data = snap.data();
-          const isPurchased = localStorage.getItem(`vault_purchased_membership_${fbUser.uid}`) === 'true';
+          const isPurchased = hasValidPurchasedOrApprovedMembership(fbUser.uid, email, data as any);
           if (data.displayName) profile.displayName = data.displayName;
           if (data.avatarUrl) profile.avatarUrl = data.avatarUrl;
           if (data.bio) profile.bio = data.bio;

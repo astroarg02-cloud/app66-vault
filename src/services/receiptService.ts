@@ -452,6 +452,63 @@ export const receiptService = {
     return merged;
   },
 
+  // Calcula el plan, los días de vigencia y las etiquetas exactas dependiendo del monto establecido por el usuario ($1 USD = 30 días, $12 USD = 365 días)
+  resolveMembershipByAmount(
+    amount: number,
+    fallbackPlan?: MembershipPlanType
+  ): {
+    amount: number;
+    plan: MembershipPlanType;
+    durationDays: number;
+    monthsCount: number;
+    planName: string;
+    durationLabel: string;
+    summaryLabel: string;
+  } {
+    const rawNum = Number(amount);
+    const validAmount =
+      !isNaN(rawNum) && rawNum > 0
+        ? Math.round(rawNum * 100) / 100
+        : fallbackPlan === 'annual'
+        ? 12
+        : 1;
+
+    const plan: MembershipPlanType = validAmount >= 12 ? 'annual' : 'monthly';
+    const durationDays =
+      validAmount >= 12
+        ? Math.max(365, Math.round((validAmount / 12) * 365))
+        : Math.max(1, Math.round(validAmount * 30));
+
+    const monthsCount = Math.max(0.5, Math.round(validAmount * 10) / 10);
+    const planName = plan === 'annual' ? 'Plan Anual' : 'Plan Mensual';
+
+    let durationLabel = `${durationDays} días`;
+    if (validAmount === 12) {
+      durationLabel = '365 días (12 meses)';
+    } else if (validAmount === 1) {
+      durationLabel = '30 días (1 mes)';
+    } else if (validAmount > 12 && validAmount % 12 === 0) {
+      const years = validAmount / 12;
+      durationLabel = `${durationDays} días (${years} ${years === 1 ? 'año' : 'años'})`;
+    } else if (Number.isInteger(validAmount)) {
+      durationLabel = `${durationDays} días (${validAmount} ${validAmount === 1 ? 'mes' : 'meses'})`;
+    } else {
+      durationLabel = `${durationDays} días`;
+    }
+
+    const summaryLabel = `${planName} • ${durationLabel} ($${validAmount} USD)`;
+
+    return {
+      amount: validAmount,
+      plan,
+      durationDays,
+      monthsCount,
+      planName,
+      durationLabel,
+      summaryLabel,
+    };
+  },
+
   createReceipt(data: {
     userId: string;
     userDisplayName: string;
@@ -470,14 +527,16 @@ export const receiptService = {
     const id = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     unmarkDeletedReceiptId(id);
 
+    const resolved = this.resolveMembershipByAmount(data.amount, data.plan);
+
     const newReceipt: PaymentReceipt = {
       id,
       userId: data.userId,
       userDisplayName: data.userDisplayName || 'Usuario',
       userEmail: data.userEmail || '',
       userAvatar: data.userAvatar,
-      plan: data.plan,
-      amount: Number(data.amount) || (data.plan === 'annual' ? 12 : 1),
+      plan: resolved.plan,
+      amount: resolved.amount,
       currency: 'USD',
       paymentMethod: data.paymentMethod || 'Transferencia',
       referenceCode: data.referenceCode?.trim() || `REF-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -547,14 +606,16 @@ export const receiptService = {
     const id = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     unmarkDeletedReceiptId(id);
 
+    const resolved = this.resolveMembershipByAmount(data.amount, data.plan);
+
     const newReceipt: PaymentReceipt = {
       id,
       userId: data.userId,
       userDisplayName: data.userDisplayName || 'Usuario',
       userEmail: data.userEmail || '',
       userAvatar: data.userAvatar,
-      plan: data.plan,
-      amount: Number(data.amount) || (data.plan === 'annual' ? 12 : 1),
+      plan: resolved.plan,
+      amount: resolved.amount,
       currency: 'USD',
       paymentMethod: data.paymentMethod || 'Transferencia',
       referenceCode: data.referenceCode?.trim() || `REF-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -592,7 +653,8 @@ export const receiptService = {
     receiptId: string,
     status: ReceiptStatus,
     adminNote?: string,
-    reviewerName?: string
+    reviewerName?: string,
+    overrideAmount?: number
   ): PaymentReceipt | null {
     const all = this.getAllReceipts();
     const idx = all.findIndex((r) => r.id === receiptId);
@@ -601,11 +663,21 @@ export const receiptService = {
     const target = all[idx];
     const now = new Date();
     const nowIso = now.toISOString();
-    const durationDays = target.plan === 'annual' ? 365 : 30;
-    const expiresIso = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const targetAmount =
+      overrideAmount !== undefined && !isNaN(Number(overrideAmount)) && Number(overrideAmount) > 0
+        ? Number(overrideAmount)
+        : Number(target.amount);
+
+    const resolved = this.resolveMembershipByAmount(targetAmount, target.plan);
+    const expiresIso = new Date(
+      now.getTime() + resolved.durationDays * 24 * 60 * 60 * 1000
+    ).toISOString();
 
     const updatedReceipt: PaymentReceipt = {
       ...target,
+      plan: resolved.plan,
+      amount: resolved.amount,
       status,
       adminNote: adminNote !== undefined ? adminNote : target.adminNote,
       reviewedAt: nowIso,
@@ -627,6 +699,8 @@ export const receiptService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status,
+          amount: resolved.amount,
+          plan: resolved.plan,
           adminNote: updatedReceipt.adminNote,
           reviewerName: updatedReceipt.reviewedBy,
           receipt: updatedReceipt,
