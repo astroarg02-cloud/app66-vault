@@ -8,7 +8,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { PaymentReceipt, ReceiptStatus, MembershipPlanType } from '../types';
-import { db } from './firebaseService';
+import { db, isFirestoreQuotaExhausted, handleFirestoreError } from './firebaseService';
 
 const STORAGE_KEY = 'vault_payment_receipts_v1';
 const DELETED_RECEIPTS_KEY = 'vault_deleted_receipts_v1';
@@ -111,7 +111,7 @@ function saveReceiptsToLocalStore(receipts: PaymentReceipt[]): void {
 }
 
 async function saveReceiptToFirestoreSDK(receipt: PaymentReceipt): Promise<boolean> {
-  if (!db || !receipt?.id) return false;
+  if (!db || !receipt?.id || isFirestoreQuotaExhausted()) return false;
   try {
     const docRef = doc(db, RECEIPTS_COLLECTION, receipt.id);
     const payload: Record<string, any> = {
@@ -152,13 +152,13 @@ async function saveReceiptToFirestoreSDK(receipt: PaymentReceipt): Promise<boole
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (err) {
-    console.warn('Firestore SDK receipt save warning:', err);
+    handleFirestoreError(err);
     return false;
   }
 }
 
 async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
-  if (!db) return [];
+  if (!db || isFirestoreQuotaExhausted()) return [];
   try {
     const deletedSet = getDeletedReceiptIds();
     const snap = await getDocs(collection(db, RECEIPTS_COLLECTION));
@@ -193,7 +193,7 @@ async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
     });
     return list;
   } catch (err) {
-    console.warn('Firestore SDK receipt fetch warning:', err);
+    handleFirestoreError(err);
     return [];
   }
 }
@@ -296,10 +296,11 @@ export const receiptService = {
 
   // Real-time Firestore listener so AdminApprovalsScreen receives new receipts immediately
   onReceiptsSnapshot(callback: (receipts: PaymentReceipt[]) => void): Unsubscribe {
-    if (!db) return () => {};
+    if (!db || isFirestoreQuotaExhausted()) return () => {};
     try {
       const colRef = collection(db, RECEIPTS_COLLECTION);
-      return onSnapshot(
+      let unsub: Unsubscribe | null = null;
+      unsub = onSnapshot(
         colRef,
         (snapshot) => {
           const deletedSet = getDeletedReceiptIds();
@@ -355,10 +356,19 @@ export const receiptService = {
           callback(merged);
         },
         (err) => {
-          console.warn('Firestore onReceiptsSnapshot warning:', err);
+          handleFirestoreError(err);
+          if (unsub) {
+            try { unsub(); } catch {}
+          }
         }
       );
-    } catch {
+      return () => {
+        if (unsub) {
+          try { unsub(); } catch {}
+        }
+      };
+    } catch (err) {
+      handleFirestoreError(err);
       return () => {};
     }
   },
@@ -440,14 +450,6 @@ export const receiptService = {
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
     saveReceiptsToLocalStore(merged);
-
-    // Ensure any local receipts are also pushed to Firestore SDK in background
-    (async () => {
-      for (const r of merged) {
-        await saveReceiptToFirestoreSDK(r);
-      }
-    })().catch(() => {});
-
     window.dispatchEvent(new CustomEvent('vault_receipts_changed', { detail: { receipts: merged } }));
     return merged;
   },

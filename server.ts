@@ -24,6 +24,16 @@ const DELETED_RECEIPTS_FILE = path.join(DATA_DIR, 'deleted_receipts.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ADMIN_SECURITY_KEY = '360';
 
+let serverFirestoreQuotaCooldownUntil = 0;
+function isServerFirestoreQuotaExhausted(): boolean {
+  return Date.now() < serverFirestoreQuotaCooldownUntil;
+}
+function checkServerFirestoreResponse(res: Response): void {
+  if (res.status === 429) {
+    serverFirestoreQuotaCooldownUntil = Date.now() + 15 * 60 * 1000;
+  }
+}
+
 // Ensure storage directories exist
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -1260,6 +1270,7 @@ function receiptToFirestoreFields(rec: any): Record<string, any> {
 }
 
 async function saveReceiptToFirestoreREST(rec: any): Promise<boolean> {
+  if (isServerFirestoreQuotaExhausted()) return false;
   try {
     if (!rec || !rec.id) return false;
     const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(rec.id)}?key=${rawFirebaseConfig.apiKey}`;
@@ -1269,17 +1280,19 @@ async function saveReceiptToFirestoreREST(rec: any): Promise<boolean> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
     });
+    checkServerFirestoreResponse(response);
     return response.ok;
   } catch (err) {
-    console.warn('[Firestore Receipt Sync Error]:', err);
     return false;
   }
 }
 
 async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolean> {
+  if (isServerFirestoreQuotaExhausted()) return false;
   try {
     const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
     const response = await fetch(url, { method: 'DELETE' });
+    checkServerFirestoreResponse(response);
     return response.ok;
   } catch {
     return false;
@@ -1288,10 +1301,12 @@ async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolea
 
 async function fetchAllReceiptsFromFirestoreREST(): Promise<any[]> {
   const result: any[] = [];
+  if (isServerFirestoreQuotaExhausted()) return result;
   try {
     const deletedSet = readDeletedReceiptIds();
     const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
     const res = await fetch(url);
+    checkServerFirestoreResponse(res);
     if (!res.ok) return result;
     const data: any = await res.json();
     if (!data || !Array.isArray(data.documents)) return result;
@@ -1811,6 +1826,7 @@ function userRecordToFirestoreFields(record: any): Record<string, any> {
 }
 
 async function saveUserToFirestoreREST(record: any): Promise<boolean> {
+  if (isServerFirestoreQuotaExhausted()) return false;
   try {
     const prof = record?.profile || record;
     const uid = prof?.uid;
@@ -1822,18 +1838,20 @@ async function saveUserToFirestoreREST(record: any): Promise<boolean> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
     });
+    checkServerFirestoreResponse(response);
     return response.ok;
   } catch (err) {
-    console.warn('[Firestore User Sync Error]:', err);
     return false;
   }
 }
 
 async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
   const result: Record<string, any> = {};
+  if (isServerFirestoreQuotaExhausted()) return result;
   try {
     const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/users?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
     const res = await fetch(url);
+    checkServerFirestoreResponse(res);
     if (!res.ok) return result;
     const data: any = await res.json();
     if (!data || !Array.isArray(data.documents)) return result;
@@ -1998,13 +2016,6 @@ app.post('/api/vault/users/sync', async (req, res) => {
 
     writeRegisteredUsersMap(currentMap);
 
-    // Sync all accounts to Firestore REST in background
-    (async () => {
-      for (const record of Object.values(currentMap)) {
-        await saveUserToFirestoreREST(record);
-      }
-    })().catch(() => {});
-
     return res.json({
       success: true,
       accounts: currentMap,
@@ -2034,31 +2045,13 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Vault Server running on http://0.0.0.0:${PORT}`);
 
-    // Self-healing Firestore sync on startup: ensure all items, users, and maintenance are synced
+    // Lightweight non-exhaustive cloud read on startup
     try {
-      const cloudMaint = await fetchMaintenanceFromFirestoreREST();
-      if (cloudMaint) {
-        writeMaintenanceState(cloudMaint);
-        console.log(`[Cloud Boot Sync] Maintenance mode synced from Firestore: isMaintenance=${cloudMaint.isMaintenance}`);
-      }
-      
-      const localItems = readVaultItems();
-      for (const it of localItems) {
-        await saveToFirestoreREST(it);
-      }
-      console.log(`[Cloud Boot Sync] Successfully verified and synced ${localItems.length} items to Firebase Firestore.`);
-
-      // Sync all registered users on server startup
       const localUsers = readRegisteredUsersMap();
       const cloudUsers = await fetchAllUsersFromFirestoreREST();
       const mergedUsers: Record<string, any> = { ...localUsers, ...cloudUsers };
       writeRegisteredUsersMap(mergedUsers);
-      for (const userRecord of Object.values(mergedUsers)) {
-        await saveUserToFirestoreREST(userRecord);
-      }
-      console.log(`[Cloud Boot Sync] Successfully verified and synced ${Object.keys(mergedUsers).length} user accounts to Firebase Firestore.`);
 
-      // Sync all payment receipts on server startup
       const localReceipts = readReceipts();
       const cloudReceipts = await fetchAllReceiptsFromFirestoreREST();
       const receiptMap = new Map<string, any>();
@@ -2070,10 +2063,6 @@ async function startServer() {
       }
       const mergedReceipts = Array.from(receiptMap.values());
       writeReceipts(mergedReceipts);
-      for (const rec of mergedReceipts) {
-        await saveReceiptToFirestoreREST(rec);
-      }
-      console.log(`[Cloud Boot Sync] Successfully verified and synced ${mergedReceipts.length} payment receipts to Firebase Firestore.`);
     } catch (bootErr) {
       console.warn('[Cloud Boot Sync Error]:', bootErr);
     }

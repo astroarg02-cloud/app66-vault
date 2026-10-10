@@ -21,11 +21,18 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
+  setLogLevel,
+  disableNetwork,
 } from 'firebase/firestore';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, VaultItem, VaultList, MembershipPlanType } from '../types';
 import { isAuthorizedAdminEmail, isAuthorizedAdminKey, INITIAL_ADMIN_USER, INITIAL_MEMBER_USER, ADMIN_SECURITY_KEY, INITIAL_VAULT_LISTS } from '../data/initialVaultData';
 import { generateUniqueUserId } from '../utils/vaultHelpers';
+
+// Silence internal @firebase/firestore WebChannel backoff & quota console errors
+try {
+  setLogLevel('silent');
+} catch {}
 
 // Configuración de Firebase que prioriza las variables de Vercel/Vite y usa el config local de respaldo
 const firebaseConfig = {
@@ -42,6 +49,51 @@ export const firebaseApp = !getApps().length ? initializeApp(firebaseConfig) : g
 export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 export const googleAuthProvider = new GoogleAuthProvider();
+
+const FIRESTORE_QUOTA_COOLDOWN_KEY = 'vault_firestore_quota_cooldown_until';
+let memoryQuotaCooldownUntil = 0;
+
+export function isFirestoreQuotaExhausted(): boolean {
+  if (Date.now() < memoryQuotaCooldownUntil) return true;
+  try {
+    const raw = sessionStorage.getItem(FIRESTORE_QUOTA_COOLDOWN_KEY);
+    if (raw) {
+      const until = Number(raw);
+      if (until > Date.now()) {
+        memoryQuotaCooldownUntil = until;
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+export function handleFirestoreError(err: any): void {
+  const code = String(err?.code || '');
+  const msg = String(err?.message || err || '');
+  if (
+    code.includes('resource-exhausted') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('Quota exceeded') ||
+    msg.includes('429')
+  ) {
+    // Pause Firestore direct calls for 15 minutes and disable SDK background WebChannel retries
+    const until = Date.now() + 15 * 60 * 1000;
+    memoryQuotaCooldownUntil = until;
+    try {
+      sessionStorage.setItem(FIRESTORE_QUOTA_COOLDOWN_KEY, String(until));
+    } catch {}
+    try {
+      disableNetwork(db).catch(() => {});
+    } catch {}
+  }
+}
+
+if (isFirestoreQuotaExhausted()) {
+  try {
+    disableNetwork(db).catch(() => {});
+  } catch {}
+}
 
 const LOCAL_STORAGE_SESSION_KEY = 'vault_firebase_session_v1';
 const LOCAL_STORAGE_REGISTERED_USERS_KEY = 'vault_registered_accounts_v1';
@@ -464,23 +516,27 @@ export const firebaseService = {
       console.warn('Server /api/vault/users save fallback:', e);
     }
 
-    // 3. Guardar en Firestore mediante Web SDK
-    try {
-      const userDocRef = doc(db, 'users', uid);
-      const cleanData = this.sanitizeUserRecordForFirestore(normalizedRecord);
-      await setDoc(
-        userDocRef,
-        {
-          ...cleanData,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-      saved = true;
-    } catch (sdkErr) {
-      // 4. Respaldo directo con Firestore REST API si el SDK falla
-      const restOk = await this.saveUserToFirestoreREST(normalizedRecord);
-      if (restOk) saved = true;
+    // 3. Guardar en Firestore mediante Web SDK (solo si hay cuota disponible)
+    if (!isFirestoreQuotaExhausted()) {
+      try {
+        const userDocRef = doc(db, 'users', uid);
+        const cleanData = this.sanitizeUserRecordForFirestore(normalizedRecord);
+        await setDoc(
+          userDocRef,
+          {
+            ...cleanData,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        saved = true;
+      } catch (sdkErr) {
+        handleFirestoreError(sdkErr);
+        if (!isFirestoreQuotaExhausted()) {
+          const restOk = await this.saveUserToFirestoreREST(normalizedRecord);
+          if (restOk) saved = true;
+        }
+      }
     }
 
     return saved;
@@ -530,89 +586,96 @@ export const firebaseService = {
       }
     } catch (e) {}
 
-    // 2. Consultar colección 'users' en Firestore vía Web SDK
-    try {
-      const colRef = collection(db, 'users');
-      const snap = await getDocs(colRef);
-      if (!snap.empty) {
-        snap.forEach((docSnap) => {
-          const data = docSnap.data();
-          const email = (data.email || '').toLowerCase().trim();
-          if (!email) return;
-          const uid = data.uid || docSnap.id;
-          const isAdmin = isAuthorizedAdminEmail(email);
-          mergeRecord({
-            email,
-            password: data.password || 'password123',
-            registeredAt: data.registeredAt || new Date().toISOString(),
-            profile: {
-              uid,
-              email,
-              displayName: data.displayName || email.split('@')[0] || 'Usuario',
-              role: isAdmin ? 'admin' : 'vip_member',
-              tier: isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : (data.tier || 'Invitado')),
-              avatarUrl: data.avatarUrl || undefined,
-              joinedAt: data.joinedAt || new Date().toISOString().split('T')[0],
-              bio: data.bio || undefined,
-              phone: data.phone || undefined,
-              customStatus: data.customStatus || undefined,
-              instagram: data.instagram || undefined,
-              membershipPlan: data.membershipPlan || undefined,
-              membershipStatus: data.membershipStatus || 'none',
-              subscribedAt: data.subscribedAt || undefined,
-              membershipExpiresAt: data.membershipExpiresAt || undefined,
-              lastPaymentAmount: typeof data.lastPaymentAmount === 'number' ? data.lastPaymentAmount : undefined,
-            },
-          });
-        });
-      }
-    } catch (sdkErr) {
-      // 3. Respaldo vía Firestore REST API
+    // 2. Consultar colección 'users' en Firestore vía Web SDK (solo si hay cuota disponible)
+    if (!isFirestoreQuotaExhausted()) {
       try {
-        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/users?key=${firebaseConfig.apiKey}&pageSize=300`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data: any = await res.json();
-          if (data && Array.isArray(data.documents)) {
-            for (const docSnap of data.documents) {
-              const fields = docSnap.fields || {};
-              const docId = docSnap.name.split('/').pop() || '';
-              const uid = fields.uid?.stringValue || docId;
-              const email = (fields.email?.stringValue || '').toLowerCase().trim();
-              if (!email) continue;
-              const isAdmin = isAuthorizedAdminEmail(email);
-              mergeRecord({
+        const colRef = collection(db, 'users');
+        const snap = await getDocs(colRef);
+        if (!snap.empty) {
+          snap.forEach((docSnap) => {
+            const data = docSnap.data();
+            const email = (data.email || '').toLowerCase().trim();
+            if (!email) return;
+            const uid = data.uid || docSnap.id;
+            const isAdmin = isAuthorizedAdminEmail(email);
+            mergeRecord({
+              email,
+              password: data.password || 'password123',
+              registeredAt: data.registeredAt || new Date().toISOString(),
+              profile: {
+                uid,
                 email,
-                password: fields.password?.stringValue || 'password123',
-                registeredAt: fields.registeredAt?.stringValue || new Date().toISOString(),
-                profile: {
-                  uid,
-                  email,
-                  displayName: fields.displayName?.stringValue || email.split('@')[0] || 'Usuario',
-                  role: isAdmin ? 'admin' : 'vip_member',
-                  tier: isAdmin ? 'Bóveda Diamante' : (fields.tier?.stringValue === 'Bóveda Diamante' ? 'Acceso VIP' : (fields.tier?.stringValue || 'Invitado')),
-                  avatarUrl: fields.avatarUrl?.stringValue || undefined,
-                  joinedAt: fields.joinedAt?.stringValue || new Date().toISOString().split('T')[0],
-                  bio: fields.bio?.stringValue || undefined,
-                  phone: fields.phone?.stringValue || undefined,
-                  customStatus: fields.customStatus?.stringValue || undefined,
-                  instagram: fields.instagram?.stringValue || undefined,
-                  membershipPlan: (fields.membershipPlan?.stringValue as any) || undefined,
-                  membershipStatus: (fields.membershipStatus?.stringValue as any) || 'none',
-                  subscribedAt: fields.subscribedAt?.stringValue || undefined,
-                  membershipExpiresAt: fields.membershipExpiresAt?.stringValue || undefined,
-                  lastPaymentAmount:
-                    fields.lastPaymentAmount?.doubleValue !== undefined
-                      ? Number(fields.lastPaymentAmount.doubleValue)
-                      : fields.lastPaymentAmount?.integerValue !== undefined
-                      ? Number(fields.lastPaymentAmount.integerValue)
-                      : undefined,
-                },
-              });
-            }
-          }
+                displayName: data.displayName || email.split('@')[0] || 'Usuario',
+                role: isAdmin ? 'admin' : 'vip_member',
+                tier: isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : (data.tier || 'Invitado')),
+                avatarUrl: data.avatarUrl || undefined,
+                joinedAt: data.joinedAt || new Date().toISOString().split('T')[0],
+                bio: data.bio || undefined,
+                phone: data.phone || undefined,
+                customStatus: data.customStatus || undefined,
+                instagram: data.instagram || undefined,
+                membershipPlan: data.membershipPlan || undefined,
+                membershipStatus: data.membershipStatus || 'none',
+                subscribedAt: data.subscribedAt || undefined,
+                membershipExpiresAt: data.membershipExpiresAt || undefined,
+                lastPaymentAmount: typeof data.lastPaymentAmount === 'number' ? data.lastPaymentAmount : undefined,
+              },
+            });
+          });
         }
-      } catch {}
+      } catch (sdkErr) {
+        handleFirestoreError(sdkErr);
+        // 3. Respaldo vía Firestore REST API
+        if (!isFirestoreQuotaExhausted()) {
+          try {
+            const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/users?key=${firebaseConfig.apiKey}&pageSize=300`;
+            const res = await fetch(url);
+            if (res.status === 429) {
+              handleFirestoreError({ code: 'resource-exhausted' });
+            } else if (res.ok) {
+              const data: any = await res.json();
+              if (data && Array.isArray(data.documents)) {
+                for (const docSnap of data.documents) {
+                  const fields = docSnap.fields || {};
+                  const docId = docSnap.name.split('/').pop() || '';
+                  const uid = fields.uid?.stringValue || docId;
+                  const email = (fields.email?.stringValue || '').toLowerCase().trim();
+                  if (!email) continue;
+                  const isAdmin = isAuthorizedAdminEmail(email);
+                  mergeRecord({
+                    email,
+                    password: fields.password?.stringValue || 'password123',
+                    registeredAt: fields.registeredAt?.stringValue || new Date().toISOString(),
+                    profile: {
+                      uid,
+                      email,
+                      displayName: fields.displayName?.stringValue || email.split('@')[0] || 'Usuario',
+                      role: isAdmin ? 'admin' : 'vip_member',
+                      tier: isAdmin ? 'Bóveda Diamante' : (fields.tier?.stringValue === 'Bóveda Diamante' ? 'Acceso VIP' : (fields.tier?.stringValue || 'Invitado')),
+                      avatarUrl: fields.avatarUrl?.stringValue || undefined,
+                      joinedAt: fields.joinedAt?.stringValue || new Date().toISOString().split('T')[0],
+                      bio: fields.bio?.stringValue || undefined,
+                      phone: fields.phone?.stringValue || undefined,
+                      customStatus: fields.customStatus?.stringValue || undefined,
+                      instagram: fields.instagram?.stringValue || undefined,
+                      membershipPlan: (fields.membershipPlan?.stringValue as any) || undefined,
+                      membershipStatus: (fields.membershipStatus?.stringValue as any) || 'none',
+                      subscribedAt: fields.subscribedAt?.stringValue || undefined,
+                      membershipExpiresAt: fields.membershipExpiresAt?.stringValue || undefined,
+                      lastPaymentAmount:
+                        fields.lastPaymentAmount?.doubleValue !== undefined
+                          ? Number(fields.lastPaymentAmount.doubleValue)
+                          : fields.lastPaymentAmount?.integerValue !== undefined
+                          ? Number(fields.lastPaymentAmount.integerValue)
+                          : undefined,
+                    },
+                  });
+                }
+              }
+            }
+          } catch {}
+        }
+      }
     }
 
     return dbAccounts;
@@ -716,28 +779,16 @@ export const firebaseService = {
       }
     } catch {}
 
-    // 4. Asegurar que cada cuenta esté guardada en Firestore (Web SDK + REST fallback)
-    for (const record of Object.values(localAccounts)) {
-      try {
-        const uid = record.profile?.uid;
-        if (uid) {
-          const userDocRef = doc(db, 'users', uid);
-          const cleanData = this.sanitizeUserRecordForFirestore(record);
-          await setDoc(userDocRef, { ...cleanData, updatedAt: serverTimestamp() }, { merge: true }).catch(async () => {
-            await this.saveUserToFirestoreREST(record);
-          });
-        }
-      } catch {}
-    }
-
     return localAccounts;
   },
 
   // Listener en tiempo real para cuentas de usuarios en Firestore
   onUsersSnapshot(callback: (accounts: Record<string, RegisteredAccountRecord>) => void) {
+    if (isFirestoreQuotaExhausted()) return () => {};
     try {
       const colRef = collection(db, 'users');
-      return onSnapshot(
+      let unsub: (() => void) | null = null;
+      unsub = onSnapshot(
         colRef,
         (snapshot) => {
           if (!snapshot.empty) {
@@ -813,10 +864,19 @@ export const firebaseService = {
           }
         },
         (err) => {
-          console.warn('Firestore users onSnapshot warning:', err);
+          handleFirestoreError(err);
+          if (unsub) {
+            try { unsub(); } catch {}
+          }
         }
       );
+      return () => {
+        if (unsub) {
+          try { unsub(); } catch {}
+        }
+      };
     } catch (err) {
+      handleFirestoreError(err);
       return () => {};
     }
   },
@@ -1224,50 +1284,52 @@ export const firebaseService = {
     }
 
     // Non-blocking firestore sync with timeout to prevent loading hangs
-    const firestoreSyncPromise = (async () => {
-      try {
-        const snap = await Promise.race([
-          getDoc(userDocRef),
-          new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
-        ]);
-        if (snap && snap.exists()) {
-          const data = snap.data();
-          const isPurchased = hasValidPurchasedOrApprovedMembership(fbUser.uid, email, data as any);
-          if (data.displayName) profile.displayName = data.displayName;
-          if (data.avatarUrl) profile.avatarUrl = data.avatarUrl;
-          if (data.bio) profile.bio = data.bio;
-          if (data.phone) profile.phone = data.phone;
-          if (data.customStatus) profile.customStatus = data.customStatus;
-          if (data.instagram) profile.instagram = data.instagram;
-          if (isPurchased) {
-            if (data.tier) profile.tier = isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : data.tier);
-            if (data.membershipPlan) profile.membershipPlan = data.membershipPlan;
-            if (data.membershipStatus) profile.membershipStatus = data.membershipStatus;
-            if (data.membershipExpiresAt) profile.membershipExpiresAt = data.membershipExpiresAt;
-            if (data.subscribedAt) profile.subscribedAt = data.subscribedAt;
-            if (data.lastPaymentAmount) profile.lastPaymentAmount = data.lastPaymentAmount;
+    if (!isFirestoreQuotaExhausted()) {
+      const firestoreSyncPromise = (async () => {
+        try {
+          const snap = await Promise.race([
+            getDoc(userDocRef),
+            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+          ]);
+          if (snap && snap.exists()) {
+            const data = snap.data();
+            const isPurchased = hasValidPurchasedOrApprovedMembership(fbUser.uid, email, data as any);
+            if (data.displayName) profile.displayName = data.displayName;
+            if (data.avatarUrl) profile.avatarUrl = data.avatarUrl;
+            if (data.bio) profile.bio = data.bio;
+            if (data.phone) profile.phone = data.phone;
+            if (data.customStatus) profile.customStatus = data.customStatus;
+            if (data.instagram) profile.instagram = data.instagram;
+            if (isPurchased) {
+              if (data.tier) profile.tier = isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : data.tier);
+              if (data.membershipPlan) profile.membershipPlan = data.membershipPlan;
+              if (data.membershipStatus) profile.membershipStatus = data.membershipStatus;
+              if (data.membershipExpiresAt) profile.membershipExpiresAt = data.membershipExpiresAt;
+              if (data.subscribedAt) profile.subscribedAt = data.subscribedAt;
+              if (data.lastPaymentAmount) profile.lastPaymentAmount = data.lastPaymentAmount;
+            }
+          } else {
+            await setDoc(userDocRef, {
+              uid: fbUser.uid,
+              email: fbUser.email,
+              displayName: profile.displayName,
+              role: isAdmin ? 'admin' : 'vip_member',
+              tier: profile.tier,
+              avatarUrl: profile.avatarUrl,
+              bio: profile.bio || null,
+              phone: profile.phone || null,
+              customStatus: profile.customStatus || null,
+              createdAt: serverTimestamp(),
+              lastLoginAt: serverTimestamp(),
+            });
           }
-        } else {
-          await setDoc(userDocRef, {
-            uid: fbUser.uid,
-            email: fbUser.email,
-            displayName: profile.displayName,
-            role: isAdmin ? 'admin' : 'vip_member',
-            tier: profile.tier,
-            avatarUrl: profile.avatarUrl,
-            bio: profile.bio || null,
-            phone: profile.phone || null,
-            customStatus: profile.customStatus || null,
-            createdAt: serverTimestamp(),
-            lastLoginAt: serverTimestamp(),
-          });
+        } catch (err) {
+          handleFirestoreError(err);
         }
-      } catch (err) {
-        // Safe fallback - keep local profile
-      }
-    })();
+      })();
 
-    firestoreSyncPromise.catch(() => {});
+      firestoreSyncPromise.catch(() => {});
+    }
     storeRegisteredAccount({
       email: (fbUser.email || profile.email).toLowerCase().trim(),
       password: localMatch?.password || 'password123',
@@ -1680,9 +1742,11 @@ export const firebaseService = {
 
   // Real-time listener for Firestore Vault Items
   onVaultItemsSnapshot(callback: (items: VaultItem[]) => void) {
+    if (isFirestoreQuotaExhausted()) return () => {};
     try {
       const colRef = collection(db, 'vault_items');
-      return onSnapshot(
+      let unsub: (() => void) | null = null;
+      unsub = onSnapshot(
         colRef,
         (snapshot) => {
           if (!snapshot.empty) {
@@ -1720,11 +1784,19 @@ export const firebaseService = {
           }
         },
         (error) => {
-          console.warn('Firestore onSnapshot error:', error);
+          handleFirestoreError(error);
+          if (unsub) {
+            try { unsub(); } catch {}
+          }
         }
       );
+      return () => {
+        if (unsub) {
+          try { unsub(); } catch {}
+        }
+      };
     } catch (err) {
-      console.warn('Could not attach Firestore listener:', err);
+      handleFirestoreError(err);
       return () => {};
     }
   },
@@ -1754,6 +1826,7 @@ export const firebaseService = {
 
   // Fetch Vault Items from Firestore with REST fallback
   async fetchVaultItems(): Promise<VaultItem[] | null> {
+    if (isFirestoreQuotaExhausted()) return null;
     try {
       // 1. Try Web SDK
       const colRef = collection(db, 'vault_items');
@@ -1792,13 +1865,19 @@ export const firebaseService = {
         return items;
       }
     } catch (e) {
-      console.warn('Could not read from Firestore Web SDK collection, trying REST:', e);
+      handleFirestoreError(e);
     }
+
+    if (isFirestoreQuotaExhausted()) return null;
 
     // 2. REST Fallback
     try {
       const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items?key=${firebaseConfig.apiKey}&pageSize=300`;
       const res = await fetch(url);
+      if (res.status === 429) {
+        handleFirestoreError({ code: 'resource-exhausted' });
+        return null;
+      }
       if (res.ok) {
         const data: any = await res.json();
         if (data && Array.isArray(data.documents) && data.documents.length > 0) {
@@ -1960,9 +2039,11 @@ export const firebaseService = {
 
   // Real-time listener for Firestore Vault Lists
   onVaultListsSnapshot(callback: (lists: VaultList[]) => void) {
+    if (isFirestoreQuotaExhausted()) return () => {};
     try {
       const colRef = collection(db, 'vault_lists');
-      return onSnapshot(
+      let unsub: (() => void) | null = null;
+      unsub = onSnapshot(
         colRef,
         (snapshot) => {
           if (!snapshot.empty) {
@@ -1986,17 +2067,26 @@ export const firebaseService = {
           }
         },
         (error) => {
-          console.warn('Firestore onVaultListsSnapshot error:', error);
+          handleFirestoreError(error);
+          if (unsub) {
+            try { unsub(); } catch {}
+          }
         }
       );
+      return () => {
+        if (unsub) {
+          try { unsub(); } catch {}
+        }
+      };
     } catch (err) {
-      console.warn('Could not attach Firestore lists listener:', err);
+      handleFirestoreError(err);
       return () => {};
     }
   },
 
   // Fetch lists from Firestore with REST fallback
   async fetchVaultLists(): Promise<VaultList[] | null> {
+    if (isFirestoreQuotaExhausted()) return null;
     try {
       const colRef = collection(db, 'vault_lists');
       const snap = await getDocs(colRef);
@@ -2018,12 +2108,18 @@ export const firebaseService = {
         return lists;
       }
     } catch (e) {
-      console.warn('Could not read from Firestore lists collection, trying REST:', e);
+      handleFirestoreError(e);
     }
+
+    if (isFirestoreQuotaExhausted()) return null;
 
     try {
       const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_lists?key=${firebaseConfig.apiKey}&pageSize=100`;
       const res = await fetch(url);
+      if (res.status === 429) {
+        handleFirestoreError({ code: 'resource-exhausted' });
+        return null;
+      }
       if (res.ok) {
         const data: any = await res.json();
         if (data && Array.isArray(data.documents) && data.documents.length > 0) {
