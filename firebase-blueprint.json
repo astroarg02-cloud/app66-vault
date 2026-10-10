@@ -26,14 +26,27 @@
     },
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User profile in the application",
+      "description": "Registered user account and profile in the application",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
         "email": { "type": "string" },
+        "password": { "type": "string" },
         "displayName": { "type": "string" },
         "role": { "type": "string" },
-        "tier": { "type": "string" }
+        "tier": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "joinedAt": { "type": "string" },
+        "registeredAt": { "type": "string" },
+        "bio": { "type": "string" },
+        "phone": { "type": "string" },
+        "customStatus": { "type": "string" },
+        "instagram": { "type": "string" },
+        "membershipPlan": { "type": "string" },
+        "membershipStatus": { "type": "string" },
+        "subscribedAt": { "type": "string" },
+        "membershipExpiresAt": { "type": "string" },
+        "lastPaymentAmount": { "type": "number" }
       },
       "required": ["uid", "email"]
     }

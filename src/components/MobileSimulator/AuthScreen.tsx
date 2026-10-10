@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Lock,
@@ -37,6 +37,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { isDark } = useTheme();
+
+  // Sincronizar todas las cuentas existentes en el dispositivo y en la base de datos al abrir el login/registro
+  useEffect(() => {
+    firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
+  }, []);
 
   // Acceso directo de Administrador en el inicio de sesión con Key
   const handleAdminKeySubmit = async (e: React.FormEvent) => {

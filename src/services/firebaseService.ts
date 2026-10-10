@@ -215,11 +215,16 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
 export function storeRegisteredAccount(record: RegisteredAccountRecord): void {
   try {
     const accounts = getStoredRegisteredAccounts();
-    accounts[record.email.toLowerCase().trim()] = record;
+    const emailKey = record.email.toLowerCase().trim();
+    accounts[emailKey] = record;
     localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
   } catch (e) {
     console.warn('Could not persist registered account locally:', e);
   }
+  // Automatically persist every stored account to the database (Firestore + Server)
+  try {
+    firebaseService.saveUserAccountToDatabase(record).catch(() => {});
+  } catch {}
 }
 
 export const firebaseService = {
@@ -251,6 +256,453 @@ export const firebaseService = {
   getAllRegisteredUsers(): UserProfile[] {
     const accounts = getStoredRegisteredAccounts();
     return Object.values(accounts).map((acc) => acc.profile);
+  },
+
+  // Helper para sanitizar un registro de cuenta antes de enviarlo a Firestore
+  sanitizeUserRecordForFirestore(record: RegisteredAccountRecord): Record<string, any> {
+    const prof = record.profile || ({} as UserProfile);
+    const email = (record.email || prof.email || '').toLowerCase().trim();
+    const isAdmin = isAuthorizedAdminEmail(email);
+    const uid = prof.uid || generateUniqueUserId(isAdmin ? 'admin' : 'usr');
+
+    const clean: Record<string, any> = {
+      uid: String(uid),
+      email: String(email),
+      password: String(record.password || 'password123'),
+      registeredAt: String(record.registeredAt || new Date().toISOString()),
+      displayName: String(prof.displayName || email.split('@')[0] || 'Usuario'),
+      role: isAdmin ? 'admin' : 'vip_member',
+      tier: isAdmin ? 'Bóveda Diamante' : (prof.tier === 'Bóveda Diamante' ? 'Acceso VIP' : (prof.tier || 'Invitado')),
+      avatarUrl: prof.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(uid)}`,
+      joinedAt: prof.joinedAt || new Date().toISOString().split('T')[0],
+      bio: prof.bio || null,
+      phone: prof.phone || null,
+      customStatus: prof.customStatus || null,
+      instagram: prof.instagram || null,
+      membershipPlan: prof.membershipPlan || null,
+      membershipStatus: prof.membershipStatus || 'none',
+      subscribedAt: prof.subscribedAt || null,
+      membershipExpiresAt: prof.membershipExpiresAt || null,
+      lastPaymentAmount: typeof prof.lastPaymentAmount === 'number' ? prof.lastPaymentAmount : null,
+    };
+
+    Object.keys(clean).forEach((k) => {
+      if (clean[k] === undefined) {
+        delete clean[k];
+      }
+    });
+
+    return clean;
+  },
+
+  // Guardar cuenta de usuario en Firestore mediante REST API (respaldo directo garantizado)
+  async saveUserToFirestoreREST(record: RegisteredAccountRecord): Promise<boolean> {
+    try {
+      const clean = this.sanitizeUserRecordForFirestore(record);
+      if (!clean.uid || !clean.email) return false;
+
+      const fields: Record<string, any> = {};
+      for (const [key, value] of Object.entries(clean)) {
+        if (value === undefined || value === null) continue;
+        if (typeof value === 'string') {
+          fields[key] = { stringValue: value };
+        } else if (typeof value === 'number') {
+          fields[key] = { integerValue: String(Math.round(value)) };
+        } else if (typeof value === 'boolean') {
+          fields[key] = { booleanValue: value };
+        }
+      }
+      fields.updatedAt = { stringValue: new Date().toISOString() };
+
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/users/${encodeURIComponent(clean.uid)}?key=${firebaseConfig.apiKey}`;
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn('Firestore REST user write error:', e);
+      return false;
+    }
+  },
+
+  // Guardar una cuenta registrada en la Base de Datos (Firestore Web SDK + Firestore REST + Servidor Central)
+  async saveUserAccountToDatabase(record: RegisteredAccountRecord): Promise<boolean> {
+    if (!record || (!record.email && !record.profile?.email)) return false;
+
+    const emailKey = (record.email || record.profile.email).toLowerCase().trim();
+    const isAdmin = isAuthorizedAdminEmail(emailKey);
+    const uid = record.profile?.uid || generateUniqueUserId(isAdmin ? 'admin' : 'usr');
+
+    const normalizedRecord: RegisteredAccountRecord = {
+      email: emailKey,
+      password: record.password || 'password123',
+      registeredAt: record.registeredAt || new Date().toISOString(),
+      profile: {
+        ...record.profile,
+        uid,
+        email: emailKey,
+        role: isAdmin ? 'admin' : 'vip_member',
+        tier: isAdmin
+          ? 'Bóveda Diamante'
+          : record.profile?.tier === 'Bóveda Diamante'
+          ? 'Acceso VIP'
+          : record.profile?.tier || 'Invitado',
+      },
+    };
+
+    // 1. Asegurar persistencia en localStorage
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY);
+      const currentAccounts = raw ? JSON.parse(raw) : {};
+      currentAccounts[emailKey] = normalizedRecord;
+      localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(currentAccounts));
+    } catch {}
+
+    let saved = false;
+
+    // 2. Guardar en servidor central (/api/vault/users -> server_data/users.json + Firestore REST)
+    try {
+      const res = await fetch('/api/vault/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(normalizedRecord),
+      });
+      if (res.ok) saved = true;
+    } catch (e) {
+      console.warn('Server /api/vault/users save fallback:', e);
+    }
+
+    // 3. Guardar en Firestore mediante Web SDK
+    try {
+      const userDocRef = doc(db, 'users', uid);
+      const cleanData = this.sanitizeUserRecordForFirestore(normalizedRecord);
+      await setDoc(
+        userDocRef,
+        {
+          ...cleanData,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      saved = true;
+    } catch (sdkErr) {
+      // 4. Respaldo directo con Firestore REST API si el SDK falla
+      const restOk = await this.saveUserToFirestoreREST(normalizedRecord);
+      if (restOk) saved = true;
+    }
+
+    return saved;
+  },
+
+  // Obtener todas las cuentas registradas desde la Base de Datos (Servidor + Firestore Web SDK + Firestore REST)
+  async fetchUsersFromDatabase(): Promise<Record<string, RegisteredAccountRecord>> {
+    const dbAccounts: Record<string, RegisteredAccountRecord> = {};
+
+    const mergeRecord = (rec: RegisteredAccountRecord) => {
+      if (!rec || (!rec.email && !rec.profile?.email)) return;
+      const emailKey = (rec.email || rec.profile.email).toLowerCase().trim();
+      if (!emailKey) return;
+      const isAdmin = isAuthorizedAdminEmail(emailKey);
+      const existing = dbAccounts[emailKey];
+      dbAccounts[emailKey] = {
+        email: emailKey,
+        password:
+          rec.password && rec.password !== 'password123'
+            ? rec.password
+            : existing?.password || rec.password || 'password123',
+        registeredAt: rec.registeredAt || existing?.registeredAt || new Date().toISOString(),
+        profile: {
+          ...(existing?.profile || {}),
+          ...(rec.profile || {}),
+          email: emailKey,
+          role: isAdmin ? 'admin' : 'vip_member',
+          tier: isAdmin
+            ? 'Bóveda Diamante'
+            : rec.profile?.tier === 'Bóveda Diamante'
+            ? 'Acceso VIP'
+            : rec.profile?.tier || existing?.profile?.tier || 'Invitado',
+        },
+      };
+    };
+
+    // 1. Consultar Servidor Central (/api/vault/users)
+    try {
+      const res = await fetch('/api/vault/users');
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.accounts && typeof json.accounts === 'object') {
+          for (const rec of Object.values(json.accounts) as RegisteredAccountRecord[]) {
+            mergeRecord(rec);
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 2. Consultar colección 'users' en Firestore vía Web SDK
+    try {
+      const colRef = collection(db, 'users');
+      const snap = await getDocs(colRef);
+      if (!snap.empty) {
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          const email = (data.email || '').toLowerCase().trim();
+          if (!email) return;
+          const uid = data.uid || docSnap.id;
+          const isAdmin = isAuthorizedAdminEmail(email);
+          mergeRecord({
+            email,
+            password: data.password || 'password123',
+            registeredAt: data.registeredAt || new Date().toISOString(),
+            profile: {
+              uid,
+              email,
+              displayName: data.displayName || email.split('@')[0] || 'Usuario',
+              role: isAdmin ? 'admin' : 'vip_member',
+              tier: isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : (data.tier || 'Invitado')),
+              avatarUrl: data.avatarUrl || undefined,
+              joinedAt: data.joinedAt || new Date().toISOString().split('T')[0],
+              bio: data.bio || undefined,
+              phone: data.phone || undefined,
+              customStatus: data.customStatus || undefined,
+              instagram: data.instagram || undefined,
+              membershipPlan: data.membershipPlan || undefined,
+              membershipStatus: data.membershipStatus || 'none',
+              subscribedAt: data.subscribedAt || undefined,
+              membershipExpiresAt: data.membershipExpiresAt || undefined,
+              lastPaymentAmount: typeof data.lastPaymentAmount === 'number' ? data.lastPaymentAmount : undefined,
+            },
+          });
+        });
+      }
+    } catch (sdkErr) {
+      // 3. Respaldo vía Firestore REST API
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/users?key=${firebaseConfig.apiKey}&pageSize=300`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data: any = await res.json();
+          if (data && Array.isArray(data.documents)) {
+            for (const docSnap of data.documents) {
+              const fields = docSnap.fields || {};
+              const docId = docSnap.name.split('/').pop() || '';
+              const uid = fields.uid?.stringValue || docId;
+              const email = (fields.email?.stringValue || '').toLowerCase().trim();
+              if (!email) continue;
+              const isAdmin = isAuthorizedAdminEmail(email);
+              mergeRecord({
+                email,
+                password: fields.password?.stringValue || 'password123',
+                registeredAt: fields.registeredAt?.stringValue || new Date().toISOString(),
+                profile: {
+                  uid,
+                  email,
+                  displayName: fields.displayName?.stringValue || email.split('@')[0] || 'Usuario',
+                  role: isAdmin ? 'admin' : 'vip_member',
+                  tier: isAdmin ? 'Bóveda Diamante' : (fields.tier?.stringValue === 'Bóveda Diamante' ? 'Acceso VIP' : (fields.tier?.stringValue || 'Invitado')),
+                  avatarUrl: fields.avatarUrl?.stringValue || undefined,
+                  joinedAt: fields.joinedAt?.stringValue || new Date().toISOString().split('T')[0],
+                  bio: fields.bio?.stringValue || undefined,
+                  phone: fields.phone?.stringValue || undefined,
+                  customStatus: fields.customStatus?.stringValue || undefined,
+                  instagram: fields.instagram?.stringValue || undefined,
+                  membershipPlan: (fields.membershipPlan?.stringValue as any) || undefined,
+                  membershipStatus: (fields.membershipStatus?.stringValue as any) || 'none',
+                  subscribedAt: fields.subscribedAt?.stringValue || undefined,
+                  membershipExpiresAt: fields.membershipExpiresAt?.stringValue || undefined,
+                  lastPaymentAmount: fields.lastPaymentAmount?.integerValue ? Number(fields.lastPaymentAmount.integerValue) : undefined,
+                },
+              });
+            }
+          }
+        }
+      } catch {}
+    }
+
+    return dbAccounts;
+  },
+
+  // Sincronizar TODAS las cuentas registradas (existentes en el dispositivo + sesión actual + base de datos)
+  async syncAllRegisteredAccountsToDatabase(): Promise<Record<string, RegisteredAccountRecord>> {
+    const localAccounts = getStoredRegisteredAccounts();
+
+    // Asegurar que si hay una sesión activa en localStorage, también esté incluida en las cuentas registradas
+    try {
+      const activeSession = this.getLocalSession();
+      if (activeSession && activeSession.email) {
+        const sessionEmail = activeSession.email.toLowerCase().trim();
+        if (!localAccounts[sessionEmail]) {
+          localAccounts[sessionEmail] = {
+            email: sessionEmail,
+            password: isAuthorizedAdminEmail(sessionEmail) ? ADMIN_SECURITY_KEY : 'password123',
+            registeredAt: new Date().toISOString(),
+            profile: activeSession,
+          };
+        } else {
+          localAccounts[sessionEmail].profile = {
+            ...localAccounts[sessionEmail].profile,
+            ...activeSession,
+          };
+        }
+      }
+    } catch {}
+
+    // 1. Enviar todas las cuentas locales al servidor central (/api/vault/users/sync)
+    try {
+      const res = await fetch('/api/vault/users/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accounts: localAccounts }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.accounts && typeof json.accounts === 'object') {
+          for (const [emailKey, serverRec] of Object.entries(json.accounts) as [string, RegisteredAccountRecord][]) {
+            const existing = localAccounts[emailKey];
+            if (!existing) {
+              localAccounts[emailKey] = serverRec;
+            } else {
+              localAccounts[emailKey] = {
+                ...serverRec,
+                ...existing,
+                password:
+                  existing.password && existing.password !== 'password123'
+                    ? existing.password
+                    : serverRec.password || existing.password || 'password123',
+                profile: {
+                  ...(serverRec.profile || {}),
+                  ...(existing.profile || {}),
+                },
+              };
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not batch sync users with server:', e);
+    }
+
+    // 2. Traer también cualquier cuenta directamente desde Firestore y fusionar
+    try {
+      const remoteAccounts = await this.fetchUsersFromDatabase();
+      for (const [emailKey, remoteRec] of Object.entries(remoteAccounts)) {
+        const existing = localAccounts[emailKey];
+        if (!existing) {
+          localAccounts[emailKey] = remoteRec;
+        } else {
+          localAccounts[emailKey] = {
+            ...remoteRec,
+            ...existing,
+            password:
+              existing.password && existing.password !== 'password123'
+                ? existing.password
+                : remoteRec.password || existing.password || 'password123',
+            profile: {
+              ...(remoteRec.profile || {}),
+              ...(existing.profile || {}),
+            },
+          };
+        }
+      }
+    } catch {}
+
+    // 3. Guardar el mapa completo fusionado en localStorage
+    try {
+      localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(localAccounts));
+    } catch {}
+
+    // 4. Asegurar que cada cuenta esté guardada en Firestore (Web SDK + REST fallback)
+    for (const record of Object.values(localAccounts)) {
+      try {
+        const uid = record.profile?.uid;
+        if (uid) {
+          const userDocRef = doc(db, 'users', uid);
+          const cleanData = this.sanitizeUserRecordForFirestore(record);
+          await setDoc(userDocRef, { ...cleanData, updatedAt: serverTimestamp() }, { merge: true }).catch(async () => {
+            await this.saveUserToFirestoreREST(record);
+          });
+        }
+      } catch {}
+    }
+
+    return localAccounts;
+  },
+
+  // Listener en tiempo real para cuentas de usuarios en Firestore
+  onUsersSnapshot(callback: (accounts: Record<string, RegisteredAccountRecord>) => void) {
+    try {
+      const colRef = collection(db, 'users');
+      return onSnapshot(
+        colRef,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const currentAccounts = getStoredRegisteredAccounts();
+            let updated = false;
+
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              const email = (data.email || '').toLowerCase().trim();
+              if (!email) return;
+              const uid = data.uid || docSnap.id;
+              const isAdmin = isAuthorizedAdminEmail(email);
+              const existing = currentAccounts[email];
+
+              const isPurchasedLocal = localStorage.getItem(`vault_purchased_membership_${uid}`) === 'true';
+
+              const mergedProfile: UserProfile = {
+                ...(existing?.profile || {}),
+                uid,
+                email,
+                displayName: data.displayName || existing?.profile?.displayName || email.split('@')[0] || 'Usuario',
+                role: isAdmin ? 'admin' : 'vip_member',
+                tier: isAdmin
+                  ? 'Bóveda Diamante'
+                  : isPurchasedLocal && data.membershipStatus === 'active'
+                  ? 'Acceso VIP'
+                  : existing?.profile?.tier === 'Bóveda Diamante'
+                  ? 'Invitado'
+                  : existing?.profile?.tier || 'Invitado',
+                avatarUrl: data.avatarUrl || existing?.profile?.avatarUrl,
+                joinedAt: data.joinedAt || existing?.profile?.joinedAt || new Date().toISOString().split('T')[0],
+                bio: data.bio ?? existing?.profile?.bio,
+                phone: data.phone ?? existing?.profile?.phone,
+                customStatus: data.customStatus ?? existing?.profile?.customStatus,
+                instagram: data.instagram ?? existing?.profile?.instagram,
+                membershipPlan: isPurchasedLocal ? (data.membershipPlan ?? existing?.profile?.membershipPlan) : undefined,
+                membershipStatus: isPurchasedLocal ? (data.membershipStatus ?? existing?.profile?.membershipStatus ?? 'none') : 'none',
+                subscribedAt: isPurchasedLocal ? (data.subscribedAt ?? existing?.profile?.subscribedAt) : undefined,
+                membershipExpiresAt: isPurchasedLocal ? (data.membershipExpiresAt ?? existing?.profile?.membershipExpiresAt) : undefined,
+                lastPaymentAmount: isPurchasedLocal ? (data.lastPaymentAmount ?? existing?.profile?.lastPaymentAmount) : undefined,
+              };
+
+              currentAccounts[email] = {
+                email,
+                password:
+                  existing?.password && existing.password !== 'password123'
+                    ? existing.password
+                    : data.password || existing?.password || 'password123',
+                registeredAt: existing?.registeredAt || data.registeredAt || new Date().toISOString(),
+                profile: mergedProfile,
+              };
+              updated = true;
+            });
+
+            if (updated) {
+              try {
+                localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(currentAccounts));
+              } catch {}
+              callback(currentAccounts);
+            }
+          }
+        },
+        (err) => {
+          console.warn('Firestore users onSnapshot warning:', err);
+        }
+      );
+    } catch (err) {
+      return () => {};
+    }
   },
 
   // Cambiar rápidamente entre cuentas registradas para probar diferentes perfiles
@@ -290,15 +742,18 @@ export const firebaseService = {
       if (matchedKey && accounts[matchedKey]) {
         accounts[matchedKey].profile = { ...accounts[matchedKey].profile, ...profile };
         localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+        await this.saveUserAccountToDatabase(accounts[matchedKey]);
       } else if (emailKey) {
-        // Si no existía, crear la entrada para este usuario
-        accounts[emailKey] = {
+        // Si no existía, crear la entrada para este usuario y guardarla en la base de datos
+        const newRecord: RegisteredAccountRecord = {
           email: emailKey,
           password: 'password123',
           profile: { ...profile },
           registeredAt: new Date().toISOString(),
         };
+        accounts[emailKey] = newRecord;
         localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+        await this.saveUserAccountToDatabase(newRecord);
       }
     } catch (e) {
       console.warn('Local account store update error:', e);
@@ -306,31 +761,6 @@ export const firebaseService = {
 
     // Notificar reactivamente a la UI
     window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile } }));
-
-    // Persistir en Firestore si la conexión está disponible
-    try {
-      if (profile.uid) {
-        const userDocRef = doc(db, 'users', profile.uid);
-        await setDoc(userDocRef, {
-          displayName: profile.displayName,
-          role: profile.role,
-          tier: profile.tier,
-          avatarUrl: profile.avatarUrl || null,
-          bio: profile.bio || null,
-          phone: profile.phone || null,
-          customStatus: profile.customStatus || null,
-          instagram: profile.instagram || null,
-          membershipPlan: profile.membershipPlan || null,
-          membershipStatus: profile.membershipStatus || null,
-          membershipExpiresAt: profile.membershipExpiresAt || null,
-          subscribedAt: profile.subscribedAt || null,
-          lastPaymentAmount: profile.lastPaymentAmount || null,
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-      }
-    } catch (e) {
-      console.warn('Firestore update profile fallback:', e);
-    }
   },
 
   // Activar o mejorar la membresía de un usuario por su UID o Email con fecha exacta y real de inicio y vencimiento
@@ -413,25 +843,15 @@ export const firebaseService = {
         window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: updatedProf } }));
       }
 
-      // Persistir también en Firestore
-      try {
-        if (updatedProf.uid) {
-          const userDocRef = doc(db, 'users', updatedProf.uid);
-          setDoc(
-            userDocRef,
-            {
-              membershipPlan: updatedProf.membershipPlan,
-              membershipStatus: updatedProf.membershipStatus,
-              tier: updatedProf.tier,
-              subscribedAt: updatedProf.subscribedAt,
-              membershipExpiresAt: updatedProf.membershipExpiresAt,
-              lastPaymentAmount: updatedProf.lastPaymentAmount,
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          ).catch(() => {});
-        }
-      } catch {}
+      // Persistir también en la Base de Datos (Firestore + Servidor Central)
+      const targetEmail = (email || updatedProf.email || '').toLowerCase().trim();
+      const targetRecord = accounts[targetEmail] || {
+        email: targetEmail,
+        password: 'password123',
+        profile: updatedProf,
+        registeredAt: subscribedAtIso,
+      };
+      this.saveUserAccountToDatabase(targetRecord).catch(() => {});
     }
 
     return updatedProf;
@@ -473,6 +893,7 @@ export const firebaseService = {
       };
       accounts[foundKey].profile = updatedProf;
       localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
+      this.saveUserAccountToDatabase(accounts[foundKey]).catch(() => {});
 
       const currentSession = this.getLocalSession();
       if (currentSession && (currentSession.uid === uid || currentSession.email.toLowerCase() === accounts[foundKey].email.toLowerCase())) {
@@ -618,21 +1039,42 @@ export const firebaseService = {
     })();
 
     firestoreSyncPromise.catch(() => {});
+    storeRegisteredAccount({
+      email: (fbUser.email || profile.email).toLowerCase().trim(),
+      password: localMatch?.password || 'password123',
+      profile,
+      registeredAt: localMatch?.registeredAt || nowIso,
+    });
     this.saveSession(profile);
     return profile;
   },
 
-  // Firebase Email/Password Login (Only allows login if the user has already registered)
+  // Firebase Email/Password Login (Only allows login if the user has already registered in local or remote database)
   async signInWithEmail(email: string, password: string): Promise<UserProfile> {
     const normalizedEmail = email.toLowerCase().trim();
     const cleanPassword = password.trim();
 
     try {
       const cred = await signInWithEmailAndPassword(auth, normalizedEmail, cleanPassword);
-      return await this.mapFirebaseUserToProfile(cred.user);
+      const profile = await this.mapFirebaseUserToProfile(cred.user);
+      await this.saveUserAccountToDatabase({
+        email: normalizedEmail,
+        password: cleanPassword,
+        profile,
+        registeredAt: new Date().toISOString(),
+      });
+      return profile;
     } catch (err: any) {
-      const registeredAccounts = getStoredRegisteredAccounts();
-      const existingRecord = registeredAccounts[normalizedEmail];
+      let registeredAccounts = getStoredRegisteredAccounts();
+      let existingRecord = registeredAccounts[normalizedEmail];
+
+      // Si no está en localStorage, buscar en la base de datos (Firestore + Servidor)
+      if (!existingRecord) {
+        try {
+          registeredAccounts = await this.syncAllRegisteredAccountsToDatabase();
+          existingRecord = registeredAccounts[normalizedEmail];
+        } catch {}
+      }
 
       if (existingRecord) {
         if (existingRecord.password === cleanPassword) {
@@ -641,6 +1083,10 @@ export const firebaseService = {
             ...existingRecord.profile,
             role: isAllowedAdmin ? 'admin' : 'vip_member',
           };
+          await this.saveUserAccountToDatabase({
+            ...existingRecord,
+            profile: safeProfile,
+          });
           this.saveSession(safeProfile);
           return safeProfile;
         }
@@ -695,8 +1141,16 @@ export const firebaseService = {
     const normalizedEmail = email.toLowerCase().trim();
     const cleanPassword = password.trim();
 
-    // Check local registry first
-    const registeredAccounts = getStoredRegisteredAccounts();
+    // Check local registry and remote database first
+    let registeredAccounts = getStoredRegisteredAccounts();
+    if (!registeredAccounts[normalizedEmail]) {
+      try {
+        const dbAccounts = await this.fetchUsersFromDatabase();
+        if (dbAccounts[normalizedEmail]) {
+          registeredAccounts[normalizedEmail] = dbAccounts[normalizedEmail];
+        }
+      } catch {}
+    }
     if (registeredAccounts[normalizedEmail]) {
       const alreadyExistsError = new Error('Este correo ya está registrado. Por favor inicia sesión con tu contraseña.');
       (alreadyExistsError as any).code = 'auth/email-already-in-use';
@@ -737,23 +1191,16 @@ export const firebaseService = {
       console.warn('Fallback registering user with unique local ID:', uniqueUid, err?.message);
     }
 
-    // Persist in registered accounts registry
-    storeRegisteredAccount({
+    const accountRecord: RegisteredAccountRecord = {
       email: normalizedEmail,
       password: cleanPassword,
       profile: newProfile,
       registeredAt: new Date().toISOString(),
-    });
+    };
 
-    // Also save to Firestore users collection
-    try {
-      const userDocRef = doc(db, 'users', newProfile.uid);
-      setDoc(userDocRef, {
-        ...newProfile,
-        createdAt: serverTimestamp(),
-        lastLoginAt: serverTimestamp(),
-      }, { merge: true }).catch(() => {});
-    } catch (e) {}
+    // Persist in local registry + Database (Firestore Web SDK + Firestore REST + Server Database)
+    storeRegisteredAccount(accountRecord);
+    await this.saveUserAccountToDatabase(accountRecord);
 
     this.saveSession(newProfile);
     return newProfile;
@@ -772,15 +1219,28 @@ export const firebaseService = {
     }
     const currentSession = this.getLocalSession();
     if (currentSession && currentSession.role === 'admin' && currentSession.uid) {
+      await this.saveUserAccountToDatabase({
+        email: currentSession.email.toLowerCase().trim(),
+        password: ADMIN_SECURITY_KEY,
+        profile: currentSession,
+        registeredAt: new Date().toISOString(),
+      });
       return currentSession;
     }
     const accounts = getStoredRegisteredAccounts();
     const adminRecord = accounts[INITIAL_ADMIN_USER.email.toLowerCase()];
     if (adminRecord && adminRecord.profile) {
+      await this.saveUserAccountToDatabase(adminRecord);
       this.saveSession(adminRecord.profile);
       return adminRecord.profile;
     }
     const adminUser = { ...INITIAL_ADMIN_USER };
+    await this.saveUserAccountToDatabase({
+      email: adminUser.email.toLowerCase().trim(),
+      password: ADMIN_SECURITY_KEY,
+      profile: adminUser,
+      registeredAt: '2025-01-01T00:00:00.000Z',
+    });
     this.saveSession(adminUser);
     return adminUser;
   },

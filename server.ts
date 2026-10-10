@@ -20,6 +20,7 @@ const VAULT_LISTS_FILE = path.join(DATA_DIR, 'vault_lists.json');
 const DELETED_LISTS_FILE = path.join(DATA_DIR, 'deleted_lists.json');
 const MAINTENANCE_FILE = path.join(DATA_DIR, 'maintenance.json');
 const RECEIPTS_FILE = path.join(DATA_DIR, 'receipts.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ADMIN_SECURITY_KEY = '360';
 
 // Ensure storage directories exist
@@ -1215,6 +1216,333 @@ app.delete('/api/vault/receipts/:id', (req, res) => {
   }
 });
 
+// --- REGISTERED USER ACCOUNTS PERSISTENCE (Server File + Firestore REST) ---
+
+const DEFAULT_SEED_USERS: Record<string, any> = {
+  'astroarg02@gmail.com': {
+    email: 'astroarg02@gmail.com',
+    password: ADMIN_SECURITY_KEY,
+    registeredAt: '2025-01-01T00:00:00.000Z',
+    profile: {
+      uid: 'admin_master_astro',
+      email: 'astroarg02@gmail.com',
+      displayName: 'Administrador (astroarg02)',
+      role: 'admin',
+      joinedAt: '2025-01-01',
+      tier: 'Bóveda Diamante',
+      membershipStatus: 'none',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      bio: 'Administrador central de Bóveda App 66. Gestión de contenidos y verificaciones.',
+      phone: '+54 9 11 6554-6038',
+      customStatus: '🛡️ En línea - Modo Administrador',
+    },
+  },
+  'cuentaninja989@gmail.com': {
+    email: 'cuentaninja989@gmail.com',
+    password: ADMIN_SECURITY_KEY,
+    registeredAt: '2025-01-15T00:00:00.000Z',
+    profile: {
+      uid: 'admin_ninja_989',
+      email: 'cuentaninja989@gmail.com',
+      displayName: 'Administrador (Cuenta Ninja)',
+      role: 'admin',
+      joinedAt: '2025-01-15',
+      tier: 'Bóveda Diamante',
+      membershipStatus: 'none',
+      avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+      customStatus: '🛡️ Administrador Secundario',
+    },
+  },
+  'member@vault.com': {
+    email: 'member@vault.com',
+    password: 'password123',
+    registeredAt: '2025-02-14T00:00:00.000Z',
+    profile: {
+      uid: 'vip_user_449',
+      email: 'member@vault.com',
+      displayName: 'Alex Rivera (VIP)',
+      role: 'vip_member',
+      joinedAt: '2025-02-14',
+      tier: 'Invitado',
+      membershipStatus: 'none',
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      bio: 'Miembro VIP de la comunidad. Acceso a recursos exclusivos.',
+      customStatus: '💎 Miembro VIP',
+    },
+  },
+};
+
+if (!fs.existsSync(USERS_FILE)) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(DEFAULT_SEED_USERS, null, 2), 'utf-8');
+}
+
+function readRegisteredUsersMap(): Record<string, any> {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { ...DEFAULT_SEED_USERS, ...parsed };
+      }
+    }
+  } catch (err) {
+    console.error('Error reading users from file:', err);
+  }
+  return { ...DEFAULT_SEED_USERS };
+}
+
+function writeRegisteredUsersMap(usersMap: Record<string, any>): boolean {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersMap, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('Error writing users to file:', err);
+    return false;
+  }
+}
+
+function userRecordToFirestoreFields(record: any): Record<string, any> {
+  const prof = record?.profile || record || {};
+  const email = String(record?.email || prof?.email || '').toLowerCase().trim();
+  const uid = String(prof?.uid || `usr_${Date.now()}`);
+  const fields: Record<string, any> = {
+    uid: { stringValue: uid },
+    email: { stringValue: email },
+    password: { stringValue: String(record?.password || 'password123') },
+    registeredAt: { stringValue: String(record?.registeredAt || new Date().toISOString()) },
+    displayName: { stringValue: String(prof?.displayName || email.split('@')[0] || 'Usuario') },
+    role: { stringValue: String(prof?.role || 'vip_member') },
+    tier: { stringValue: String(prof?.tier || 'Invitado') },
+    joinedAt: { stringValue: String(prof?.joinedAt || new Date().toISOString().split('T')[0]) },
+    membershipStatus: { stringValue: String(prof?.membershipStatus || 'none') },
+    updatedAt: { stringValue: new Date().toISOString() },
+  };
+
+  if (prof?.avatarUrl) fields.avatarUrl = { stringValue: String(prof.avatarUrl) };
+  if (prof?.bio) fields.bio = { stringValue: String(prof.bio) };
+  if (prof?.phone) fields.phone = { stringValue: String(prof.phone) };
+  if (prof?.customStatus) fields.customStatus = { stringValue: String(prof.customStatus) };
+  if (prof?.instagram) fields.instagram = { stringValue: String(prof.instagram) };
+  if (prof?.membershipPlan) fields.membershipPlan = { stringValue: String(prof.membershipPlan) };
+  if (prof?.subscribedAt) fields.subscribedAt = { stringValue: String(prof.subscribedAt) };
+  if (prof?.membershipExpiresAt) fields.membershipExpiresAt = { stringValue: String(prof.membershipExpiresAt) };
+  if (typeof prof?.lastPaymentAmount === 'number') {
+    fields.lastPaymentAmount = { integerValue: String(Math.round(prof.lastPaymentAmount)) };
+  }
+
+  return fields;
+}
+
+async function saveUserToFirestoreREST(record: any): Promise<boolean> {
+  try {
+    const prof = record?.profile || record;
+    const uid = prof?.uid;
+    if (!uid) return false;
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/users/${encodeURIComponent(uid)}?key=${rawFirebaseConfig.apiKey}`;
+    const fields = userRecordToFirestoreFields(record);
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.warn('[Firestore User Sync Error]:', err);
+    return false;
+  }
+}
+
+async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
+  const result: Record<string, any> = {};
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/users?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
+    const res = await fetch(url);
+    if (!res.ok) return result;
+    const data: any = await res.json();
+    if (!data || !Array.isArray(data.documents)) return result;
+
+    for (const docSnap of data.documents) {
+      const fields = docSnap.fields || {};
+      const docId = docSnap.name.split('/').pop() || '';
+      const uid = fields.uid?.stringValue || docId;
+      const email = (fields.email?.stringValue || '').toLowerCase().trim();
+      if (!email) continue;
+
+      const profile: Record<string, any> = {
+        uid,
+        email,
+        displayName: fields.displayName?.stringValue || email.split('@')[0] || 'Usuario',
+        role: fields.role?.stringValue || 'vip_member',
+        tier: fields.tier?.stringValue || 'Invitado',
+        joinedAt: fields.joinedAt?.stringValue || new Date().toISOString().split('T')[0],
+        membershipStatus: fields.membershipStatus?.stringValue || 'none',
+      };
+
+      if (fields.avatarUrl?.stringValue) profile.avatarUrl = fields.avatarUrl.stringValue;
+      if (fields.bio?.stringValue) profile.bio = fields.bio.stringValue;
+      if (fields.phone?.stringValue) profile.phone = fields.phone.stringValue;
+      if (fields.customStatus?.stringValue) profile.customStatus = fields.customStatus.stringValue;
+      if (fields.instagram?.stringValue) profile.instagram = fields.instagram.stringValue;
+      if (fields.membershipPlan?.stringValue) profile.membershipPlan = fields.membershipPlan.stringValue;
+      if (fields.subscribedAt?.stringValue) profile.subscribedAt = fields.subscribedAt.stringValue;
+      if (fields.membershipExpiresAt?.stringValue) profile.membershipExpiresAt = fields.membershipExpiresAt.stringValue;
+      if (fields.lastPaymentAmount?.integerValue) {
+        profile.lastPaymentAmount = Number(fields.lastPaymentAmount.integerValue);
+      }
+
+      result[email] = {
+        email,
+        password: fields.password?.stringValue || 'password123',
+        registeredAt: fields.registeredAt?.stringValue || new Date().toISOString(),
+        profile,
+      };
+    }
+  } catch (err) {
+    console.warn('Error fetching Firestore REST users:', err);
+  }
+  return result;
+}
+
+// GET /api/vault/users - Fetch all registered user accounts (Server + Firestore)
+app.get('/api/vault/users', async (_req, res) => {
+  try {
+    const localUsers = readRegisteredUsersMap();
+    const firestoreUsers = await fetchAllUsersFromFirestoreREST();
+
+    const merged: Record<string, any> = { ...localUsers };
+    for (const [emailKey, fsRecord] of Object.entries(firestoreUsers)) {
+      const existing = merged[emailKey];
+      if (!existing) {
+        merged[emailKey] = fsRecord;
+      } else {
+        merged[emailKey] = {
+          ...existing,
+          ...fsRecord,
+          password: fsRecord.password && fsRecord.password !== 'password123' ? fsRecord.password : (existing.password || fsRecord.password || 'password123'),
+          profile: {
+            ...(existing.profile || {}),
+            ...(fsRecord.profile || {}),
+          },
+        };
+      }
+    }
+
+    writeRegisteredUsersMap(merged);
+    return res.json({ success: true, accounts: merged, total: Object.keys(merged).length });
+  } catch (err: any) {
+    const localUsers = readRegisteredUsersMap();
+    return res.json({ success: true, accounts: localUsers, total: Object.keys(localUsers).length });
+  }
+});
+
+// POST /api/vault/users - Save or update a single registered user account in Database + Firestore
+app.post('/api/vault/users', async (req, res) => {
+  try {
+    const body = req.body;
+    const profile = body?.profile || body;
+    const rawEmail = body?.email || profile?.email;
+    if (!rawEmail) {
+      return res.status(400).json({ success: false, error: 'Email requerido para guardar la cuenta' });
+    }
+
+    const emailKey = String(rawEmail).toLowerCase().trim();
+    const currentMap = readRegisteredUsersMap();
+    const existing = currentMap[emailKey];
+
+    const record = {
+      email: emailKey,
+      password: body?.password || existing?.password || 'password123',
+      registeredAt: body?.registeredAt || existing?.registeredAt || new Date().toISOString(),
+      profile: {
+        ...(existing?.profile || {}),
+        ...(profile || {}),
+        email: emailKey,
+      },
+    };
+
+    currentMap[emailKey] = record;
+    writeRegisteredUsersMap(currentMap);
+
+    const firestoreSynced = await saveUserToFirestoreREST(record);
+
+    return res.json({
+      success: true,
+      account: record,
+      firestoreSynced,
+      total: Object.keys(currentMap).length,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/vault/users/sync - Batch synchronize all registered accounts to Database + Firestore
+app.post('/api/vault/users/sync', async (req, res) => {
+  try {
+    const { accounts } = req.body;
+    const currentMap = readRegisteredUsersMap();
+    const firestoreUsers = await fetchAllUsersFromFirestoreREST();
+
+    // Merge Firestore users first
+    for (const [emailKey, fsRecord] of Object.entries(firestoreUsers)) {
+      if (!currentMap[emailKey]) {
+        currentMap[emailKey] = fsRecord;
+      } else {
+        currentMap[emailKey] = {
+          ...currentMap[emailKey],
+          profile: {
+            ...(fsRecord.profile || {}),
+            ...(currentMap[emailKey].profile || {}),
+          },
+        };
+      }
+    }
+
+    // Merge incoming client accounts
+    const incomingEntries: any[] = [];
+    if (Array.isArray(accounts)) {
+      incomingEntries.push(...accounts);
+    } else if (accounts && typeof accounts === 'object') {
+      incomingEntries.push(...Object.values(accounts));
+    }
+
+    for (const entry of incomingEntries) {
+      const prof = entry?.profile || entry;
+      const emailKey = String(entry?.email || prof?.email || '').toLowerCase().trim();
+      if (!emailKey) continue;
+
+      const existing = currentMap[emailKey];
+      currentMap[emailKey] = {
+        email: emailKey,
+        password: entry?.password || existing?.password || 'password123',
+        registeredAt: entry?.registeredAt || existing?.registeredAt || new Date().toISOString(),
+        profile: {
+          ...(existing?.profile || {}),
+          ...(prof || {}),
+          email: emailKey,
+        },
+      };
+    }
+
+    writeRegisteredUsersMap(currentMap);
+
+    // Sync all accounts to Firestore REST in background
+    (async () => {
+      for (const record of Object.values(currentMap)) {
+        await saveUserToFirestoreREST(record);
+      }
+    })().catch(() => {});
+
+    return res.json({
+      success: true,
+      accounts: currentMap,
+      total: Object.keys(currentMap).length,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Setup Vite middleware or Static serving
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -1234,7 +1562,7 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Vault Server running on http://0.0.0.0:${PORT}`);
 
-    // Self-healing Firestore sync on startup: ensure all items and maintenance are synced
+    // Self-healing Firestore sync on startup: ensure all items, users, and maintenance are synced
     try {
       const cloudMaint = await fetchMaintenanceFromFirestoreREST();
       if (cloudMaint) {
@@ -1247,6 +1575,16 @@ async function startServer() {
         await saveToFirestoreREST(it);
       }
       console.log(`[Cloud Boot Sync] Successfully verified and synced ${localItems.length} items to Firebase Firestore.`);
+
+      // Sync all registered users on server startup
+      const localUsers = readRegisteredUsersMap();
+      const cloudUsers = await fetchAllUsersFromFirestoreREST();
+      const mergedUsers: Record<string, any> = { ...localUsers, ...cloudUsers };
+      writeRegisteredUsersMap(mergedUsers);
+      for (const userRecord of Object.values(mergedUsers)) {
+        await saveUserToFirestoreREST(userRecord);
+      }
+      console.log(`[Cloud Boot Sync] Successfully verified and synced ${Object.keys(mergedUsers).length} user accounts to Firebase Firestore.`);
     } catch (bootErr) {
       console.warn('[Cloud Boot Sync Error]:', bootErr);
     }

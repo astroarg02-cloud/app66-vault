@@ -225,6 +225,19 @@ function AppContent() {
       }
     });
 
+    // Real-time Firestore users listener
+    const unsubFirestoreUsers = firebaseService.onUsersSnapshot((accountsMap) => {
+      const session = firebaseService.getLocalSession();
+      if (session && session.email) {
+        const matched = accountsMap[session.email.toLowerCase().trim()];
+        if (matched && matched.profile) {
+          const clean = sanitizeUserRole(matched.profile);
+          setCurrentUser(clean);
+          firebaseService.saveSession(clean);
+        }
+      }
+    });
+
     // Real-time Firestore maintenance mode listener (disabled since no user has admin)
     const unsubFirestoreMaintenance = () => {};
 
@@ -235,6 +248,11 @@ function AppContent() {
 
     const loadData = async () => {
       try {
+        // Sync all registered accounts (existing and new) with Database (Server + Firestore)
+        firebaseService.syncAllRegisteredAccountsToDatabase().catch((err) => {
+          console.warn('Error syncing registered accounts to database:', err);
+        });
+
         // 0. Fetch permanently deleted list IDs from server so deleted lists NEVER resurrect on reload
         try {
           const resDeleted = await fetch('/api/vault/deleted-lists');
@@ -314,6 +332,8 @@ function AppContent() {
     // Background poll every 30 seconds
     const interval = setInterval(async () => {
       try {
+        firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
+
         // Sync deleted lists first
         try {
           const resDel = await fetch('/api/vault/deleted-lists');
@@ -348,6 +368,7 @@ function AppContent() {
       window.removeEventListener('vault_receipts_changed', handleReceiptsChanged);
       unsubFirestoreItems();
       unsubFirestoreLists();
+      unsubFirestoreUsers();
       unsubFirestoreMaintenance();
       clearInterval(interval);
     };
@@ -363,6 +384,10 @@ function AppContent() {
       setSelectedVaultListId(null);
     }
     firebaseService.saveSession(cleanUser);
+    if (cleanUser) {
+      firebaseService.updateUserProfile(cleanUser).catch(() => {});
+      firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
+    }
   };
 
   const handleLogout = async () => {
