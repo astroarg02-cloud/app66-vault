@@ -18,26 +18,38 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 3. Configurar Java JDK 21 (Requerido por Android Gradle)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: 4. Instalar dependencias del proyecto y Capacitor
+      - name: 3. Instalar dependencias del proyecto y Capacitor
         run: |
           npm install
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: 5. Compilar aplicación web (Vite)
+      - name: 4. Compilar aplicación web (Vite)
         run: npx vite build
 
-      - name: 6. Generar y sincronizar proyecto nativo Android
+      - name: 5. Configurar Capacitor con el link de Vercel y generar Android
         run: |
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.vault.privateserver",
+            "appName": "Vault Private",
+            "webDir": "dist",
+            "server": {
+              "url": "https://private-server66.vercel.app",
+              "cleartext": true,
+              "androidScheme": "https"
+            }
+          }
+          EOF
           if [ ! -d "android" ]; then
             npx cap add android
           fi
           npx cap sync android
+
+      - name: 6. Configurar Java JDK 21 (Requerido por Android Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
       - name: 7. Compilar archivo APK con Gradle
         working-directory: ./android

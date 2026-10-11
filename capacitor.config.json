@@ -3,6 +3,8 @@
   "appName": "Vault Private",
   "webDir": "dist",
   "server": {
+    "url": "https://private-server66.vercel.app",
+    "cleartext": true,
     "androidScheme": "https"
   }
 }
