@@ -1,8 +1,6 @@
 import {
   doc,
-  setDoc,
   getDoc,
-  deleteDoc,
   onSnapshot,
   Unsubscribe,
 } from 'firebase/firestore';
@@ -14,6 +12,8 @@ import {
   isFirestoreQuotaExhausted,
   handleFirestoreError,
   withFirestoreTimeout,
+  firestoreRestFetch,
+  resolveApiUrl,
 } from './firebaseService';
 
 const STORAGE_KEY = 'vault_payment_receipts_v1';
@@ -155,22 +155,7 @@ async function saveReceiptsRegistryToFirestore(allReceipts: PaymentReceipt[]): P
   if (isFirestoreQuotaExhausted()) return false;
   const regPayload = buildFirestoreRegistryPayload(allReceipts);
 
-  // 1. Try Firebase Web SDK single-document write
-  if (db) {
-    try {
-      await withFirestoreTimeout(
-        setDoc(doc(db, 'system_config', 'receipts_registry'), regPayload, { merge: true }),
-        1500
-      );
-      return true;
-    } catch (err) {
-      handleFirestoreError(err);
-    }
-  }
-
-  // 2. Direct Firestore REST API fallback
   try {
-    const url = `${FIRESTORE_REST_BASE}/system_config/receipts_registry?key=${firebaseConfig.apiKey}`;
     const fields = {
       receiptsJson: { stringValue: regPayload.receiptsJson },
       receiptIds: {
@@ -185,12 +170,12 @@ async function saveReceiptsRegistryToFirestore(allReceipts: PaymentReceipt[]): P
       },
       updatedAt: { stringValue: regPayload.updatedAt },
     };
-    const res = await fetch(url, {
+    const res = await firestoreRestFetch('/system_config/receipts_registry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
     });
-    return res.ok;
+    return Boolean(res && res.ok);
   } catch {
     return false;
   }
@@ -234,39 +219,28 @@ async function saveReceiptToFirestoreSDK(receipt: PaymentReceipt, allReceipts?: 
   if (receipt.membershipExpiresAt) payload.membershipExpiresAt = receipt.membershipExpiresAt;
 
   let savedDoc = false;
-  if (db) {
-    try {
-      const docRef = doc(db, RECEIPTS_COLLECTION, receipt.id);
-      await withFirestoreTimeout(setDoc(docRef, payload, { merge: true }), 1500);
-      savedDoc = true;
-    } catch (err) {
-      handleFirestoreError(err);
-    }
-  }
-
-  if (!savedDoc) {
-    try {
-      const url = `${FIRESTORE_REST_BASE}/${RECEIPTS_COLLECTION}/${encodeURIComponent(receipt.id)}?key=${firebaseConfig.apiKey}`;
-      const fields: Record<string, any> = {};
-      for (const [k, v] of Object.entries(payload)) {
-        if (v === undefined || v === null) continue;
-        if (typeof v === 'number') {
-          fields[k] = { doubleValue: v };
-        } else {
-          fields[k] = { stringValue: String(v) };
-        }
+  try {
+    const fields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(payload)) {
+      if (v === undefined || v === null) continue;
+      if (typeof v === 'number') {
+        fields[k] = { doubleValue: v };
+      } else {
+        fields[k] = { stringValue: String(v) };
       }
-      const res = await fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields }),
-      });
-      savedDoc = res.ok;
-    } catch {}
-  }
+    }
+    const res = await firestoreRestFetch(`/${RECEIPTS_COLLECTION}/${encodeURIComponent(receipt.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    });
+    savedDoc = Boolean(res && res.ok);
+  } catch {}
 
-  const listForReg = allReceipts || memoryReceipts;
-  await saveReceiptsRegistryToFirestore(listForReg);
+  if (!isFirestoreQuotaExhausted()) {
+    const listForReg = allReceipts || memoryReceipts;
+    await saveReceiptsRegistryToFirestore(listForReg);
+  }
   return savedDoc;
 }
 
@@ -645,7 +619,7 @@ export const receiptService = {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-      const syncRes = await fetch(`/api/vault/receipts/sync?t=${Date.now()}`, {
+      const syncRes = await fetch(resolveApiUrl(`/api/vault/receipts/sync?t=${Date.now()}`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -673,7 +647,7 @@ export const receiptService = {
           }
         }
       } else {
-        const getRes = await fetch(`/api/vault/receipts?t=${Date.now()}`, {
+        const getRes = await fetch(resolveApiUrl(`/api/vault/receipts?t=${Date.now()}`), {
           headers: { 'Cache-Control': 'no-cache' },
         });
         if (getRes.ok) {
@@ -690,7 +664,7 @@ export const receiptService = {
     } catch (e) {
       // Fallback to fast GET if POST failed or timed out
       try {
-        const getRes = await fetch(`/api/vault/receipts?t=${Date.now()}`, {
+        const getRes = await fetch(resolveApiUrl(`/api/vault/receipts?t=${Date.now()}`), {
           headers: { 'Cache-Control': 'no-cache' },
         });
         if (getRes.ok) {
@@ -850,7 +824,7 @@ export const receiptService = {
         saveReceiptsToLocalStore(latestAll);
 
         await Promise.allSettled([
-          fetch('/api/vault/receipts', {
+          fetch(resolveApiUrl('/api/vault/receipts'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(receiptToPersist),
@@ -920,7 +894,7 @@ export const receiptService = {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch('/api/vault/receipts', {
+        const res = await fetch(resolveApiUrl('/api/vault/receipts'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newReceipt),
@@ -1013,7 +987,7 @@ export const receiptService = {
 
     // Persist to Server API and Firebase Firestore
     Promise.allSettled([
-      fetch(`/api/vault/receipts/${encodeURIComponent(receiptId)}/status`, {
+      fetch(resolveApiUrl(`/api/vault/receipts/${encodeURIComponent(receiptId)}/status`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1041,10 +1015,14 @@ export const receiptService = {
     );
 
     Promise.allSettled([
-      fetch(`/api/vault/receipts/${encodeURIComponent(receiptId)}`, {
+      fetch(resolveApiUrl(`/api/vault/receipts/${encodeURIComponent(receiptId)}`), {
         method: 'DELETE',
       }),
-      db ? deleteDoc(doc(db, RECEIPTS_COLLECTION, receiptId)) : Promise.resolve(),
+      !isFirestoreQuotaExhausted()
+        ? firestoreRestFetch(`/${RECEIPTS_COLLECTION}/${encodeURIComponent(receiptId)}`, {
+            method: 'DELETE',
+          })
+        : Promise.resolve(null),
       saveReceiptsRegistryToFirestore(filtered),
     ]).catch(() => {});
 

@@ -1,9 +1,8 @@
 {
-  "appId": "com.vault.privateserver",
-  "appName": "Vault Private",
+  "appId": "com.seis6.app",
+  "appName": "Seis6 App",
   "webDir": "dist",
   "server": {
-    "url": "https://private-server66.vercel.app",
     "cleartext": true,
     "androidScheme": "https"
   }

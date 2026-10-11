@@ -51,6 +51,26 @@ export const firestoreDatabaseId: string =
 
 export const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents`;
 
+// Remote API fallback when running inside a standalone Android APK (Capacitor localhost without Vercel)
+const REMOTE_SERVER_FALLBACK = 'https://ais-pre-s5gyisr6yqswynkhardtpz-658789640952.us-east1.run.app';
+
+export function resolveApiUrl(path: string): string {
+  if (!path.startsWith('/')) return path;
+  try {
+    if (typeof window !== 'undefined') {
+      const { protocol, hostname, port } = window.location;
+      const isCapacitorLocal =
+        protocol === 'capacitor:' ||
+        protocol === 'file:' ||
+        (hostname === 'localhost' && (!port || port === '80' || port === '443'));
+      if (isCapacitorLocal) {
+        return `${REMOTE_SERVER_FALLBACK}${path}`;
+      }
+    }
+  } catch {}
+  return path;
+}
+
 // Initialize Firebase SDK connected to the provisioned named Firestore database
 export const firebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(firebaseApp);
@@ -66,7 +86,7 @@ let memoryQuotaCooldownUntil = 0;
 export function isFirestoreQuotaExhausted(): boolean {
   if (Date.now() < memoryQuotaCooldownUntil) return true;
   try {
-    const raw = sessionStorage.getItem(FIRESTORE_QUOTA_COOLDOWN_KEY);
+    const raw = sessionStorage.getItem(FIRESTORE_QUOTA_COOLDOWN_KEY) || localStorage.getItem(FIRESTORE_QUOTA_COOLDOWN_KEY);
     if (raw) {
       const until = Number(raw);
       if (until > Date.now()) {
@@ -79,23 +99,65 @@ export function isFirestoreQuotaExhausted(): boolean {
 }
 
 export function handleFirestoreError(err: any): void {
-  const code = String(err?.code || '');
+  const code = String(err?.code || err?.status || '');
   const msg = String(err?.message || err || '');
   if (
     code.includes('resource-exhausted') ||
+    code === '429' ||
     msg.includes('resource-exhausted') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
     msg.includes('Quota exceeded') ||
+    msg.includes('Quota limit exceeded') ||
     msg.includes('429')
   ) {
-    // Pause Firestore direct calls for 5 minutes on explicit 429 quota exhaustion
-    const until = Date.now() + 5 * 60 * 1000;
+    // Pause Firestore direct calls for 30 minutes on explicit 429 quota exhaustion
+    const until = Date.now() + 30 * 60 * 1000;
     memoryQuotaCooldownUntil = until;
     try {
       sessionStorage.setItem(FIRESTORE_QUOTA_COOLDOWN_KEY, String(until));
+      localStorage.setItem(FIRESTORE_QUOTA_COOLDOWN_KEY, String(until));
     } catch {}
     try {
       disableNetwork(db).catch(() => {});
     } catch {}
+  }
+}
+
+export async function firestoreRestFetch(
+  docPath: string,
+  options: RequestInit = {},
+  timeoutMs = 2500
+): Promise<Response | null> {
+  if (isFirestoreQuotaExhausted()) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const sep = docPath.includes('?') ? '&' : '?';
+    const url = `${FIRESTORE_REST_BASE}${docPath}${firebaseConfig.apiKey ? `${sep}key=${encodeURIComponent(firebaseConfig.apiKey)}` : ''}`;
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.status === 429) {
+      handleFirestoreError({ code: 'resource-exhausted', status: 429 });
+      return null;
+    }
+    if (!res.ok && res.status >= 400) {
+      try {
+        const clone = res.clone();
+        const errText = await clone.text();
+        if (errText.includes('RESOURCE_EXHAUSTED') || errText.includes('Quota exceeded')) {
+          handleFirestoreError({ code: 'resource-exhausted', message: errText });
+          return null;
+        }
+      } catch {}
+    }
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    handleFirestoreError(err);
+    return null;
   }
 }
 
@@ -591,6 +653,7 @@ export const firebaseService = {
 
   // Guardar cuenta de usuario en Firestore mediante REST API (respaldo directo garantizado)
   async saveUserToFirestoreREST(record: RegisteredAccountRecord): Promise<boolean> {
+    if (isFirestoreQuotaExhausted()) return false;
     try {
       const clean = this.sanitizeUserRecordForFirestore(record);
       if (!clean.uid || !clean.email) return false;
@@ -608,15 +671,13 @@ export const firebaseService = {
       }
       fields.updatedAt = { stringValue: new Date().toISOString() };
 
-      const url = `${FIRESTORE_REST_BASE}/users/${encodeURIComponent(clean.uid)}?key=${firebaseConfig.apiKey}`;
-      const res = await fetch(url, {
+      const res = await firestoreRestFetch(`/users/${encodeURIComponent(clean.uid)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }),
       });
-      return res.ok;
-    } catch (e) {
-      console.warn('Firestore REST user write error:', e);
+      return Boolean(res && res.ok);
+    } catch {
       return false;
     }
   },
@@ -640,39 +701,23 @@ export const firebaseService = {
         };
       }
       const serialized = JSON.stringify(compactMap);
-      try {
-        await withFirestoreTimeout(
-          setDoc(
-            doc(db, 'system_config', 'users_registry'),
-            {
-              usersJson: serialized,
-              updatedAt: new Date().toISOString(),
-            },
-            { merge: true }
-          ),
-          1500
-        );
-        return true;
-      } catch {
-        const url = `${FIRESTORE_REST_BASE}/system_config/users_registry?key=${firebaseConfig.apiKey}`;
-        const res = await fetch(url, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fields: {
-              usersJson: { stringValue: serialized },
-              updatedAt: { stringValue: new Date().toISOString() },
-            },
-          }),
-        });
-        return res.ok;
-      }
+      const res = await firestoreRestFetch('/system_config/users_registry', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            usersJson: { stringValue: serialized },
+            updatedAt: { stringValue: new Date().toISOString() },
+          },
+        }),
+      });
+      return Boolean(res && res.ok);
     } catch {
       return false;
     }
   },
 
-  // Guardar una cuenta registrada en la Base de Datos (Firestore Web SDK + Firestore REST + Servidor Central)
+  // Guardar una cuenta registrada en la Base de Datos (Firestore REST + Servidor Central)
   async saveUserAccountToDatabase(record: RegisteredAccountRecord): Promise<boolean> {
     if (!record || (!record.email && !record.profile?.email)) return false;
 
@@ -709,7 +754,7 @@ export const firebaseService = {
 
     // 2. Guardar en servidor central (/api/vault/users -> server_data/users.json + Firestore REST)
     try {
-      const res = await fetch('/api/vault/users', {
+      const res = await fetch(resolveApiUrl('/api/vault/users'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(normalizedRecord),
@@ -719,33 +764,13 @@ export const firebaseService = {
       console.warn('Server /api/vault/users save fallback:', e);
     }
 
-    // 3. Guardar en Firestore mediante Web SDK + users_registry (solo si hay cuota disponible)
-    if (!isFirestoreQuotaExhausted()) {
-      try {
-        const userDocRef = doc(db, 'users', uid);
-        const cleanData = this.sanitizeUserRecordForFirestore(normalizedRecord);
-        await withFirestoreTimeout(
-          setDoc(
-            userDocRef,
-            {
-              ...cleanData,
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          ),
-          1500
-        );
-        saved = true;
-      } catch (sdkErr) {
-        handleFirestoreError(sdkErr);
-        if (!isFirestoreQuotaExhausted()) {
-          const restOk = await this.saveUserToFirestoreREST(normalizedRecord);
-          if (restOk) saved = true;
-        }
-      }
+    // 3. Guardar en Firestore mediante REST (solo si hay cuota disponible y el servidor no lo sincronizó ya)
+    if (!saved && !isFirestoreQuotaExhausted()) {
+      const restOk = await this.saveUserToFirestoreREST(normalizedRecord);
+      if (restOk) saved = true;
       try {
         const raw = localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY);
-        if (raw) {
+        if (raw && !isFirestoreQuotaExhausted()) {
           this.saveUsersRegistryToFirestore(JSON.parse(raw)).catch(() => {});
         }
       } catch {}
@@ -787,7 +812,7 @@ export const firebaseService = {
 
     // 1. Consultar Servidor Central (/api/vault/users)
     try {
-      const res = await fetch('/api/vault/users');
+      const res = await fetch(resolveApiUrl('/api/vault/users'));
       if (res.ok) {
         const json = await res.json();
         if (json && json.accounts && typeof json.accounts === 'object') {
@@ -873,7 +898,7 @@ export const firebaseService = {
 
     // 1. Enviar todas las cuentas locales al servidor central (/api/vault/users/sync)
     try {
-      const res = await fetch('/api/vault/users/sync', {
+      const res = await fetch(resolveApiUrl('/api/vault/users/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accounts: localAccounts }),
@@ -1479,7 +1504,7 @@ export const firebaseService = {
       profile = applyProfileOverride(profile);
     }
 
-    // Non-blocking firestore sync with timeout to prevent loading hangs
+    // Non-blocking firestore read with timeout to prevent loading hangs
     if (!isFirestoreQuotaExhausted()) {
       const firestoreSyncPromise = (async () => {
         try {
@@ -1492,20 +1517,11 @@ export const firebaseService = {
             const merged = mergeAccountProfiles(profile, data, isAdmin);
             Object.assign(profile, merged);
           } else {
-            await setDoc(userDocRef, {
-              uid: fbUser.uid,
-              email: fbUser.email,
-              displayName: profile.displayName,
-              role: isAdmin ? 'admin' : 'vip_member',
-              tier: profile.tier,
-              avatarUrl: profile.avatarUrl,
-              bio: profile.bio ?? '',
-              phone: profile.phone ?? '',
-              customStatus: profile.customStatus ?? '',
-              instagram: profile.instagram ?? '',
-              updatedAt: profile.updatedAt || nowIso,
-              createdAt: serverTimestamp(),
-              lastLoginAt: serverTimestamp(),
+            await this.saveUserToFirestoreREST({
+              email: (fbUser.email || profile.email).toLowerCase().trim(),
+              password: localMatch?.password || 'password123',
+              profile,
+              registeredAt: localMatch?.registeredAt || nowIso,
             });
           }
         } catch (err) {
@@ -1833,69 +1849,31 @@ export const firebaseService = {
     return fields;
   },
 
-  // Direct REST write fallback to Firestore
+  // Direct REST write to Firestore (stateless, never opens SDK Write stream or retry loops)
   async saveToFirestoreREST(item: VaultItem): Promise<boolean> {
+    if (isFirestoreQuotaExhausted() || !item || !item.id) return false;
     try {
-      if (!item || !item.id) return false;
-      const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(item.id)}?key=${firebaseConfig.apiKey}`;
       const fields = this.itemToFirestoreRestFields(item);
-      const res = await fetch(url, {
+      const res = await firestoreRestFetch(`/vault_items/${encodeURIComponent(item.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }),
       });
-      return res.ok;
-    } catch (e) {
-      console.warn('Firestore REST write error:', e);
+      return Boolean(res && res.ok);
+    } catch {
       return false;
     }
   },
 
   // Save or insert Vault Item in Firestore (so all users in any device see it)
   async saveVaultItemToFirestore(item: VaultItem): Promise<boolean> {
-    try {
-      if (!item || !item.id) {
-        console.warn('Cannot save item without ID to Firestore');
-        return false;
-      }
-
-      // 1. Try Web SDK
-      if (!isFirestoreQuotaExhausted()) {
-        try {
-          const itemDocRef = doc(db, 'vault_items', item.id);
-          const cleanData = this.sanitizeItemForFirestore(item);
-          await withFirestoreTimeout(
-            setDoc(
-              itemDocRef,
-              {
-                ...cleanData,
-                updatedAt: serverTimestamp(),
-              },
-              { merge: true }
-            ),
-            1200
-          );
-          return true;
-        } catch (sdkErr: any) {
-          handleFirestoreError(sdkErr);
-        }
-      }
-
-      // 2. Direct REST write fallback only if Web SDK failed
-      const restSuccess = await this.saveToFirestoreREST(item);
-      if (restSuccess) {
-        return true;
-      }
-      return false;
-    } catch (err: any) {
-      console.error('[Firestore Error] Could not save item to Firestore:', err?.message || err);
-      return false;
-    }
+    if (!item || !item.id || isFirestoreQuotaExhausted()) return false;
+    return await this.saveToFirestoreREST(item);
   },
 
   // Sync items to Firestore safely without overwhelming write streams
   async syncAllItemsToFirestore(items: VaultItem[]): Promise<number> {
-    if (!Array.isArray(items) || items.length === 0) return 0;
+    if (!Array.isArray(items) || items.length === 0 || isFirestoreQuotaExhausted()) return 0;
     let successCount = 0;
     const validItems = items.filter(
       (item) => item && item.id && !item.id.startsWith('res_00') && !item.id.startsWith('test-') && item.id !== 'vault-res-test-rest' && item.id !== 'vault-res-direct-1787703256063'
@@ -1903,34 +1881,24 @@ export const firebaseService = {
 
     // Process sequentially in batches to prevent write stream exhaustion
     for (const item of validItems) {
+      if (isFirestoreQuotaExhausted()) break;
       try {
         const ok = await this.saveVaultItemToFirestore(item);
         if (ok) successCount++;
-      } catch (e) {
-        console.warn('Sync item error:', e);
-      }
+      } catch {}
     }
     return successCount;
   },
 
   // Delete Vault Item from Firestore
   async deleteVaultItemFromFirestore(itemId: string): Promise<boolean> {
+    if (!itemId || isFirestoreQuotaExhausted()) return false;
     try {
-      // 1. Web SDK delete
-      try {
-        const itemDocRef = doc(db, 'vault_items', itemId);
-        await deleteDoc(itemDocRef);
-      } catch (e) {}
-
-      // 2. REST delete
-      try {
-        const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(itemId)}?key=${firebaseConfig.apiKey}`;
-        await fetch(url, { method: 'DELETE' });
-      } catch (e) {}
-
-      return true;
-    } catch (err) {
-      console.warn('Could not delete item from Firestore:', err);
+      const res = await firestoreRestFetch(`/vault_items/${encodeURIComponent(itemId)}`, {
+        method: 'DELETE',
+      });
+      return Boolean(res && res.ok);
+    } catch {
       return false;
     }
   },
@@ -1997,17 +1965,16 @@ export const firebaseService = {
     }
   },
 
-  // Update comments in Firestore
+  // Update comments in Firestore via stateless REST
   async updateItemComments(itemId: string, comments: any[]): Promise<void> {
+    if (!itemId || isFirestoreQuotaExhausted()) return;
     try {
-      const docRef = doc(db, 'vault_items', itemId);
-      await setDoc(docRef, { comments, updatedAt: serverTimestamp() }, { merge: true });
-    } catch (e) {
-      console.warn('Error updating comments in Firestore Web SDK, trying REST:', e);
-      try {
-        const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=comments&key=${firebaseConfig.apiKey}`;
-        const values = (comments || []).map((c) => ({ stringValue: typeof c === 'object' ? JSON.stringify(c) : String(c) }));
-        await fetch(url, {
+      const values = (comments || []).map((c) => ({
+        stringValue: typeof c === 'object' ? JSON.stringify(c) : String(c),
+      }));
+      await firestoreRestFetch(
+        `/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=comments`,
+        {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2015,9 +1982,9 @@ export const firebaseService = {
               comments: { arrayValue: { values } },
             },
           }),
-        });
-      } catch (restErr) {}
-    }
+        }
+      );
+    } catch {}
   },
 
   // Fetch Vault Items from Firestore with REST fallback
@@ -2108,6 +2075,10 @@ export const firebaseService = {
             if (fields.likedBy?.arrayValue?.values) {
               likedBy = fields.likedBy.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
             }
+            let listIds: string[] | undefined = undefined;
+            if (fields.listIds?.arrayValue?.values) {
+              listIds = fields.listIds.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
+            }
             return {
               id,
               title: fields.title?.stringValue || '',
@@ -2123,6 +2094,7 @@ export const firebaseService = {
               likesCount: Number(fields.likesCount?.integerValue || 0),
               likedBy,
               comments,
+              listIds,
               isLockedForTier: Boolean(fields.isLockedForTier?.booleanValue),
               version: fields.version?.stringValue || 'v1.0',
               author,
@@ -2138,33 +2110,34 @@ export const firebaseService = {
     return null;
   },
 
-  // Update likes in Firestore
+  // Update likes in Firestore via stateless REST
   async updateItemLikes(itemId: string, likesCount: number, likedBy: string[]): Promise<void> {
+    if (!itemId || isFirestoreQuotaExhausted()) return;
     try {
-      const docRef = doc(db, 'vault_items', itemId);
-      await setDoc(docRef, { likesCount, likedBy, updatedAt: serverTimestamp() }, { merge: true });
-    } catch (e) {
-      console.warn('Error updating likes in Firestore Web SDK, trying REST:', e);
-      try {
-        const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=likesCount&updateMask.fieldPaths=likedBy&key=${firebaseConfig.apiKey}`;
-        await fetch(url, {
+      await firestoreRestFetch(
+        `/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=likesCount&updateMask.fieldPaths=likedBy`,
+        {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fields: {
               likesCount: { integerValue: String(Math.round(likesCount)) },
-              likedBy: { arrayValue: { values: (likedBy || []).map((u) => ({ stringValue: String(u) })) } },
+              likedBy: {
+                arrayValue: {
+                  values: (likedBy || []).map((u) => ({ stringValue: String(u) })),
+                },
+              },
             },
           }),
-        });
-      } catch (restErr) {}
-    }
+        }
+      );
+    } catch {}
   },
 
-  // Save or update Vault List in Firestore
-  async saveVaultListToFirestore(list: VaultList): Promise<boolean> {
+  // Save or update Vault List in Firestore (both vault_lists/{id} and system_config/lists_registry) via stateless REST
+  async saveVaultListToFirestore(list: VaultList, allLists?: VaultList[], deletedIds?: string[]): Promise<boolean> {
+    if (!list || !list.id || isFirestoreQuotaExhausted()) return false;
     try {
-      if (!list || !list.id) return false;
       const cleanList = {
         id: String(list.id),
         name: String(list.name || '').trim(),
@@ -2174,19 +2147,8 @@ export const firebaseService = {
         itemIds: Array.isArray(list.itemIds) ? list.itemIds.filter(Boolean) : [],
         createdAt: list.createdAt || new Date().toISOString().split('T')[0],
         createdBy: list.createdBy || 'admin_master_astro',
-        updatedAt: serverTimestamp(),
       };
 
-      try {
-        const listDocRef = doc(db, 'vault_lists', list.id);
-        await setDoc(listDocRef, cleanList, { merge: true });
-        return true;
-      } catch (sdkErr) {
-        console.warn('Web SDK saveVaultList failed, trying REST:', sdkErr);
-      }
-
-      // REST fallback
-      const url = `${FIRESTORE_REST_BASE}/vault_lists/${encodeURIComponent(list.id)}?key=${firebaseConfig.apiKey}`;
       const fields: Record<string, any> = {
         id: { stringValue: String(cleanList.id) },
         name: { stringValue: String(cleanList.name) },
@@ -2202,45 +2164,150 @@ export const firebaseService = {
         },
       };
 
-      const res = await fetch(url, {
+      const res = await firestoreRestFetch(`/vault_lists/${encodeURIComponent(list.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }),
       });
-      return res.ok;
-    } catch (err) {
-      console.warn('Error saving list to Firestore:', err);
+      const saved = Boolean(res && res.ok);
+
+      // Also persist the consolidated lists_registry in system_config if quota allows
+      if (!isFirestoreQuotaExhausted()) {
+        try {
+          let listsToStore = allLists;
+          if (!listsToStore) {
+            const cached = localStorage.getItem('vault_lists_cache');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed)) listsToStore = parsed;
+            }
+          }
+          let delIdsToStore = deletedIds;
+          if (!delIdsToStore) {
+            const rawDel = localStorage.getItem('vault_deleted_list_ids');
+            if (rawDel) {
+              const parsedDel = JSON.parse(rawDel);
+              if (Array.isArray(parsedDel)) delIdsToStore = parsedDel.filter((id: string) => id !== list.id);
+            }
+          }
+          if (listsToStore) {
+            const exists = listsToStore.some((l) => l.id === list.id);
+            const mergedLists = exists
+              ? listsToStore.map((l) => (l.id === list.id ? cleanList : l))
+              : [...listsToStore, cleanList];
+            await firestoreRestFetch('/system_config/lists_registry', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: {
+                  listsJson: { stringValue: JSON.stringify(mergedLists) },
+                  deletedIds: {
+                    arrayValue: {
+                      values: (delIdsToStore || []).map((id) => ({ stringValue: String(id) })),
+                    },
+                  },
+                  updatedAt: { stringValue: new Date().toISOString() },
+                },
+              }),
+            });
+          }
+        } catch {}
+      }
+
+      return saved;
+    } catch {
       return false;
     }
   },
 
-  // Delete Vault List from Firestore
-  async deleteVaultListFromFirestore(listId: string): Promise<boolean> {
+  // Delete Vault List from Firestore (and record deletion in system_config/lists_registry) via stateless REST
+  async deleteVaultListFromFirestore(listId: string, remainingLists?: VaultList[], deletedIds?: string[]): Promise<boolean> {
+    if (!listId || isFirestoreQuotaExhausted()) return false;
     try {
-      try {
-        const docRef = doc(db, 'vault_lists', listId);
-        await deleteDoc(docRef);
-      } catch (e) {}
+      await firestoreRestFetch(`/vault_lists/${encodeURIComponent(listId)}`, {
+        method: 'DELETE',
+      });
 
-      try {
-        const url = `${FIRESTORE_REST_BASE}/vault_lists/${encodeURIComponent(listId)}?key=${firebaseConfig.apiKey}`;
-        await fetch(url, { method: 'DELETE' });
-      } catch (e) {}
+      if (!isFirestoreQuotaExhausted()) {
+        try {
+          let listsToStore = remainingLists;
+          if (!listsToStore) {
+            const cached = localStorage.getItem('vault_lists_cache');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed)) listsToStore = parsed.filter((l: any) => l && l.id !== listId);
+            }
+          }
+          let delIdsToStore = deletedIds;
+          if (!delIdsToStore) {
+            const rawDel = localStorage.getItem('vault_deleted_list_ids');
+            const parsedDel = rawDel ? JSON.parse(rawDel) : [];
+            const setDel = new Set<string>(Array.isArray(parsedDel) ? parsedDel : []);
+            setDel.add(listId);
+            delIdsToStore = Array.from(setDel);
+          }
+          await firestoreRestFetch('/system_config/lists_registry', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                listsJson: { stringValue: JSON.stringify(listsToStore || []) },
+                deletedIds: {
+                  arrayValue: {
+                    values: (delIdsToStore || []).map((id) => ({ stringValue: String(id) })),
+                  },
+                },
+                updatedAt: { stringValue: new Date().toISOString() },
+              },
+            }),
+          });
+        } catch {}
+      }
 
       return true;
-    } catch (err) {
-      console.warn('Error deleting list from Firestore:', err);
+    } catch {
       return false;
     }
   },
 
-  // Real-time listener for Firestore Vault Lists
-  onVaultListsSnapshot(callback: (lists: VaultList[]) => void) {
+  // Real-time listener for Firestore Vault Lists + Deleted Lists Registry
+  onVaultListsSnapshot(callback: (lists: VaultList[], deletedIds?: string[]) => void) {
     if (isFirestoreQuotaExhausted()) return () => {};
     try {
       const colRef = collection(db, 'vault_lists');
-      let unsub: (() => void) | null = null;
-      unsub = onSnapshot(
+      const regRef = doc(db, 'system_config', 'lists_registry');
+      let unsubCol: (() => void) | null = null;
+      let unsubReg: (() => void) | null = null;
+
+      unsubReg = onSnapshot(
+        regRef,
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            const deletedIds: string[] = Array.isArray(data.deletedIds) ? data.deletedIds.map(String) : [];
+            if (deletedIds.length > 0) {
+              try {
+                const raw = localStorage.getItem('vault_deleted_list_ids');
+                const set = new Set<string>(raw ? JSON.parse(raw) : []);
+                deletedIds.forEach((id) => set.add(id));
+                localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(set)));
+              } catch {}
+            }
+            if (data.listsJson) {
+              try {
+                const parsed = JSON.parse(data.listsJson);
+                if (Array.isArray(parsed)) {
+                  const delSet = new Set(deletedIds);
+                  callback(parsed.filter((l: any) => l && l.id && !delSet.has(l.id)), deletedIds);
+                }
+              } catch {}
+            }
+          }
+        },
+        () => {}
+      );
+
+      unsubCol = onSnapshot(
         colRef,
         (snapshot) => {
           if (!snapshot.empty) {
@@ -2265,6 +2332,154 @@ export const firebaseService = {
         },
         (error) => {
           handleFirestoreError(error);
+          if (unsubCol) {
+            try { unsubCol(); } catch {}
+          }
+        }
+      );
+      return () => {
+        if (unsubCol) {
+          try { unsubCol(); } catch {}
+        }
+        if (unsubReg) {
+          try { unsubReg(); } catch {}
+        }
+      };
+    } catch (err) {
+      handleFirestoreError(err);
+      return () => {};
+    }
+  },
+
+  // Fetch lists from Firestore with REST fallback and lists_registry support
+  async fetchVaultLists(): Promise<VaultList[] | null> {
+    if (isFirestoreQuotaExhausted()) return null;
+    const listMap = new Map<string, VaultList>();
+    const deletedSet = new Set<string>();
+    try {
+      const rawDel = localStorage.getItem('vault_deleted_list_ids');
+      if (rawDel) {
+        const parsedDel = JSON.parse(rawDel);
+        if (Array.isArray(parsedDel)) parsedDel.forEach((id: string) => deletedSet.add(String(id)));
+      }
+    } catch {}
+
+    // 1. Check system_config/lists_registry first for deletedIds + consolidated lists
+    try {
+      const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'lists_registry')), 1200);
+      if (regSnap.exists()) {
+        const regData = regSnap.data() as any;
+        if (Array.isArray(regData.deletedIds)) {
+          regData.deletedIds.forEach((id: string) => deletedSet.add(String(id)));
+          try {
+            localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(deletedSet)));
+          } catch {}
+        }
+        if (regData.listsJson) {
+          try {
+            const parsed = JSON.parse(regData.listsJson);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((l: any) => {
+                if (l && l.id && !deletedSet.has(l.id)) {
+                  listMap.set(l.id, l);
+                }
+              });
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
+    // 2. Check vault_lists collection
+    try {
+      const colRef = collection(db, 'vault_lists');
+      const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
+      if (!snap.empty) {
+        snap.forEach((docSnap) => {
+          if (deletedSet.has(docSnap.id)) return;
+          const data = docSnap.data();
+          listMap.set(docSnap.id, {
+            id: docSnap.id,
+            name: data.name || 'Lista',
+            description: data.description || '',
+            icon: data.icon || 'folder',
+            color: data.color || '#0066FF',
+            itemIds: Array.isArray(data.itemIds) ? data.itemIds : [],
+            createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+            createdBy: data.createdBy || 'admin_master_astro',
+          });
+        });
+      }
+    } catch (e) {
+      handleFirestoreError(e);
+    }
+
+    if (listMap.size > 0) {
+      return Array.from(listMap.values());
+    }
+
+    if (isFirestoreQuotaExhausted()) return null;
+
+    try {
+      const url = `${FIRESTORE_REST_BASE}/vault_lists?key=${firebaseConfig.apiKey}&pageSize=100`;
+      const res = await fetch(url);
+      if (res.status === 429) {
+        handleFirestoreError({ code: 'resource-exhausted' });
+        return null;
+      }
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data && Array.isArray(data.documents) && data.documents.length > 0) {
+          const lists: VaultList[] = data.documents
+            .map((docSnap: any) => {
+              const fields = docSnap.fields || {};
+              const id = docSnap.name.split('/').pop() || '';
+              let itemIds: string[] = [];
+              if (fields.itemIds?.arrayValue?.values) {
+                itemIds = fields.itemIds.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
+              }
+              return {
+                id,
+                name: fields.name?.stringValue || 'Lista',
+                description: fields.description?.stringValue || '',
+                icon: fields.icon?.stringValue || 'folder',
+                color: fields.color?.stringValue || '#0066FF',
+                itemIds,
+                createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
+                createdBy: fields.createdBy?.stringValue || 'admin_master_astro',
+              };
+            })
+            .filter((l: VaultList) => l.id && !deletedSet.has(l.id));
+          return lists;
+        }
+      }
+    } catch (restErr) {
+      console.warn('Firestore REST lists read error:', restErr);
+    }
+
+    return null;
+  },
+
+  // Real-time listener for Maintenance Mode in Firestore
+  onMaintenanceSnapshot(callback: (maint: { isMaintenance: boolean; message: string; updatedAt?: string }) => void) {
+    if (isFirestoreQuotaExhausted()) return () => {};
+    try {
+      const docRef = doc(db, 'system_config', 'maintenance');
+      let unsub: (() => void) | null = null;
+      unsub = onSnapshot(
+        docRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            callback({
+              isMaintenance: Boolean(data.isMaintenance),
+              message: String(data.message || ''),
+              updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
+            });
+          }
+        },
+        (err) => {
+          handleFirestoreError(err);
           if (unsub) {
             try { unsub(); } catch {}
           }
@@ -2281,157 +2496,35 @@ export const firebaseService = {
     }
   },
 
-  // Fetch lists from Firestore with REST fallback
-  async fetchVaultLists(): Promise<VaultList[] | null> {
-    if (isFirestoreQuotaExhausted()) return null;
-    try {
-      const colRef = collection(db, 'vault_lists');
-      const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
-      if (!snap.empty) {
-        const lists: VaultList[] = [];
-        snap.forEach((docSnap) => {
-          const data = docSnap.data();
-          lists.push({
-            id: docSnap.id,
-            name: data.name || 'Lista',
-            description: data.description || '',
-            icon: data.icon || 'folder',
-            color: data.color || '#0066FF',
-            itemIds: Array.isArray(data.itemIds) ? data.itemIds : [],
-            createdAt: data.createdAt || new Date().toISOString().split('T')[0],
-            createdBy: data.createdBy || 'admin_master_astro',
-          });
-        });
-        return lists;
-      }
-    } catch (e) {
-      handleFirestoreError(e);
-    }
-
-    if (isFirestoreQuotaExhausted()) return null;
-
-    try {
-      const url = `${FIRESTORE_REST_BASE}/vault_lists?key=${firebaseConfig.apiKey}&pageSize=100`;
-      const res = await fetch(url);
-      if (res.status === 429) {
-        handleFirestoreError({ code: 'resource-exhausted' });
-        return null;
-      }
-      if (res.ok) {
-        const data: any = await res.json();
-        if (data && Array.isArray(data.documents) && data.documents.length > 0) {
-          const lists: VaultList[] = data.documents.map((docSnap: any) => {
-            const fields = docSnap.fields || {};
-            const id = docSnap.name.split('/').pop() || '';
-            let itemIds: string[] = [];
-            if (fields.itemIds?.arrayValue?.values) {
-              itemIds = fields.itemIds.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
-            }
-            return {
-              id,
-              name: fields.name?.stringValue || 'Lista',
-              description: fields.description?.stringValue || '',
-              icon: fields.icon?.stringValue || 'folder',
-              color: fields.color?.stringValue || '#0066FF',
-              itemIds,
-              createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
-              createdBy: fields.createdBy?.stringValue || 'admin_master_astro',
-            };
-          });
-          return lists;
-        }
-      }
-    } catch (restErr) {
-      console.warn('Firestore REST lists read error:', restErr);
-    }
-
-    return null;
-  },
-
-  // Real-time listener for Maintenance Mode in Firestore
-  onMaintenanceSnapshot(callback: (maint: { isMaintenance: boolean; message: string; updatedAt?: string }) => void) {
-    try {
-      const docRef = doc(db, 'system_config', 'maintenance');
-      return onSnapshot(
-        docRef,
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            callback({
-              isMaintenance: Boolean(data.isMaintenance),
-              message: String(data.message || ''),
-              updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
-            });
-          }
-        },
-        (err) => {
-          console.warn('Firestore maintenance onSnapshot warning:', err);
-        }
-      );
-    } catch (err) {
-      console.warn('Could not attach Firestore maintenance listener:', err);
-      return () => {};
-    }
-  },
-
-  // Save Maintenance Mode state to Firestore (Web SDK + REST fallback)
+  // Save Maintenance Mode state to Firestore via stateless REST
   async saveMaintenance(isMaintenance: boolean, message: string): Promise<boolean> {
+    if (isFirestoreQuotaExhausted()) return false;
     const cleanMessage = String(message || '').trim();
-    const payload = {
-      isMaintenance: Boolean(isMaintenance),
-      message: cleanMessage,
-      updatedAt: new Date().toISOString(),
-    };
+    const updatedAt = new Date().toISOString();
 
-    // 1. Try Firestore Web SDK
     try {
-      const docRef = doc(db, 'system_config', 'maintenance');
-      await setDoc(docRef, { ...payload, serverTimestamp: serverTimestamp() }, { merge: true });
-      return true;
-    } catch (sdkErr) {
-      console.warn('Web SDK saveMaintenance failed, trying REST:', sdkErr);
-    }
-
-    // 2. Try Firestore REST API fallback
-    try {
-      const url = `${FIRESTORE_REST_BASE}/system_config/maintenance?key=${firebaseConfig.apiKey}`;
       const fields = {
         isMaintenance: { booleanValue: Boolean(isMaintenance) },
         message: { stringValue: cleanMessage },
-        updatedAt: { stringValue: payload.updatedAt },
+        updatedAt: { stringValue: updatedAt },
       };
-      const res = await fetch(url, {
+      const res = await firestoreRestFetch('/system_config/maintenance', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }),
       });
-      return res.ok;
-    } catch (restErr) {
-      console.warn('Firestore REST saveMaintenance error:', restErr);
+      return Boolean(res && res.ok);
+    } catch {
       return false;
     }
   },
 
-  // Fetch Maintenance Mode state from Firestore (SDK + REST fallback)
+  // Fetch Maintenance Mode state from Firestore
   async fetchMaintenance(): Promise<{ isMaintenance: boolean; message: string } | null> {
+    if (isFirestoreQuotaExhausted()) return null;
     try {
-      const docRef = doc(db, 'system_config', 'maintenance');
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        return {
-          isMaintenance: Boolean(data.isMaintenance),
-          message: String(data.message || ''),
-        };
-      }
-    } catch (e) {
-      console.warn('Web SDK fetchMaintenance failed, trying REST:', e);
-    }
-
-    try {
-      const url = `${FIRESTORE_REST_BASE}/system_config/maintenance?key=${firebaseConfig.apiKey}`;
-      const res = await fetch(url);
-      if (res.ok) {
+      const res = await firestoreRestFetch('/system_config/maintenance');
+      if (res && res.ok) {
         const data: any = await res.json();
         if (data && data.fields) {
           return {
@@ -2440,9 +2533,7 @@ export const firebaseService = {
           };
         }
       }
-    } catch (restErr) {
-      console.warn('Firestore REST fetchMaintenance error:', restErr);
-    }
+    } catch {}
 
     return null;
   },

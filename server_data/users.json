@@ -2432,5 +2432,50 @@
       "customStatus": "",
       "updatedAt": "2026-10-11T01:52:44.176Z"
     }
+  },
+  "ronnicabral123@gmail.com": {
+    "email": "ronnicabral123@gmail.com",
+    "password": "maycer12",
+    "registeredAt": "2026-10-11T02:44:37.947Z",
+    "profile": {
+      "uid": "usr_mv37zk8uadwzx0db133d4",
+      "email": "ronnicabral123@gmail.com",
+      "displayName": "Maycer",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv37zk8uadwzx0db133d4",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-11"
+    }
+  },
+  "angelotacas2@gmail.com": {
+    "email": "angelotacas2@gmail.com",
+    "password": "08150815tacas",
+    "registeredAt": "2026-10-11T02:51:22.697Z",
+    "profile": {
+      "uid": "usr_mv388831anx4ab34fd5c4",
+      "email": "angelotacas2@gmail.com",
+      "displayName": "GABRIEL FF1",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv388831anx4ab34fd5c4",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-11"
+    }
+  },
+  "alvaradolionel842@gmail.com": {
+    "email": "alvaradolionel842@gmail.com",
+    "password": "kotarox",
+    "registeredAt": "2026-10-11T03:04:35.814Z",
+    "profile": {
+      "uid": "usr_mv38p8fdfd4bz5b814d16",
+      "email": "alvaradolionel842@gmail.com",
+      "displayName": "Lio",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv38p8fdfd4bz5b814d16",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-11"
+    }
   }
 }

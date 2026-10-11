@@ -16,7 +16,7 @@ import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { AdminMaintenanceModal } from './components/AdminMaintenanceModal';
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { firebaseService } from './services/firebaseService';
+import { firebaseService, resolveApiUrl } from './services/firebaseService';
 import { supabaseService, isSupabaseConfigured } from './services/supabaseClient';
 import { 
   FolderClosed, 
@@ -161,9 +161,17 @@ function AppContent() {
   }, []);
 
   // Helper to merge lists with strict deleted lists exclusion
-  const mergeVaultLists = useCallback((incoming: VaultList[]) => {
+  const mergeVaultLists = useCallback((incoming: VaultList[], incomingDeletedIds?: string[]) => {
     if (!Array.isArray(incoming)) return;
     const deletedIds = getDeletedListIds();
+    if (Array.isArray(incomingDeletedIds)) {
+      incomingDeletedIds.forEach((id) => {
+        if (id) deletedIds.add(String(id));
+      });
+      try {
+        localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(deletedIds)));
+      } catch (e) {}
+    }
     const activeIncoming = incoming.filter((l) => l && l.id && !deletedIds.has(l.id));
 
     setLists((prev) => {
@@ -221,9 +229,9 @@ function AppContent() {
     });
 
     // Real-time Firestore lists listener
-    const unsubFirestoreLists = firebaseService.onVaultListsSnapshot((liveLists) => {
-      if (liveLists && Array.isArray(liveLists) && liveLists.length > 0) {
-        mergeVaultLists(liveLists);
+    const unsubFirestoreLists = firebaseService.onVaultListsSnapshot((liveLists, deletedIds) => {
+      if (liveLists && Array.isArray(liveLists)) {
+        mergeVaultLists(liveLists, deletedIds);
       }
     });
 
@@ -269,7 +277,7 @@ function AppContent() {
 
         // 0. Fetch permanently deleted list IDs from server so deleted lists NEVER resurrect on reload
         try {
-          const resDeleted = await fetch('/api/vault/deleted-lists');
+          const resDeleted = await fetch(resolveApiUrl('/api/vault/deleted-lists'));
           if (resDeleted.ok) {
             const jsonDel = await resDeleted.json();
             if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
@@ -298,22 +306,26 @@ function AppContent() {
         }
 
         // 1. Fetch Items from Central Express Server API
-        const resItems = await fetch('/api/vault/items');
-        if (resItems.ok) {
-          const json = await resItems.json();
-          if (json.items && Array.isArray(json.items) && json.items.length > 0) {
-            mergeVaultItems(json.items);
+        try {
+          const resItems = await fetch(resolveApiUrl('/api/vault/items'));
+          if (resItems.ok) {
+            const json = await resItems.json();
+            if (json.items && Array.isArray(json.items) && json.items.length > 0) {
+              mergeVaultItems(json.items);
+            }
           }
-        }
+        } catch {}
 
         // 2. Fetch Lists from Central Express Server API
-        const resLists = await fetch('/api/vault/lists');
-        if (resLists.ok) {
-          const jsonLists = await resLists.json();
-          if (jsonLists.lists && Array.isArray(jsonLists.lists) && jsonLists.lists.length > 0) {
-            mergeVaultLists(jsonLists.lists);
+        try {
+          const resLists = await fetch(resolveApiUrl('/api/vault/lists'));
+          if (resLists.ok) {
+            const jsonLists = await resLists.json();
+            if (jsonLists.lists && Array.isArray(jsonLists.lists) && jsonLists.lists.length > 0) {
+              mergeVaultLists(jsonLists.lists);
+            }
           }
-        }
+        } catch {}
 
         // 3. Fetch Items from Firestore
         const firestoreItems = await firebaseService.fetchVaultItems();
@@ -353,7 +365,7 @@ function AppContent() {
 
         // Sync deleted lists first
         try {
-          const resDel = await fetch('/api/vault/deleted-lists');
+          const resDel = await fetch(resolveApiUrl('/api/vault/deleted-lists'));
           if (resDel.ok) {
             const jsonDel = await resDel.json();
             if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
@@ -365,12 +377,12 @@ function AppContent() {
           }
         } catch (e) {}
 
-        const resItems = await fetch('/api/vault/items');
+        const resItems = await fetch(resolveApiUrl('/api/vault/items'));
         if (resItems.ok) {
           const json = await resItems.json();
           if (json.items && Array.isArray(json.items)) mergeVaultItems(json.items);
         }
-        const resLists = await fetch('/api/vault/lists');
+        const resLists = await fetch(resolveApiUrl('/api/vault/lists'));
         if (resLists.ok) {
           const jsonLists = await resLists.json();
           if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
@@ -564,7 +576,7 @@ function AppContent() {
 
     // 1. Persist to Central Server API
     try {
-      const res = await fetch('/api/vault/upload', {
+      const res = await fetch(resolveApiUrl('/api/vault/upload'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItem),
@@ -613,7 +625,7 @@ function AppContent() {
           );
 
           try {
-            await fetch('/api/vault/lists', {
+            await fetch(resolveApiUrl('/api/vault/lists'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(updatedList),
@@ -658,7 +670,7 @@ function AppContent() {
 
     // 1. Delete on Central Server
     try {
-      await fetch(`/api/vault/items/${itemId}`, { method: 'DELETE' });
+      await fetch(resolveApiUrl(`/api/vault/items/${itemId}`), { method: 'DELETE' });
     } catch (e) {}
 
     // 2. Delete on Firestore
@@ -702,7 +714,7 @@ function AppContent() {
 
     // 1. Server API
     try {
-      await fetch('/api/vault/lists', {
+      await fetch(resolveApiUrl('/api/vault/lists'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fullList),
@@ -740,7 +752,7 @@ function AppContent() {
 
     // 3. Server API
     try {
-      await fetch(`/api/vault/lists/${encodeURIComponent(listId)}`, { method: 'DELETE' });
+      await fetch(resolveApiUrl(`/api/vault/lists/${encodeURIComponent(listId)}`), { method: 'DELETE' });
     } catch (e) {
       console.warn('Error deleting list from server:', e);
     }
@@ -774,7 +786,7 @@ function AppContent() {
 
     if (updatedList) {
       try {
-        await fetch(`/api/vault/lists/${listId}/toggle-item`, {
+        await fetch(resolveApiUrl(`/api/vault/lists/${listId}/toggle-item`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ itemId }),
