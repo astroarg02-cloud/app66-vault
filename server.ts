@@ -23,6 +23,19 @@ const RECEIPTS_FILE = path.join(DATA_DIR, 'receipts.json');
 const DELETED_RECEIPTS_FILE = path.join(DATA_DIR, 'deleted_receipts.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ADMIN_SECURITY_KEY = '360';
+const FIRESTORE_DB_ID = (rawFirebaseConfig as any).firestoreDatabaseId || '(default)';
+const FIRESTORE_DOCS_BASE = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/${encodeURIComponent(FIRESTORE_DB_ID)}/documents`;
+
+// Allow cross-origin requests from deployed clients (Vercel / APK / Shared URL)
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
 
 let serverFirestoreQuotaCooldownUntil = 0;
 function isServerFirestoreQuotaExhausted(): boolean {
@@ -30,7 +43,7 @@ function isServerFirestoreQuotaExhausted(): boolean {
 }
 function checkServerFirestoreResponse(res: Response): void {
   if (res.status === 429) {
-    serverFirestoreQuotaCooldownUntil = Date.now() + 15 * 60 * 1000;
+    serverFirestoreQuotaCooldownUntil = Date.now() + 60 * 1000;
   }
 }
 
@@ -161,7 +174,7 @@ function writeMaintenanceState(state: MaintenanceState): void {
 // Sync maintenance state with Firestore REST
 async function saveMaintenanceToFirestoreREST(state: MaintenanceState): Promise<boolean> {
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
     const fields = {
       isMaintenance: { booleanValue: Boolean(state.isMaintenance) },
       message: { stringValue: String(state.message || '') },
@@ -181,7 +194,7 @@ async function saveMaintenanceToFirestoreREST(state: MaintenanceState): Promise<
 
 async function fetchMaintenanceFromFirestoreREST(): Promise<MaintenanceState | null> {
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
     const res = await fetch(url);
     if (!res.ok) return null;
     const data: any = await res.json();
@@ -281,7 +294,7 @@ function listToFirestoreFields(list: any): Record<string, any> {
 async function saveListToFirestoreREST(list: any): Promise<boolean> {
   try {
     if (!list || !list.id) return false;
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(list.id)}?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/vault_lists/${encodeURIComponent(list.id)}?key=${rawFirebaseConfig.apiKey}`;
     const fields = listToFirestoreFields(list);
     const response = await fetch(url, {
       method: 'PATCH',
@@ -299,7 +312,7 @@ async function saveListToFirestoreREST(list: any): Promise<boolean> {
 async function deleteListFromFirestoreREST(listId: string): Promise<boolean> {
   try {
     if (!listId) return false;
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(listId)}?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/vault_lists/${encodeURIComponent(listId)}?key=${rawFirebaseConfig.apiKey}`;
     const response = await fetch(url, { method: 'DELETE' });
     return response.ok;
   } catch (err) {
@@ -311,7 +324,7 @@ async function deleteListFromFirestoreREST(listId: string): Promise<boolean> {
 // Fetch all lists from Firestore REST
 async function fetchAllListsFromFirestoreREST(): Promise<any[]> {
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_lists?key=${rawFirebaseConfig.apiKey}&pageSize=100`;
+    const url = `${FIRESTORE_DOCS_BASE}/vault_lists?key=${rawFirebaseConfig.apiKey}&pageSize=100`;
     const res = await fetch(url);
     if (!res.ok) return [];
     const data: any = await res.json();
@@ -431,7 +444,7 @@ function itemToFirestoreFields(item: any): Record<string, any> {
 async function saveToFirestoreREST(item: any): Promise<boolean> {
   try {
     if (!item || !item.id) return false;
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(item.id)}?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/vault_items/${encodeURIComponent(item.id)}?key=${rawFirebaseConfig.apiKey}`;
     const fields = itemToFirestoreFields(item);
     
     const response = await fetch(url, {
@@ -458,7 +471,7 @@ async function saveToFirestoreREST(item: any): Promise<boolean> {
 async function deleteFromFirestoreREST(itemId: string): Promise<boolean> {
   try {
     if (!itemId) return false;
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(itemId)}?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/vault_items/${encodeURIComponent(itemId)}?key=${rawFirebaseConfig.apiKey}`;
     const response = await fetch(url, { method: 'DELETE' });
     return response.ok;
   } catch (err) {
@@ -470,7 +483,7 @@ async function deleteFromFirestoreREST(itemId: string): Promise<boolean> {
 // Fetch all items from Firestore REST API
 async function fetchAllFromFirestoreREST(): Promise<any[]> {
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/vault_items?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
+    const url = `${FIRESTORE_DOCS_BASE}/vault_items?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
     const res = await fetch(url);
     if (!res.ok) return [];
     const data: any = await res.json();
@@ -1269,14 +1282,146 @@ function receiptToFirestoreFields(rec: any): Record<string, any> {
   return fields;
 }
 
-async function saveReceiptToFirestoreREST(rec: any): Promise<boolean> {
+function parseFirestoreReceiptDoc(docSnap: any, deletedSet: Set<string>): Record<string, any> | null {
+  if (!docSnap || !docSnap.fields) return null;
+  const fields = docSnap.fields;
+  const docId = docSnap.name ? docSnap.name.split('/').pop() || '' : '';
+  const id = fields.id?.stringValue || docId;
+  if (!id || deletedSet.has(id) || String(id).startsWith('rec-demo')) return null;
+
+  const amountVal =
+    fields.amount?.doubleValue !== undefined
+      ? Number(fields.amount.doubleValue)
+      : fields.amount?.integerValue !== undefined
+      ? Number(fields.amount.integerValue)
+      : 1;
+
+  let imgUrl = fields.receiptImageUrl?.stringValue || '';
+  if (!imgUrl || imgUrl.startsWith('/api/vault/receipts/')) {
+    const diskImg = loadReceiptImageFromDisk(id);
+    if (diskImg) imgUrl = diskImg;
+  }
+
+  const rec: Record<string, any> = {
+    id,
+    userId: fields.userId?.stringValue || 'user',
+    userDisplayName: fields.userDisplayName?.stringValue || 'Usuario',
+    userEmail: fields.userEmail?.stringValue || '',
+    plan: fields.plan?.stringValue || 'monthly',
+    amount: amountVal,
+    currency: fields.currency?.stringValue || 'USD',
+    paymentMethod: fields.paymentMethod?.stringValue || 'Transferencia',
+    referenceCode: fields.referenceCode?.stringValue || '',
+    receiptImageUrl: imgUrl,
+    receiptFileName: fields.receiptFileName?.stringValue || 'comprobante.jpg',
+    notes: fields.notes?.stringValue || '',
+    whatsappContact: fields.whatsappContact?.stringValue || '+54 9 11 6554-6038',
+    status: fields.status?.stringValue || 'pending',
+    createdAt: fields.createdAt?.stringValue || new Date().toISOString(),
+  };
+
+  if (fields.userAvatar?.stringValue) rec.userAvatar = fields.userAvatar.stringValue;
+  if (fields.reviewedAt?.stringValue) rec.reviewedAt = fields.reviewedAt.stringValue;
+  if (fields.reviewedBy?.stringValue) rec.reviewedBy = fields.reviewedBy.stringValue;
+  if (fields.adminNote?.stringValue !== undefined) rec.adminNote = fields.adminNote.stringValue;
+  if (fields.membershipStartsAt?.stringValue) rec.membershipStartsAt = fields.membershipStartsAt.stringValue;
+  if (fields.membershipExpiresAt?.stringValue) rec.membershipExpiresAt = fields.membershipExpiresAt.stringValue;
+
+  if (imgUrl && imgUrl.startsWith('data:image/')) {
+    saveReceiptImageToDisk(rec);
+  }
+
+  return rec;
+}
+
+async function fetchSingleReceiptFromFirestoreREST(receiptId: string, deletedSet: Set<string>): Promise<any | null> {
+  if (isServerFirestoreQuotaExhausted() || !receiptId) return null;
+  try {
+    const url = `${FIRESTORE_DOCS_BASE}/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    checkServerFirestoreResponse(res);
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    return parseFirestoreReceiptDoc(data, deletedSet);
+  } catch {
+    return null;
+  }
+}
+
+async function saveReceiptsRegistryToFirestoreREST(receipts: any[], deletedIds?: string[]): Promise<boolean> {
+  if (isServerFirestoreQuotaExhausted()) return false;
+  try {
+    const delArr = deletedIds || Array.from(readDeletedReceiptIds());
+    const delSet = new Set(delArr);
+    const clean = (Array.isArray(receipts) ? receipts : []).filter(
+      (r) => r && r.id && !delSet.has(r.id) && !String(r.id).startsWith('rec-demo')
+    );
+
+    // Keep full images in registry if total serialized length < 650KB; otherwise store lightweight URL in registry
+    let serialized = JSON.stringify(clean);
+    if (serialized.length > 650000) {
+      const compact = clean.map((r, idx) => {
+        if (idx > 2 && r.receiptImageUrl && String(r.receiptImageUrl).length > 180000) {
+          return {
+            ...r,
+            receiptImageUrl: `/api/vault/receipts/${encodeURIComponent(r.id)}/image`,
+          };
+        }
+        return r;
+      });
+      serialized = JSON.stringify(compact);
+      if (serialized.length > 750000) {
+        const ultraCompact = clean.map((r) => ({
+          ...r,
+          receiptImageUrl: `/api/vault/receipts/${encodeURIComponent(r.id)}/image`,
+        }));
+        serialized = JSON.stringify(ultraCompact);
+      }
+    }
+
+    const fields: Record<string, any> = {
+      receiptsJson: { stringValue: serialized },
+      receiptIds: {
+        arrayValue: {
+          values: clean.map((r) => ({ stringValue: String(r.id) })),
+        },
+      },
+      deletedIds: {
+        arrayValue: {
+          values: delArr.map((id) => ({ stringValue: String(id) })),
+        },
+      },
+      updatedAt: { stringValue: new Date().toISOString() },
+    };
+
+    const url = `${FIRESTORE_DOCS_BASE}/system_config/receipts_registry?key=${rawFirebaseConfig.apiKey}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    checkServerFirestoreResponse(res);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function saveReceiptToFirestoreREST(rec: any, allReceipts?: any[]): Promise<boolean> {
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
     if (!rec || !rec.id) return false;
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(rec.id)}?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/payment_receipts/${encodeURIComponent(rec.id)}?key=${rawFirebaseConfig.apiKey}`;
     const fields = receiptToFirestoreFields(rec);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     const response = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1285,6 +1430,7 @@ async function saveReceiptToFirestoreREST(rec: any): Promise<boolean> {
     });
     clearTimeout(timeoutId);
     checkServerFirestoreResponse(response);
+    await saveReceiptsRegistryToFirestoreREST(allReceipts || readReceipts());
     return response.ok;
   } catch (err) {
     return false;
@@ -1294,12 +1440,13 @@ async function saveReceiptToFirestoreREST(rec: any): Promise<boolean> {
 async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolean> {
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
     const response = await fetch(url, { method: 'DELETE', signal: controller.signal });
     clearTimeout(timeoutId);
     checkServerFirestoreResponse(response);
+    await saveReceiptsRegistryToFirestoreREST(readReceipts());
     return response.ok;
   } catch {
     return false;
@@ -1307,70 +1454,81 @@ async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolea
 }
 
 async function fetchAllReceiptsFromFirestoreREST(): Promise<any[]> {
-  const result: any[] = [];
-  if (isServerFirestoreQuotaExhausted()) return result;
+  const map = new Map<string, any>();
+  if (isServerFirestoreQuotaExhausted()) return [];
+  const deletedSet = readDeletedReceiptIds();
+
+  // 1. Primary: Read single-document master registry (system_config/receipts_registry) - fast & Enterprise-compatible!
   try {
-    const deletedSet = readDeletedReceiptIds();
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/payment_receipts?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
+    const regUrl = `${FIRESTORE_DOCS_BASE}/system_config/receipts_registry?key=${rawFirebaseConfig.apiKey}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
-    const res = await fetch(url, { signal: controller.signal });
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const regRes = await fetch(regUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
-    checkServerFirestoreResponse(res);
-    if (!res.ok) return result;
-    const data: any = await res.json();
-    if (!data || !Array.isArray(data.documents)) return result;
+    checkServerFirestoreResponse(regRes);
 
-    for (const docSnap of data.documents) {
-      const fields = docSnap.fields || {};
-      const docId = docSnap.name.split('/').pop() || '';
-      const id = fields.id?.stringValue || docId;
-      if (!id || deletedSet.has(id) || String(id).startsWith('rec-demo')) continue;
+    if (regRes.ok) {
+      const regData: any = await regRes.json();
+      const fields = regData?.fields || {};
 
-      const amountVal =
-        fields.amount?.doubleValue !== undefined
-          ? Number(fields.amount.doubleValue)
-          : fields.amount?.integerValue !== undefined
-          ? Number(fields.amount.integerValue)
-          : 1;
-
-      let imgUrl = fields.receiptImageUrl?.stringValue || '';
-      if (!imgUrl || imgUrl.startsWith('/api/vault/receipts/')) {
-        const diskImg = loadReceiptImageFromDisk(id);
-        if (diskImg) imgUrl = diskImg;
+      if (fields.deletedIds?.arrayValue?.values) {
+        for (const v of fields.deletedIds.arrayValue.values) {
+          if (v?.stringValue) {
+            deletedSet.add(v.stringValue);
+            addDeletedReceiptId(v.stringValue);
+          }
+        }
       }
 
-      const rec: Record<string, any> = {
-        id,
-        userId: fields.userId?.stringValue || 'user',
-        userDisplayName: fields.userDisplayName?.stringValue || 'Usuario',
-        userEmail: fields.userEmail?.stringValue || '',
-        plan: fields.plan?.stringValue || 'monthly',
-        amount: amountVal,
-        currency: fields.currency?.stringValue || 'USD',
-        paymentMethod: fields.paymentMethod?.stringValue || 'Transferencia',
-        referenceCode: fields.referenceCode?.stringValue || '',
-        receiptImageUrl: imgUrl,
-        receiptFileName: fields.receiptFileName?.stringValue || 'comprobante.jpg',
-        notes: fields.notes?.stringValue || '',
-        whatsappContact: fields.whatsappContact?.stringValue || '+54 9 11 6554-6038',
-        status: fields.status?.stringValue || 'pending',
-        createdAt: fields.createdAt?.stringValue || new Date().toISOString(),
-      };
+      if (fields.receiptsJson?.stringValue) {
+        try {
+          const parsed = JSON.parse(fields.receiptsJson.stringValue);
+          if (Array.isArray(parsed)) {
+            for (const r of parsed) {
+              if (r && r.id && !deletedSet.has(r.id) && !String(r.id).startsWith('rec-demo')) {
+                if (!r.receiptImageUrl || !String(r.receiptImageUrl).startsWith('data:image/')) {
+                  const diskImg = loadReceiptImageFromDisk(r.id);
+                  if (diskImg) {
+                    r.receiptImageUrl = diskImg;
+                  }
+                } else {
+                  saveReceiptImageToDisk(r);
+                }
+                map.set(r.id, r);
+              }
+            }
+          }
+        } catch {}
+      }
 
-      if (fields.userAvatar?.stringValue) rec.userAvatar = fields.userAvatar.stringValue;
-      if (fields.reviewedAt?.stringValue) rec.reviewedAt = fields.reviewedAt.stringValue;
-      if (fields.reviewedBy?.stringValue) rec.reviewedBy = fields.reviewedBy.stringValue;
-      if (fields.adminNote?.stringValue !== undefined) rec.adminNote = fields.adminNote.stringValue;
-      if (fields.membershipStartsAt?.stringValue) rec.membershipStartsAt = fields.membershipStartsAt.stringValue;
-      if (fields.membershipExpiresAt?.stringValue) rec.membershipExpiresAt = fields.membershipExpiresAt.stringValue;
+      // Check receiptIds array and hydrate any missing receipts or missing base64 images from payment_receipts/{id}
+      const idValues = fields.receiptIds?.arrayValue?.values || [];
+      const idsToHydrate: string[] = [];
+      for (const v of idValues) {
+        const rid = v?.stringValue;
+        if (!rid || deletedSet.has(rid) || String(rid).startsWith('rec-demo')) continue;
+        const existing = map.get(rid);
+        if (!existing || !existing.receiptImageUrl || !String(existing.receiptImageUrl).startsWith('data:image/')) {
+          idsToHydrate.push(rid);
+        }
+      }
 
-      result.push(rec);
+      if (idsToHydrate.length > 0) {
+        const hydratedList = await Promise.all(
+          idsToHydrate.slice(0, 15).map((rid) => fetchSingleReceiptFromFirestoreREST(rid, deletedSet))
+        );
+        for (const h of hydratedList) {
+          if (h && h.id) {
+            map.set(h.id, mergeReceiptRecords(map.get(h.id), h));
+          }
+        }
+      }
     }
   } catch (err) {
-    console.warn('Error fetching Firestore REST receipts:', err);
+    console.warn('Error fetching Firestore receipts_registry:', err);
   }
-  return result;
+
+  return Array.from(map.values());
 }
 
 function mergeReceiptRecords(existing: any, incoming: any): any {
@@ -1395,7 +1553,7 @@ function mergeReceiptRecords(existing: any, incoming: any): any {
 }
 
 // GET /api/vault/receipts/:id/image - Serve stored receipt image
-app.get('/api/vault/receipts/:id/image', (req, res) => {
+app.get('/api/vault/receipts/:id/image', async (req, res) => {
   try {
     const { id } = req.params;
     const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '');
@@ -1408,7 +1566,14 @@ app.get('/api/vault/receipts/:id/image', (req, res) => {
     }
 
     const receipts = readReceipts();
-    const found = receipts.find((r) => r.id === id);
+    let found = receipts.find((r) => r.id === id);
+    if (!found || !found.receiptImageUrl || !String(found.receiptImageUrl).startsWith('data:image/')) {
+      const fromFs = await fetchSingleReceiptFromFirestoreREST(id, readDeletedReceiptIds());
+      if (fromFs && fromFs.receiptImageUrl && String(fromFs.receiptImageUrl).startsWith('data:image/')) {
+        found = fromFs;
+      }
+    }
+
     if (found && found.receiptImageUrl && String(found.receiptImageUrl).startsWith('data:image/')) {
       const matches = String(found.receiptImageUrl).match(/^data:(image\/[A-Za-z0-9.+-]+);base64,(.+)$/);
       if (matches && matches.length === 3) {
@@ -1482,7 +1647,7 @@ app.post('/api/vault/receipts', async (req, res) => {
 
     writeReceipts(updatedReceipts);
     const savedTarget = existingIndex >= 0 ? updatedReceipts[existingIndex] : newReceipt;
-    saveReceiptToFirestoreREST(savedTarget).catch(() => {});
+    saveReceiptToFirestoreREST(savedTarget, updatedReceipts).catch(() => {});
 
     return res.json({
       success: true,
@@ -1528,7 +1693,21 @@ app.post('/api/vault/receipts/sync', async (req, res) => {
       (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
     );
 
+    const prevIds = new Set(firestoreReceipts.map((r) => r.id));
+    const hasNewOrChanged =
+      merged.length !== firestoreReceipts.length ||
+      merged.some((r) => !prevIds.has(r.id));
+
     writeReceipts(merged);
+
+    if (hasNewOrChanged) {
+      saveReceiptsRegistryToFirestoreREST(merged, Array.from(deletedSet)).catch(() => {});
+      for (const r of merged) {
+        if (!prevIds.has(r.id)) {
+          saveReceiptToFirestoreREST(r, merged).catch(() => {});
+        }
+      }
+    }
 
     return res.json({
       success: true,
@@ -1603,7 +1782,7 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
 
     currentReceipts[targetIndex] = updated;
     writeReceipts(currentReceipts);
-    saveReceiptToFirestoreREST(updated).catch(() => {});
+    saveReceiptToFirestoreREST(updated, currentReceipts).catch(() => {});
 
     // Also update the user's membership in users.json + Firestore immediately according to the receipt amount
     try {
@@ -1827,13 +2006,50 @@ function userRecordToFirestoreFields(record: any): Record<string, any> {
   return fields;
 }
 
+async function saveUsersRegistryToFirestoreREST(usersMap?: Record<string, any>): Promise<boolean> {
+  if (isServerFirestoreQuotaExhausted()) return false;
+  try {
+    const mapToSave = usersMap || readRegisteredUsersMap();
+    // Strip overly large base64 avatars from registry if needed so document stays well under 1MB
+    const compactMap: Record<string, any> = {};
+    for (const [k, v] of Object.entries(mapToSave)) {
+      if (!v) continue;
+      const prof = v.profile || {};
+      compactMap[k] = {
+        ...v,
+        profile: {
+          ...prof,
+          avatarUrl:
+            prof.avatarUrl && String(prof.avatarUrl).length > 120000
+              ? `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(prof.uid || k)}`
+              : prof.avatarUrl,
+        },
+      };
+    }
+    const url = `${FIRESTORE_DOCS_BASE}/system_config/users_registry?key=${rawFirebaseConfig.apiKey}`;
+    const fields = {
+      usersJson: { stringValue: JSON.stringify(compactMap) },
+      updatedAt: { stringValue: new Date().toISOString() },
+    };
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    });
+    checkServerFirestoreResponse(res);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function saveUserToFirestoreREST(record: any): Promise<boolean> {
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
     const prof = record?.profile || record;
     const uid = prof?.uid;
     if (!uid) return false;
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/users/${encodeURIComponent(uid)}?key=${rawFirebaseConfig.apiKey}`;
+    const url = `${FIRESTORE_DOCS_BASE}/users/${encodeURIComponent(uid)}?key=${rawFirebaseConfig.apiKey}`;
     const fields = userRecordToFirestoreFields(record);
     const response = await fetch(url, {
       method: 'PATCH',
@@ -1841,6 +2057,7 @@ async function saveUserToFirestoreREST(record: any): Promise<boolean> {
       body: JSON.stringify({ fields }),
     });
     checkServerFirestoreResponse(response);
+    await saveUsersRegistryToFirestoreREST();
     return response.ok;
   } catch (err) {
     return false;
@@ -1851,53 +2068,23 @@ async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
   const result: Record<string, any> = {};
   if (isServerFirestoreQuotaExhausted()) return result;
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/(default)/documents/users?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
-    const res = await fetch(url);
-    checkServerFirestoreResponse(res);
-    if (!res.ok) return result;
-    const data: any = await res.json();
-    if (!data || !Array.isArray(data.documents)) return result;
-
-    for (const docSnap of data.documents) {
-      const fields = docSnap.fields || {};
-      const docId = docSnap.name.split('/').pop() || '';
-      const uid = fields.uid?.stringValue || docId;
-      const email = (fields.email?.stringValue || '').toLowerCase().trim();
-      if (!email) continue;
-
-      const profile: Record<string, any> = {
-        uid,
-        email,
-        displayName: fields.displayName?.stringValue || email.split('@')[0] || 'Usuario',
-        role: fields.role?.stringValue || 'vip_member',
-        tier: fields.tier?.stringValue || 'Invitado',
-        joinedAt: fields.joinedAt?.stringValue || new Date().toISOString().split('T')[0],
-        membershipStatus: fields.membershipStatus?.stringValue || 'none',
-      };
-
-      if (fields.avatarUrl?.stringValue) profile.avatarUrl = fields.avatarUrl.stringValue;
-      if (fields.bio?.stringValue) profile.bio = fields.bio.stringValue;
-      if (fields.phone?.stringValue) profile.phone = fields.phone.stringValue;
-      if (fields.customStatus?.stringValue) profile.customStatus = fields.customStatus.stringValue;
-      if (fields.instagram?.stringValue) profile.instagram = fields.instagram.stringValue;
-      if (fields.membershipPlan?.stringValue) profile.membershipPlan = fields.membershipPlan.stringValue;
-      if (fields.subscribedAt?.stringValue) profile.subscribedAt = fields.subscribedAt.stringValue;
-      if (fields.membershipExpiresAt?.stringValue) profile.membershipExpiresAt = fields.membershipExpiresAt.stringValue;
-      if (fields.lastPaymentAmount?.doubleValue !== undefined) {
-        profile.lastPaymentAmount = Number(fields.lastPaymentAmount.doubleValue);
-      } else if (fields.lastPaymentAmount?.integerValue !== undefined) {
-        profile.lastPaymentAmount = Number(fields.lastPaymentAmount.integerValue);
+    const regUrl = `${FIRESTORE_DOCS_BASE}/system_config/users_registry?key=${rawFirebaseConfig.apiKey}`;
+    const regRes = await fetch(regUrl);
+    checkServerFirestoreResponse(regRes);
+    if (regRes.ok) {
+      const regData: any = await regRes.json();
+      const rawJson = regData?.fields?.usersJson?.stringValue;
+      if (rawJson) {
+        try {
+          const parsed = JSON.parse(rawJson);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            Object.assign(result, parsed);
+          }
+        } catch {}
       }
-
-      result[email] = {
-        email,
-        password: fields.password?.stringValue || 'password123',
-        registeredAt: fields.registeredAt?.stringValue || new Date().toISOString(),
-        profile,
-      };
     }
   } catch (err) {
-    console.warn('Error fetching Firestore REST users:', err);
+    console.warn('Error fetching Firestore REST users_registry:', err);
   }
   return result;
 }
@@ -2017,6 +2204,7 @@ app.post('/api/vault/users/sync', async (req, res) => {
     }
 
     writeRegisteredUsersMap(currentMap);
+    saveUsersRegistryToFirestoreREST(currentMap).catch(() => {});
 
     return res.json({
       success: true,
@@ -2053,6 +2241,7 @@ async function startServer() {
       const cloudUsers = await fetchAllUsersFromFirestoreREST();
       const mergedUsers: Record<string, any> = { ...localUsers, ...cloudUsers };
       writeRegisteredUsersMap(mergedUsers);
+      await saveUsersRegistryToFirestoreREST(mergedUsers);
 
       const localReceipts = readReceipts();
       const cloudReceipts = await fetchAllReceiptsFromFirestoreREST();
@@ -2065,6 +2254,12 @@ async function startServer() {
       }
       const mergedReceipts = Array.from(receiptMap.values());
       writeReceipts(mergedReceipts);
+      if (mergedReceipts.length > 0) {
+        await saveReceiptsRegistryToFirestoreREST(mergedReceipts);
+        for (const r of mergedReceipts) {
+          await saveReceiptToFirestoreREST(r, mergedReceipts);
+        }
+      }
     } catch (bootErr) {
       console.warn('[Cloud Boot Sync Error]:', bootErr);
     }

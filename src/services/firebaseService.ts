@@ -35,7 +35,7 @@ try {
 } catch {}
 
 // Configuración de Firebase que prioriza las variables de Vercel/Vite y usa el config local de respaldo
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || rawFirebaseConfig.apiKey,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || rawFirebaseConfig.authDomain,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || rawFirebaseConfig.projectId,
@@ -44,13 +44,23 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || rawFirebaseConfig.appId,
 };
 
-// Initialize Firebase SDK
+export const firestoreDatabaseId: string =
+  (import.meta.env as any).VITE_FIREBASE_DATABASE_ID ||
+  (rawFirebaseConfig as any).firestoreDatabaseId ||
+  '(default)';
+
+export const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents`;
+
+// Initialize Firebase SDK connected to the provisioned named Firestore database
 export const firebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
+export const db =
+  firestoreDatabaseId && firestoreDatabaseId !== '(default)'
+    ? getFirestore(firebaseApp, firestoreDatabaseId)
+    : getFirestore(firebaseApp);
 export const googleAuthProvider = new GoogleAuthProvider();
 
-const FIRESTORE_QUOTA_COOLDOWN_KEY = 'vault_firestore_quota_cooldown_until';
+const FIRESTORE_QUOTA_COOLDOWN_KEY = `vault_firestore_quota_${firebaseConfig.projectId}`;
 let memoryQuotaCooldownUntil = 0;
 
 export function isFirestoreQuotaExhausted(): boolean {
@@ -75,11 +85,10 @@ export function handleFirestoreError(err: any): void {
     code.includes('resource-exhausted') ||
     msg.includes('resource-exhausted') ||
     msg.includes('Quota exceeded') ||
-    msg.includes('429') ||
-    msg.includes('Firestore SDK timeout')
+    msg.includes('429')
   ) {
-    // Pause Firestore direct calls for 15 minutes and disable SDK background WebChannel retries
-    const until = Date.now() + 15 * 60 * 1000;
+    // Pause Firestore direct calls for 5 minutes on explicit 429 quota exhaustion
+    const until = Date.now() + 5 * 60 * 1000;
     memoryQuotaCooldownUntil = until;
     try {
       sessionStorage.setItem(FIRESTORE_QUOTA_COOLDOWN_KEY, String(until));
@@ -90,12 +99,10 @@ export function handleFirestoreError(err: any): void {
   }
 }
 
-export function withFirestoreTimeout<T>(promise: Promise<T>, timeoutMs = 1200): Promise<T> {
+export function withFirestoreTimeout<T>(promise: Promise<T>, timeoutMs = 1500): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      const timeoutErr = { code: 'resource-exhausted', message: 'Firestore SDK timeout' };
-      handleFirestoreError(timeoutErr);
-      reject(timeoutErr);
+      reject(new Error('Firestore SDK timeout'));
     }, timeoutMs);
 
     promise
@@ -478,7 +485,7 @@ export const firebaseService = {
       }
       fields.updatedAt = { stringValue: new Date().toISOString() };
 
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/users/${encodeURIComponent(clean.uid)}?key=${firebaseConfig.apiKey}`;
+      const url = `${FIRESTORE_REST_BASE}/users/${encodeURIComponent(clean.uid)}?key=${firebaseConfig.apiKey}`;
       const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -487,6 +494,57 @@ export const firebaseService = {
       return res.ok;
     } catch (e) {
       console.warn('Firestore REST user write error:', e);
+      return false;
+    }
+  },
+
+  async saveUsersRegistryToFirestore(accountsMap: Record<string, RegisteredAccountRecord>): Promise<boolean> {
+    if (isFirestoreQuotaExhausted()) return false;
+    try {
+      const compactMap: Record<string, any> = {};
+      for (const [k, v] of Object.entries(accountsMap || {})) {
+        if (!v) continue;
+        const prof = v.profile || ({} as any);
+        compactMap[k] = {
+          ...v,
+          profile: {
+            ...prof,
+            avatarUrl:
+              prof.avatarUrl && String(prof.avatarUrl).length > 120000
+                ? `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(prof.uid || k)}`
+                : prof.avatarUrl,
+          },
+        };
+      }
+      const serialized = JSON.stringify(compactMap);
+      try {
+        await withFirestoreTimeout(
+          setDoc(
+            doc(db, 'system_config', 'users_registry'),
+            {
+              usersJson: serialized,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          ),
+          1500
+        );
+        return true;
+      } catch {
+        const url = `${FIRESTORE_REST_BASE}/system_config/users_registry?key=${firebaseConfig.apiKey}`;
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              usersJson: { stringValue: serialized },
+              updatedAt: { stringValue: new Date().toISOString() },
+            },
+          }),
+        });
+        return res.ok;
+      }
+    } catch {
       return false;
     }
   },
@@ -538,7 +596,7 @@ export const firebaseService = {
       console.warn('Server /api/vault/users save fallback:', e);
     }
 
-    // 3. Guardar en Firestore mediante Web SDK (solo si hay cuota disponible)
+    // 3. Guardar en Firestore mediante Web SDK + users_registry (solo si hay cuota disponible)
     if (!isFirestoreQuotaExhausted()) {
       try {
         const userDocRef = doc(db, 'users', uid);
@@ -552,7 +610,7 @@ export const firebaseService = {
             },
             { merge: true }
           ),
-          1200
+          1500
         );
         saved = true;
       } catch (sdkErr) {
@@ -562,12 +620,18 @@ export const firebaseService = {
           if (restOk) saved = true;
         }
       }
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS_KEY);
+        if (raw) {
+          this.saveUsersRegistryToFirestore(JSON.parse(raw)).catch(() => {});
+        }
+      } catch {}
     }
 
     return saved;
   },
 
-  // Obtener todas las cuentas registradas desde la Base de Datos (Servidor + Firestore Web SDK + Firestore REST)
+  // Obtener todas las cuentas registradas desde la Base de Datos (Servidor + Firestore users_registry)
   async fetchUsersFromDatabase(): Promise<Record<string, RegisteredAccountRecord>> {
     const dbAccounts: Record<string, RegisteredAccountRecord> = {};
 
@@ -611,95 +675,46 @@ export const firebaseService = {
       }
     } catch (e) {}
 
-    // 2. Consultar colección 'users' en Firestore vía Web SDK (solo si hay cuota disponible)
+    // 2. Consultar documento único system_config/users_registry en Firestore (SDK + REST)
     if (!isFirestoreQuotaExhausted()) {
+      let loadedFromSdk = false;
       try {
-        const colRef = collection(db, 'users');
-        const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
-        if (!snap.empty) {
-          snap.forEach((docSnap) => {
-            const data = docSnap.data();
-            const email = (data.email || '').toLowerCase().trim();
-            if (!email) return;
-            const uid = data.uid || docSnap.id;
-            const isAdmin = isAuthorizedAdminEmail(email);
-            mergeRecord({
-              email,
-              password: data.password || 'password123',
-              registeredAt: data.registeredAt || new Date().toISOString(),
-              profile: {
-                uid,
-                email,
-                displayName: data.displayName || email.split('@')[0] || 'Usuario',
-                role: isAdmin ? 'admin' : 'vip_member',
-                tier: isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : (data.tier || 'Invitado')),
-                avatarUrl: data.avatarUrl || undefined,
-                joinedAt: data.joinedAt || new Date().toISOString().split('T')[0],
-                bio: data.bio || undefined,
-                phone: data.phone || undefined,
-                customStatus: data.customStatus || undefined,
-                instagram: data.instagram || undefined,
-                membershipPlan: data.membershipPlan || undefined,
-                membershipStatus: data.membershipStatus || 'none',
-                subscribedAt: data.subscribedAt || undefined,
-                membershipExpiresAt: data.membershipExpiresAt || undefined,
-                lastPaymentAmount: typeof data.lastPaymentAmount === 'number' ? data.lastPaymentAmount : undefined,
-              },
-            });
-          });
+        const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'users_registry')), 1500);
+        if (regSnap.exists()) {
+          const data = regSnap.data() as any;
+          if (data?.usersJson) {
+            const parsed = JSON.parse(data.usersJson);
+            if (parsed && typeof parsed === 'object') {
+              for (const rec of Object.values(parsed) as RegisteredAccountRecord[]) {
+                mergeRecord(rec);
+              }
+              loadedFromSdk = true;
+            }
+          }
         }
       } catch (sdkErr) {
         handleFirestoreError(sdkErr);
-        // 3. Respaldo vía Firestore REST API
-        if (!isFirestoreQuotaExhausted()) {
-          try {
-            const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/users?key=${firebaseConfig.apiKey}&pageSize=300`;
-            const res = await fetch(url);
-            if (res.status === 429) {
-              handleFirestoreError({ code: 'resource-exhausted' });
-            } else if (res.ok) {
-              const data: any = await res.json();
-              if (data && Array.isArray(data.documents)) {
-                for (const docSnap of data.documents) {
-                  const fields = docSnap.fields || {};
-                  const docId = docSnap.name.split('/').pop() || '';
-                  const uid = fields.uid?.stringValue || docId;
-                  const email = (fields.email?.stringValue || '').toLowerCase().trim();
-                  if (!email) continue;
-                  const isAdmin = isAuthorizedAdminEmail(email);
-                  mergeRecord({
-                    email,
-                    password: fields.password?.stringValue || 'password123',
-                    registeredAt: fields.registeredAt?.stringValue || new Date().toISOString(),
-                    profile: {
-                      uid,
-                      email,
-                      displayName: fields.displayName?.stringValue || email.split('@')[0] || 'Usuario',
-                      role: isAdmin ? 'admin' : 'vip_member',
-                      tier: isAdmin ? 'Bóveda Diamante' : (fields.tier?.stringValue === 'Bóveda Diamante' ? 'Acceso VIP' : (fields.tier?.stringValue || 'Invitado')),
-                      avatarUrl: fields.avatarUrl?.stringValue || undefined,
-                      joinedAt: fields.joinedAt?.stringValue || new Date().toISOString().split('T')[0],
-                      bio: fields.bio?.stringValue || undefined,
-                      phone: fields.phone?.stringValue || undefined,
-                      customStatus: fields.customStatus?.stringValue || undefined,
-                      instagram: fields.instagram?.stringValue || undefined,
-                      membershipPlan: (fields.membershipPlan?.stringValue as any) || undefined,
-                      membershipStatus: (fields.membershipStatus?.stringValue as any) || 'none',
-                      subscribedAt: fields.subscribedAt?.stringValue || undefined,
-                      membershipExpiresAt: fields.membershipExpiresAt?.stringValue || undefined,
-                      lastPaymentAmount:
-                        fields.lastPaymentAmount?.doubleValue !== undefined
-                          ? Number(fields.lastPaymentAmount.doubleValue)
-                          : fields.lastPaymentAmount?.integerValue !== undefined
-                          ? Number(fields.lastPaymentAmount.integerValue)
-                          : undefined,
-                    },
-                  });
+      }
+
+      if (!loadedFromSdk && !isFirestoreQuotaExhausted()) {
+        try {
+          const url = `${FIRESTORE_REST_BASE}/system_config/users_registry?key=${firebaseConfig.apiKey}`;
+          const res = await fetch(url);
+          if (res.status === 429) {
+            handleFirestoreError({ code: 'resource-exhausted' });
+          } else if (res.ok) {
+            const data: any = await res.json();
+            const rawJson = data?.fields?.usersJson?.stringValue;
+            if (rawJson) {
+              const parsed = JSON.parse(rawJson);
+              if (parsed && typeof parsed === 'object') {
+                for (const rec of Object.values(parsed) as RegisteredAccountRecord[]) {
+                  mergeRecord(rec);
                 }
               }
             }
-          } catch {}
-        }
+          }
+        } catch {}
       }
     }
 
@@ -1676,7 +1691,7 @@ export const firebaseService = {
   async saveToFirestoreREST(item: VaultItem): Promise<boolean> {
     try {
       if (!item || !item.id) return false;
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(item.id)}?key=${firebaseConfig.apiKey}`;
+      const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(item.id)}?key=${firebaseConfig.apiKey}`;
       const fields = this.itemToFirestoreRestFields(item);
       const res = await fetch(url, {
         method: 'PATCH',
@@ -1763,7 +1778,7 @@ export const firebaseService = {
 
       // 2. REST delete
       try {
-        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(itemId)}?key=${firebaseConfig.apiKey}`;
+        const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(itemId)}?key=${firebaseConfig.apiKey}`;
         await fetch(url, { method: 'DELETE' });
       } catch (e) {}
 
@@ -1843,7 +1858,7 @@ export const firebaseService = {
     } catch (e) {
       console.warn('Error updating comments in Firestore Web SDK, trying REST:', e);
       try {
-        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=comments&key=${firebaseConfig.apiKey}`;
+        const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=comments&key=${firebaseConfig.apiKey}`;
         const values = (comments || []).map((c) => ({ stringValue: typeof c === 'object' ? JSON.stringify(c) : String(c) }));
         await fetch(url, {
           method: 'PATCH',
@@ -1906,7 +1921,7 @@ export const firebaseService = {
 
     // 2. REST Fallback
     try {
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items?key=${firebaseConfig.apiKey}&pageSize=300`;
+      const url = `${FIRESTORE_REST_BASE}/vault_items?key=${firebaseConfig.apiKey}&pageSize=300`;
       const res = await fetch(url);
       if (res.status === 429) {
         handleFirestoreError({ code: 'resource-exhausted' });
@@ -1983,7 +1998,7 @@ export const firebaseService = {
     } catch (e) {
       console.warn('Error updating likes in Firestore Web SDK, trying REST:', e);
       try {
-        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=likesCount&updateMask.fieldPaths=likedBy&key=${firebaseConfig.apiKey}`;
+        const url = `${FIRESTORE_REST_BASE}/vault_items/${encodeURIComponent(itemId)}?updateMask.fieldPaths=likesCount&updateMask.fieldPaths=likedBy&key=${firebaseConfig.apiKey}`;
         await fetch(url, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -2023,7 +2038,7 @@ export const firebaseService = {
       }
 
       // REST fallback
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(list.id)}?key=${firebaseConfig.apiKey}`;
+      const url = `${FIRESTORE_REST_BASE}/vault_lists/${encodeURIComponent(list.id)}?key=${firebaseConfig.apiKey}`;
       const fields: Record<string, any> = {
         id: { stringValue: String(cleanList.id) },
         name: { stringValue: String(cleanList.name) },
@@ -2060,7 +2075,7 @@ export const firebaseService = {
       } catch (e) {}
 
       try {
-        const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_lists/${encodeURIComponent(listId)}?key=${firebaseConfig.apiKey}`;
+        const url = `${FIRESTORE_REST_BASE}/vault_lists/${encodeURIComponent(listId)}?key=${firebaseConfig.apiKey}`;
         await fetch(url, { method: 'DELETE' });
       } catch (e) {}
 
@@ -2148,7 +2163,7 @@ export const firebaseService = {
     if (isFirestoreQuotaExhausted()) return null;
 
     try {
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/vault_lists?key=${firebaseConfig.apiKey}&pageSize=100`;
+      const url = `${FIRESTORE_REST_BASE}/vault_lists?key=${firebaseConfig.apiKey}&pageSize=100`;
       const res = await fetch(url);
       if (res.status === 429) {
         handleFirestoreError({ code: 'resource-exhausted' });
@@ -2231,7 +2246,7 @@ export const firebaseService = {
 
     // 2. Try Firestore REST API fallback
     try {
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${firebaseConfig.apiKey}`;
+      const url = `${FIRESTORE_REST_BASE}/system_config/maintenance?key=${firebaseConfig.apiKey}`;
       const fields = {
         isMaintenance: { booleanValue: Boolean(isMaintenance) },
         message: { stringValue: cleanMessage },
@@ -2266,7 +2281,7 @@ export const firebaseService = {
     }
 
     try {
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/system_config/maintenance?key=${firebaseConfig.apiKey}`;
+      const url = `${FIRESTORE_REST_BASE}/system_config/maintenance?key=${firebaseConfig.apiKey}`;
       const res = await fetch(url);
       if (res.ok) {
         const data: any = await res.json();

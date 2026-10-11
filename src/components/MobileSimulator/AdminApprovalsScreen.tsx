@@ -201,11 +201,9 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
     });
 
   const handleDeleteReceiptAdmin = (receipt: PaymentReceipt) => {
-    if (confirm(`¿Eliminar definitivamente el comprobante #${receipt.id.slice(-6)} de ${receipt.userDisplayName}?`)) {
-      receiptService.deleteReceipt(receipt.id);
-      showToast(`Comprobante #${receipt.id.slice(-6)} eliminado.`, 'info');
-      reloadReceipts(true);
-    }
+    receiptService.deleteReceipt(receipt.id);
+    showToast(`Comprobante #${receipt.id.slice(-6)} eliminado.`, 'info');
+    reloadReceipts(true);
   };
 
   // Action: Open Approval Modal
@@ -314,16 +312,14 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
 
   // Action: Revert to pending
   const handleRevertToPending = (receipt: PaymentReceipt) => {
-    if (confirm(`¿Deseas volver a marcar como 'Pendiente' el comprobante de ${receipt.userDisplayName}?`)) {
-      receiptService.updateReceiptStatus(
-        receipt.id,
-        'pending',
-        'Comprobante reabierto para revisión por el administrador.',
-        currentUser.displayName || 'Administrador'
-      );
-      showToast('Comprobante devuelto a estado Pendiente.', 'info');
-      reloadReceipts();
-    }
+    receiptService.updateReceiptStatus(
+      receipt.id,
+      'pending',
+      'Comprobante reabierto para revisión por el administrador.',
+      currentUser.displayName || 'Administrador'
+    );
+    showToast('Comprobante devuelto a estado Pendiente.', 'info');
+    reloadReceipts(true);
   };
 
   // Preset rejection reasons

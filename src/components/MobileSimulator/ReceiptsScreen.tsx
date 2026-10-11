@@ -38,14 +38,16 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     currentUser.role === 'admin'
   );
 
-  // Navigation tab inside Receipts screen
-  const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
+  // Navigation tab inside Receipts screen — default to 'history' for Admin so uploaded receipts are immediately visible
+  const [activeTab, setActiveTab] = useState<'upload' | 'history'>(() =>
+    isAdmin ? 'history' : 'upload'
+  );
   
   // Receipts state
   const [receipts, setReceipts] = useState<PaymentReceipt[]>(() => {
     return isAdmin 
       ? receiptService.getAllReceipts()
-      : receiptService.getReceiptsByUser(currentUser.uid);
+      : receiptService.getReceiptsByUser(currentUser.uid, currentUser.email);
   });
 
   // Admin filter
@@ -115,9 +117,20 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
       refreshReceipts();
     };
     window.addEventListener('vault_receipts_changed', handleUpdate);
+
+    const pollInterval = setInterval(() => {
+      receiptService
+        .syncFromServer()
+        .then(() => {
+          refreshReceipts();
+        })
+        .catch(() => {});
+    }, 5000);
+
     return () => {
       unsubFirestore();
       window.removeEventListener('vault_receipts_changed', handleUpdate);
+      clearInterval(pollInterval);
     };
   }, [currentUser.uid, currentUser.email, isAdmin]);
 
@@ -177,6 +190,9 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     }
 
     setIsSubmitting(true);
+    const submitSafetyTimer = setTimeout(() => {
+      setIsSubmitting(false);
+    }, 2500);
 
     try {
       const payload = {
@@ -248,6 +264,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
       console.error(err);
       showToast('Ocurrió un error al guardar el comprobante.', 'error');
     } finally {
+      clearTimeout(submitSafetyTimer);
       setIsSubmitting(false);
     }
   };
@@ -309,7 +326,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
 
   // Admin action: Reject receipt
   const handleRejectReceipt = (receipt: PaymentReceipt) => {
-    const reason = prompt('Motivo del rechazo (opcional):', 'El comprobante no es legible o los datos no coinciden.') || 'Comprobante no válido';
+    const reason = 'El comprobante no es legible o el pago aún no fue acreditado.';
     const updated = receiptService.updateReceiptStatus(
       receipt.id,
       'rejected',
@@ -318,7 +335,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
     );
     if (updated) {
       firebaseService.denyOrRevokeUserMembershipByUidOrEmail(receipt.userId, receipt.userEmail, reason);
-      showToast(`Comprobante rechazado.`, 'info');
+      showToast(`Comprobante #${receipt.id.slice(-6)} rechazado.`, 'info');
       refreshReceipts();
       if (viewingReceipt && viewingReceipt.id === receipt.id) {
         setViewingReceipt(updated);
@@ -328,13 +345,11 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
 
   // User action: Delete pending receipt
   const handleDeleteReceipt = (receiptId: string) => {
-    if (confirm('¿Deseas eliminar este comprobante?')) {
-      receiptService.deleteReceipt(receiptId);
-      showToast('Comprobante eliminado.', 'info');
-      refreshReceipts();
-      if (viewingReceipt?.id === receiptId) {
-        setViewingReceipt(null);
-      }
+    receiptService.deleteReceipt(receiptId);
+    showToast('Comprobante eliminado.', 'info');
+    refreshReceipts();
+    if (viewingReceipt?.id === receiptId) {
+      setViewingReceipt(null);
     }
   };
 
@@ -804,8 +819,8 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
           </motion.div>
         )}
 
-        {/* Tab 2: Receipts History & Verification Status */}
-        {activeTab === 'history' && (
+        {/* Tab 2: Receipts History & Verification Status (always shown on 'history' tab or below upload form when receipts exist) */}
+        {(activeTab === 'history' || receipts.length > 0) && (
           <div className="space-y-4">
             {/* Header controls & Admin filters */}
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -998,23 +1013,27 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                         {/* Right: Actions */}
                         <div className="flex flex-wrap sm:flex-col items-center sm:items-end gap-2 shrink-0 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0">
                           {/* Admin approval/rejection buttons */}
-                          {isAdmin && isPending && (
+                          {isAdmin && (
                             <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={() => handleApproveReceipt(receipt)}
-                                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-all flex items-center gap-1 shadow-md shadow-emerald-500/20"
-                                title="Aprobar y activar VIP"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Aprobar VIP</span>
-                              </button>
-                              <button
-                                onClick={() => handleRejectReceipt(receipt)}
-                                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-all"
-                                title="Rechazar comprobante"
-                              >
-                                <XCircle className="w-3.5 h-3.5" />
-                              </button>
+                              {!isApproved && (
+                                <button
+                                  onClick={() => handleApproveReceipt(receipt)}
+                                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-all flex items-center gap-1 shadow-md shadow-emerald-500/20 cursor-pointer"
+                                  title="Aprobar y activar VIP"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Aprobar VIP</span>
+                                </button>
+                              )}
+                              {isPending && (
+                                <button
+                                  onClick={() => handleRejectReceipt(receipt)}
+                                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-all cursor-pointer"
+                                  title="Rechazar comprobante"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           )}
 
