@@ -34,7 +34,7 @@ import confetti from 'canvas-confetti';
 import { UserProfile, PaymentReceipt, ReceiptStatus, MembershipPlanType } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { receiptService } from '../../services/receiptService';
-import { firebaseService } from '../../services/firebaseService';
+import { firebaseService, resolveApiUrl } from '../../services/firebaseService';
 
 interface AdminApprovalsScreenProps {
   currentUser: UserProfile;
@@ -799,12 +799,12 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
                         }`}
                       >
                         <img
-                          src={receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`}
+                          src={resolveApiUrl(receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`)}
                           alt={`Comprobante de ${receipt.userDisplayName}`}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
                             const target = e.currentTarget;
-                            const fallbackUrl = `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`;
+                            const fallbackUrl = resolveApiUrl(`/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`);
                             if (!target.src.endsWith(fallbackUrl)) {
                               target.src = fallbackUrl;
                             }
@@ -822,14 +822,14 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => setLightboxImage({ url: receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`, title: `Comprobante de ${receipt.userDisplayName}` })}
+                          onClick={() => setLightboxImage({ url: resolveApiUrl(receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`), title: `Comprobante de ${receipt.userDisplayName}` })}
                           className="text-[11px] font-bold text-[#0066FF] hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>Ver comprobante</span>
                         </button>
                         <a
-                          href={receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`}
+                          href={resolveApiUrl(receipt.receiptImageUrl || `/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`)}
                           download={receipt.receiptFileName || `comprobante_${receipt.id}.jpg`}
                           className="text-[11px] font-bold text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
                         >

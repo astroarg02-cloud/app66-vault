@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { VaultItem } from '../types';
 import { getFileFromIndexedDB } from './indexedDBStorage';
+import { resolveApiUrl } from './firebaseService';
 
 /**
  * Helper to determine clean file extension and MIME type from item data
@@ -102,7 +103,7 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
     // Case 3: Server disk permanent storage endpoint (/api/vault/download/:id)
     if (item.id) {
       try {
-        const serverUrl = `/api/vault/download/${encodeURIComponent(item.id)}`;
+        const serverUrl = resolveApiUrl(`/api/vault/download/${encodeURIComponent(item.id)}`);
         const headCheck = await fetch(serverUrl, { method: 'HEAD' });
         if (headCheck.ok) {
           // Trigger native browser download stream
@@ -128,10 +129,11 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
     if (item.downloadUrl) {
       if (item.downloadUrl.startsWith('/api/vault/download/')) {
         try {
-          const headCheck = await fetch(item.downloadUrl, { method: 'HEAD' });
+          const resolvedDownloadUrl = resolveApiUrl(item.downloadUrl);
+          const headCheck = await fetch(resolvedDownloadUrl, { method: 'HEAD' });
           if (headCheck.ok) {
             const link = document.createElement('a');
-            link.href = item.downloadUrl;
+            link.href = resolvedDownloadUrl;
             link.download = targetFilename;
             link.target = '_blank';
             document.body.appendChild(link);
@@ -179,13 +181,7 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
       }
     }
 
-    // If this item was created with a real uploaded file (has fileName) but the physical file is not on server
-    if (item.fileName) {
-      console.warn(`Original physical file "${item.fileName}" is not currently available on the server.`);
-      return false;
-    }
-
-    // Case 6: Category-specific authentic file generation for textual content without uploaded file
+    // Case 6: Category-specific authentic file generation when physical file is not in local/server cache
     if (!isZip) {
       // PDF Document
       if (filename.endsWith('.pdf')) {

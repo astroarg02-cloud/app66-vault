@@ -12,6 +12,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { downloadVaultItemResource } from '../../services/zipExporter';
 import { hasVaultItemFile } from '../../utils/vaultHelpers';
 import { getListIcon } from '../../utils/listIcons';
+import { resolveApiUrl } from '../../services/firebaseService';
 
 interface VaultDetailModalProps {
   item: VaultItem;
@@ -144,7 +145,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
           }
         };
         xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
-        xhr.open('POST', `/api/vault/upload-file?itemId=${encodeURIComponent(item.id)}`, true);
+        xhr.open('POST', resolveApiUrl(`/api/vault/upload-file?itemId=${encodeURIComponent(item.id)}`), true);
         xhr.send(formData);
       });
 
@@ -166,7 +167,7 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
 
       // Persist to server
       try {
-        await fetch('/api/vault/upload', {
+        await fetch(resolveApiUrl('/api/vault/upload'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedItem),

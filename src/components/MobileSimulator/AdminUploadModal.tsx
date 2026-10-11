@@ -8,6 +8,7 @@ import { VaultItem, ResourceCategory, UserProfile, VaultList } from '../../types
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 import { saveFileToIndexedDB } from '../../services/indexedDBStorage';
+import { resolveApiUrl } from '../../services/firebaseService';
 
 interface AdminUploadModalProps {
   isOpen: boolean;
@@ -130,6 +131,19 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     // Creamos URL de objeto temporal para vista previa inmediata
     const fileBlobUrl = URL.createObjectURL(file);
     setDownloadUrl(fileBlobUrl);
+
+    // Si el archivo pesa menos de 350KB, guardar también en base64 para que esté embebido en Firestore y disponible en cualquier APK
+    if (file.size <= 350 * 1024) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (typeof ev.target?.result === 'string') {
+          setFileData(ev.target.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setFileData('');
+    }
 
     setAutoDetectedInfo(
       `Reconocido: ${detectedType} (${formattedSize}) → Categoría "${detectedCat.toUpperCase()}" asignada. ¡Sin límite de megas!`
@@ -282,7 +296,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
             };
 
             xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
-            xhr.open('POST', `/api/vault/upload-file?itemId=${encodeURIComponent(tempItemId)}`, true);
+            xhr.open('POST', resolveApiUrl(`/api/vault/upload-file?itemId=${encodeURIComponent(tempItemId)}`), true);
             xhr.send(formData);
           });
 
@@ -322,6 +336,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
         fileSize: finalFileName ? (finalFileSize || '') : '',
         fileName: finalFileName || undefined,
         fileMimeType: finalMime || undefined,
+        fileData: fileData || undefined,
         rawFileBlob: rawFile || undefined,
         downloadUrl: finalDownloadUrl,
         coverImage: finalCover,

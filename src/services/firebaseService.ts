@@ -22,7 +22,7 @@ import {
   deleteDoc,
   serverTimestamp,
   setLogLevel,
-  disableNetwork,
+  enableNetwork,
 } from 'firebase/firestore';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, VaultItem, VaultList, MembershipPlanType } from '../types';
@@ -80,17 +80,31 @@ export const db =
     : getFirestore(firebaseApp);
 export const googleAuthProvider = new GoogleAuthProvider();
 
-const FIRESTORE_QUOTA_COOLDOWN_KEY = `vault_firestore_quota_${firebaseConfig.projectId}`;
-let memoryQuotaCooldownUntil = 0;
+const LEGACY_QUOTA_KEY = `vault_firestore_quota_${firebaseConfig.projectId}`;
+const FIRESTORE_WRITE_QUOTA_KEY = `vault_firestore_write_quota_${firebaseConfig.projectId}`;
+const FIRESTORE_READ_QUOTA_KEY = `vault_firestore_read_quota_${firebaseConfig.projectId}`;
+let memoryWriteQuotaCooldownUntil = 0;
+let memoryReadQuotaCooldownUntil = 0;
 
-export function isFirestoreQuotaExhausted(): boolean {
-  if (Date.now() < memoryQuotaCooldownUntil) return true;
+// Clean up legacy quota key that previously blocked reads when write quota was reached, and ensure SDK network is enabled
+try {
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem(LEGACY_QUOTA_KEY);
+    localStorage.removeItem(LEGACY_QUOTA_KEY);
+  }
+  enableNetwork(db).catch(() => {});
+} catch {}
+
+export function isFirestoreWriteQuotaExhausted(): boolean {
+  if (Date.now() < memoryWriteQuotaCooldownUntil) return true;
   try {
-    const raw = sessionStorage.getItem(FIRESTORE_QUOTA_COOLDOWN_KEY) || localStorage.getItem(FIRESTORE_QUOTA_COOLDOWN_KEY);
+    const raw =
+      sessionStorage.getItem(FIRESTORE_WRITE_QUOTA_KEY) ||
+      localStorage.getItem(FIRESTORE_WRITE_QUOTA_KEY);
     if (raw) {
       const until = Number(raw);
       if (until > Date.now()) {
-        memoryQuotaCooldownUntil = until;
+        memoryWriteQuotaCooldownUntil = until;
         return true;
       }
     }
@@ -98,7 +112,29 @@ export function isFirestoreQuotaExhausted(): boolean {
   return false;
 }
 
-export function handleFirestoreError(err: any): void {
+export function isFirestoreReadQuotaExhausted(): boolean {
+  if (Date.now() < memoryReadQuotaCooldownUntil) return true;
+  try {
+    const raw =
+      sessionStorage.getItem(FIRESTORE_READ_QUOTA_KEY) ||
+      localStorage.getItem(FIRESTORE_READ_QUOTA_KEY);
+    if (raw) {
+      const until = Number(raw);
+      if (until > Date.now()) {
+        memoryReadQuotaCooldownUntil = until;
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+// Backwards-compatible alias for write quota check
+export function isFirestoreQuotaExhausted(): boolean {
+  return isFirestoreWriteQuotaExhausted();
+}
+
+export function handleFirestoreError(err: any, isReadOperation = false): void {
   const code = String(err?.code || err?.status || '');
   const msg = String(err?.message || err || '');
   if (
@@ -110,16 +146,23 @@ export function handleFirestoreError(err: any): void {
     msg.includes('Quota limit exceeded') ||
     msg.includes('429')
   ) {
-    // Pause Firestore direct calls for 30 minutes on explicit 429 quota exhaustion
-    const until = Date.now() + 30 * 60 * 1000;
-    memoryQuotaCooldownUntil = until;
-    try {
-      sessionStorage.setItem(FIRESTORE_QUOTA_COOLDOWN_KEY, String(until));
-      localStorage.setItem(FIRESTORE_QUOTA_COOLDOWN_KEY, String(until));
-    } catch {}
-    try {
-      disableNetwork(db).catch(() => {});
-    } catch {}
+    const isExplicitWriteQuota =
+      msg.toLowerCase().includes('write') || !isReadOperation;
+
+    const until = Date.now() + 15 * 60 * 1000;
+    if (isExplicitWriteQuota) {
+      memoryWriteQuotaCooldownUntil = until;
+      try {
+        sessionStorage.setItem(FIRESTORE_WRITE_QUOTA_KEY, String(until));
+        localStorage.setItem(FIRESTORE_WRITE_QUOTA_KEY, String(until));
+      } catch {}
+    } else {
+      memoryReadQuotaCooldownUntil = until;
+      try {
+        sessionStorage.setItem(FIRESTORE_READ_QUOTA_KEY, String(until));
+        localStorage.setItem(FIRESTORE_READ_QUOTA_KEY, String(until));
+      } catch {}
+    }
   }
 }
 
@@ -128,7 +171,11 @@ export async function firestoreRestFetch(
   options: RequestInit = {},
   timeoutMs = 2500
 ): Promise<Response | null> {
-  if (isFirestoreQuotaExhausted()) return null;
+  const method = String(options.method || 'GET').toUpperCase();
+  const isRead = method === 'GET' || method === 'HEAD';
+  if (isRead ? isFirestoreReadQuotaExhausted() : isFirestoreWriteQuotaExhausted()) {
+    return null;
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -140,7 +187,7 @@ export async function firestoreRestFetch(
     });
     clearTimeout(timer);
     if (res.status === 429) {
-      handleFirestoreError({ code: 'resource-exhausted', status: 429 });
+      handleFirestoreError({ code: 'resource-exhausted', status: 429 }, isRead);
       return null;
     }
     if (!res.ok && res.status >= 400) {
@@ -148,7 +195,7 @@ export async function firestoreRestFetch(
         const clone = res.clone();
         const errText = await clone.text();
         if (errText.includes('RESOURCE_EXHAUSTED') || errText.includes('Quota exceeded')) {
-          handleFirestoreError({ code: 'resource-exhausted', message: errText });
+          handleFirestoreError({ code: 'resource-exhausted', message: errText }, isRead);
           return null;
         }
       } catch {}
@@ -156,12 +203,12 @@ export async function firestoreRestFetch(
     return res;
   } catch (err) {
     clearTimeout(timer);
-    handleFirestoreError(err);
+    handleFirestoreError(err, isRead);
     return null;
   }
 }
 
-export function withFirestoreTimeout<T>(promise: Promise<T>, timeoutMs = 1500): Promise<T> {
+export function withFirestoreTimeout<T>(promise: Promise<T>, timeoutMs = 1500, isReadOperation = true): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error('Firestore SDK timeout'));
@@ -174,16 +221,10 @@ export function withFirestoreTimeout<T>(promise: Promise<T>, timeoutMs = 1500): 
       })
       .catch((err) => {
         clearTimeout(timer);
-        handleFirestoreError(err);
+        handleFirestoreError(err, isReadOperation);
         reject(err);
       });
   });
-}
-
-if (isFirestoreQuotaExhausted()) {
-  try {
-    disableNetwork(db).catch(() => {});
-  } catch {}
 }
 
 const LOCAL_STORAGE_SESSION_KEY = 'vault_firebase_session_v1';
@@ -567,7 +608,7 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
   return accounts;
 }
 
-export function storeRegisteredAccount(record: RegisteredAccountRecord): void {
+export function storeRegisteredAccount(record: RegisteredAccountRecord, persistRemote = false): void {
   try {
     const accounts = getStoredRegisteredAccounts();
     const emailKey = record.email.toLowerCase().trim();
@@ -576,10 +617,11 @@ export function storeRegisteredAccount(record: RegisteredAccountRecord): void {
   } catch (e) {
     console.warn('Could not persist registered account locally:', e);
   }
-  // Automatically persist every stored account to the database (Firestore + Server)
-  try {
-    firebaseService.saveUserAccountToDatabase(record).catch(() => {});
-  } catch {}
+  if (persistRemote) {
+    try {
+      firebaseService.saveUserAccountToDatabase(record).catch(() => {});
+    } catch {}
+  }
 }
 
 export const firebaseService = {
@@ -824,10 +866,10 @@ export const firebaseService = {
     } catch (e) {}
 
     // 2. Consultar documento único system_config/users_registry en Firestore (SDK + REST)
-    if (!isFirestoreQuotaExhausted()) {
+    if (!isFirestoreReadQuotaExhausted()) {
       let loadedFromSdk = false;
       try {
-        const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'users_registry')), 1500);
+        const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'users_registry')), 1500, true);
         if (regSnap.exists()) {
           const data = regSnap.data() as any;
           if (data?.usersJson) {
@@ -841,15 +883,15 @@ export const firebaseService = {
           }
         }
       } catch (sdkErr) {
-        handleFirestoreError(sdkErr);
+        handleFirestoreError(sdkErr, true);
       }
 
-      if (!loadedFromSdk && !isFirestoreQuotaExhausted()) {
+      if (!loadedFromSdk && !isFirestoreReadQuotaExhausted()) {
         try {
           const url = `${FIRESTORE_REST_BASE}/system_config/users_registry?key=${firebaseConfig.apiKey}`;
           const res = await fetch(url);
           if (res.status === 429) {
-            handleFirestoreError({ code: 'resource-exhausted' });
+            handleFirestoreError({ code: 'resource-exhausted' }, true);
           } else if (res.ok) {
             const data: any = await res.json();
             const rawJson = data?.fields?.usersJson?.stringValue;
@@ -972,7 +1014,7 @@ export const firebaseService = {
 
   // Listener en tiempo real para cuentas de usuarios en Firestore (mediante documento maestro system_config/users_registry)
   onUsersSnapshot(callback: (accounts: Record<string, RegisteredAccountRecord>) => void) {
-    if (isFirestoreQuotaExhausted()) return () => {};
+    if (isFirestoreReadQuotaExhausted()) return () => {};
     try {
       const regDocRef = doc(db, 'system_config', 'users_registry');
       let unsub: (() => void) | null = null;
@@ -1505,7 +1547,7 @@ export const firebaseService = {
     }
 
     // Non-blocking firestore read with timeout to prevent loading hangs
-    if (!isFirestoreQuotaExhausted()) {
+    if (!isFirestoreReadQuotaExhausted()) {
       const firestoreSyncPromise = (async () => {
         try {
           const snap = await Promise.race([
@@ -1516,7 +1558,7 @@ export const firebaseService = {
             const data = snap.data() as any;
             const merged = mergeAccountProfiles(profile, data, isAdmin);
             Object.assign(profile, merged);
-          } else {
+          } else if (!isFirestoreWriteQuotaExhausted()) {
             await this.saveUserToFirestoreREST({
               email: (fbUser.email || profile.email).toLowerCase().trim(),
               password: localMatch?.password || 'password123',
@@ -1525,7 +1567,7 @@ export const firebaseService = {
             });
           }
         } catch (err) {
-          handleFirestoreError(err);
+          handleFirestoreError(err, true);
         }
       })();
 
@@ -1905,7 +1947,7 @@ export const firebaseService = {
 
   // Real-time listener for Firestore Vault Items
   onVaultItemsSnapshot(callback: (items: VaultItem[]) => void) {
-    if (isFirestoreQuotaExhausted()) return () => {};
+    if (isFirestoreReadQuotaExhausted()) return () => {};
     try {
       const colRef = collection(db, 'vault_items');
       let unsub: (() => void) | null = null;
@@ -1989,11 +2031,11 @@ export const firebaseService = {
 
   // Fetch Vault Items from Firestore with REST fallback
   async fetchVaultItems(): Promise<VaultItem[] | null> {
-    if (isFirestoreQuotaExhausted()) return null;
+    if (isFirestoreReadQuotaExhausted()) return null;
     try {
       // 1. Try Web SDK
       const colRef = collection(db, 'vault_items');
-      const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
+      const snap = await withFirestoreTimeout(getDocs(colRef), 1500, true);
       if (!snap.empty) {
         const items: VaultItem[] = [];
         snap.forEach((docSnap) => {
@@ -2029,17 +2071,17 @@ export const firebaseService = {
         return items;
       }
     } catch (e) {
-      handleFirestoreError(e);
+      handleFirestoreError(e, true);
     }
 
-    if (isFirestoreQuotaExhausted()) return null;
+    if (isFirestoreReadQuotaExhausted()) return null;
 
     // 2. REST Fallback
     try {
       const url = `${FIRESTORE_REST_BASE}/vault_items?key=${firebaseConfig.apiKey}&pageSize=300`;
       const res = await fetch(url);
       if (res.status === 429) {
-        handleFirestoreError({ code: 'resource-exhausted' });
+        handleFirestoreError({ code: 'resource-exhausted' }, true);
         return null;
       }
       if (res.ok) {
@@ -2088,6 +2130,7 @@ export const firebaseService = {
               fileSize: fields.fileSize?.stringValue || '',
               fileName: fields.fileName?.stringValue || undefined,
               fileMimeType: fields.fileMimeType?.stringValue || undefined,
+              fileData: fields.fileData?.stringValue || undefined,
               downloadUrl: fields.downloadUrl?.stringValue || '',
               coverImage: fields.coverImage?.stringValue || '',
               createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
@@ -2272,7 +2315,7 @@ export const firebaseService = {
 
   // Real-time listener for Firestore Vault Lists + Deleted Lists Registry
   onVaultListsSnapshot(callback: (lists: VaultList[], deletedIds?: string[]) => void) {
-    if (isFirestoreQuotaExhausted()) return () => {};
+    if (isFirestoreReadQuotaExhausted()) return () => {};
     try {
       const colRef = collection(db, 'vault_lists');
       const regRef = doc(db, 'system_config', 'lists_registry');
@@ -2331,7 +2374,7 @@ export const firebaseService = {
           }
         },
         (error) => {
-          handleFirestoreError(error);
+          handleFirestoreError(error, true);
           if (unsubCol) {
             try { unsubCol(); } catch {}
           }
@@ -2346,14 +2389,14 @@ export const firebaseService = {
         }
       };
     } catch (err) {
-      handleFirestoreError(err);
+      handleFirestoreError(err, true);
       return () => {};
     }
   },
 
   // Fetch lists from Firestore with REST fallback and lists_registry support
   async fetchVaultLists(): Promise<VaultList[] | null> {
-    if (isFirestoreQuotaExhausted()) return null;
+    if (isFirestoreReadQuotaExhausted()) return null;
     const listMap = new Map<string, VaultList>();
     const deletedSet = new Set<string>();
     try {
@@ -2366,7 +2409,7 @@ export const firebaseService = {
 
     // 1. Check system_config/lists_registry first for deletedIds + consolidated lists
     try {
-      const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'lists_registry')), 1200);
+      const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'lists_registry')), 1500, true);
       if (regSnap.exists()) {
         const regData = regSnap.data() as any;
         if (Array.isArray(regData.deletedIds)) {
@@ -2390,10 +2433,39 @@ export const firebaseService = {
       }
     } catch {}
 
+    // 1b. REST fallback for lists_registry
+    if (listMap.size === 0 && !isFirestoreReadQuotaExhausted()) {
+      try {
+        const regRes = await fetch(`${FIRESTORE_REST_BASE}/system_config/lists_registry?key=${firebaseConfig.apiKey}`);
+        if (regRes.ok) {
+          const regJson: any = await regRes.json();
+          const fields = regJson?.fields || {};
+          if (fields.deletedIds?.arrayValue?.values) {
+            fields.deletedIds.arrayValue.values.forEach((v: any) => {
+              if (v?.stringValue) deletedSet.add(String(v.stringValue));
+            });
+            try {
+              localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(deletedSet)));
+            } catch {}
+          }
+          if (fields.listsJson?.stringValue) {
+            const parsed = JSON.parse(fields.listsJson.stringValue);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((l: any) => {
+                if (l && l.id && !deletedSet.has(l.id)) {
+                  listMap.set(l.id, l);
+                }
+              });
+            }
+          }
+        }
+      } catch {}
+    }
+
     // 2. Check vault_lists collection
     try {
       const colRef = collection(db, 'vault_lists');
-      const snap = await withFirestoreTimeout(getDocs(colRef), 1200);
+      const snap = await withFirestoreTimeout(getDocs(colRef), 1500, true);
       if (!snap.empty) {
         snap.forEach((docSnap) => {
           if (deletedSet.has(docSnap.id)) return;
@@ -2411,20 +2483,20 @@ export const firebaseService = {
         });
       }
     } catch (e) {
-      handleFirestoreError(e);
+      handleFirestoreError(e, true);
     }
 
     if (listMap.size > 0) {
       return Array.from(listMap.values());
     }
 
-    if (isFirestoreQuotaExhausted()) return null;
+    if (isFirestoreReadQuotaExhausted()) return null;
 
     try {
       const url = `${FIRESTORE_REST_BASE}/vault_lists?key=${firebaseConfig.apiKey}&pageSize=100`;
       const res = await fetch(url);
       if (res.status === 429) {
-        handleFirestoreError({ code: 'resource-exhausted' });
+        handleFirestoreError({ code: 'resource-exhausted' }, true);
         return null;
       }
       if (res.ok) {
@@ -2462,7 +2534,7 @@ export const firebaseService = {
 
   // Real-time listener for Maintenance Mode in Firestore
   onMaintenanceSnapshot(callback: (maint: { isMaintenance: boolean; message: string; updatedAt?: string }) => void) {
-    if (isFirestoreQuotaExhausted()) return () => {};
+    if (isFirestoreReadQuotaExhausted()) return () => {};
     try {
       const docRef = doc(db, 'system_config', 'maintenance');
       let unsub: (() => void) | null = null;

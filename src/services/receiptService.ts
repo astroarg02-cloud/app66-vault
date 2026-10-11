@@ -10,6 +10,8 @@ import {
   firebaseConfig,
   FIRESTORE_REST_BASE,
   isFirestoreQuotaExhausted,
+  isFirestoreReadQuotaExhausted,
+  isFirestoreWriteQuotaExhausted,
   handleFirestoreError,
   withFirestoreTimeout,
   firestoreRestFetch,
@@ -245,10 +247,10 @@ async function saveReceiptToFirestoreSDK(receipt: PaymentReceipt, allReceipts?: 
 }
 
 async function fetchSingleReceiptFromFirestore(receiptId: string, deletedSet: Set<string>): Promise<PaymentReceipt | null> {
-  if (!receiptId || deletedSet.has(receiptId) || isFirestoreQuotaExhausted()) return null;
+  if (!receiptId || deletedSet.has(receiptId) || isFirestoreReadQuotaExhausted()) return null;
   if (db) {
     try {
-      const snap = await withFirestoreTimeout(getDoc(doc(db, RECEIPTS_COLLECTION, receiptId)), 1200);
+      const snap = await withFirestoreTimeout(getDoc(doc(db, RECEIPTS_COLLECTION, receiptId)), 1200, true);
       if (snap.exists()) {
         const data = snap.data() as any;
         const id = data?.id || snap.id;
@@ -325,7 +327,7 @@ async function fetchSingleReceiptFromFirestore(receiptId: string, deletedSet: Se
 }
 
 async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
-  if (isFirestoreQuotaExhausted()) return [];
+  if (isFirestoreReadQuotaExhausted()) return [];
   const deletedSet = getDeletedReceiptIds();
   const map = new Map<string, PaymentReceipt>();
   let receiptIdsFromReg: string[] = [];
@@ -334,7 +336,7 @@ async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
   let parsedRegistry = false;
   if (db) {
     try {
-      const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'receipts_registry')), 1500);
+      const regSnap = await withFirestoreTimeout(getDoc(doc(db, 'system_config', 'receipts_registry')), 1500, true);
       if (regSnap.exists()) {
         const data = regSnap.data() as any;
         if (Array.isArray(data?.deletedIds)) {
@@ -361,7 +363,7 @@ async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
         parsedRegistry = true;
       }
     } catch (err) {
-      handleFirestoreError(err);
+      handleFirestoreError(err, true);
     }
   }
 
@@ -512,9 +514,15 @@ export const receiptService = {
       console.warn('Error reading receipts from localStorage:', e);
     }
 
-    const merged = Array.from(map.values()).sort(
-      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-    );
+    const merged = Array.from(map.values())
+      .map((r) => ({
+        ...r,
+        receiptImageUrl:
+          r.receiptImageUrl && r.receiptImageUrl.startsWith('/api/')
+            ? resolveApiUrl(r.receiptImageUrl)
+            : r.receiptImageUrl,
+      }))
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     memoryReceipts = merged;
     return merged;
   },
@@ -536,7 +544,7 @@ export const receiptService = {
 
   // Real-time Firestore single-document listener on system_config/receipts_registry so AdminApprovalsScreen receives new receipts immediately
   onReceiptsSnapshot(callback: (receipts: PaymentReceipt[]) => void): Unsubscribe {
-    if (!db || isFirestoreQuotaExhausted()) return () => {};
+    if (!db || isFirestoreReadQuotaExhausted()) return () => {};
     try {
       const regDocRef = doc(db, 'system_config', 'receipts_registry');
       let unsub: Unsubscribe | null = null;
@@ -584,7 +592,7 @@ export const receiptService = {
           callback(merged);
         },
         (err) => {
-          handleFirestoreError(err);
+          handleFirestoreError(err, true);
           if (unsub) {
             try { unsub(); } catch {}
           }
@@ -596,7 +604,7 @@ export const receiptService = {
         }
       };
     } catch (err) {
-      handleFirestoreError(err);
+      handleFirestoreError(err, true);
       return () => {};
     }
   },
@@ -682,7 +690,7 @@ export const receiptService = {
 
     // 2. Firestore single-document registry fetch (works even on static/Vercel/APK without Express server)
     let fsReceiptIds = new Set<string>();
-    if (!isFirestoreQuotaExhausted()) {
+    if (!isFirestoreReadQuotaExhausted()) {
       try {
         const fsReceipts = await fetchReceiptsFromFirestoreSDK();
         for (const r of fsReceipts) {
@@ -699,7 +707,7 @@ export const receiptService = {
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
     // If local has any receipt not yet recorded in Firestore registry, push it in background
-    if (!isFirestoreQuotaExhausted() && merged.some((r) => !fsReceiptIds.has(r.id))) {
+    if (!isFirestoreWriteQuotaExhausted() && merged.some((r) => !fsReceiptIds.has(r.id))) {
       saveReceiptsRegistryToFirestore(merged).catch(() => {});
     }
 

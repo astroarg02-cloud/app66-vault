@@ -2,6 +2,7 @@ import { createClient, SupabaseClient, User as SupabaseAuthUser } from '@supabas
 import { VaultItem, UserProfile } from '../types';
 import { INITIAL_VAULT_ITEMS, isAuthorizedAdminEmail, isAuthorizedAdminKey, ADMIN_AUTHORIZED_EMAIL, ADMIN_SECURITY_KEY } from '../data/initialVaultData';
 import { generateUniqueUserId } from '../utils/vaultHelpers';
+import { resolveApiUrl } from './firebaseService';
 
 // Vite environment accessor safe for TypeScript
 const env = (import.meta as any).env || {};
@@ -289,7 +290,7 @@ export const supabaseService = {
 
     // 1. Fetch from Central Express Server (/api/vault/items)
     try {
-      const res = await fetch('/api/vault/items');
+      const res = await fetch(resolveApiUrl('/api/vault/items'));
       if (res.ok) {
         const json = await res.json();
         if (json && Array.isArray(json.items) && json.items.length > 0) {
@@ -354,7 +355,7 @@ export const supabaseService = {
       const unsyncedLocals = localItems.filter(i => !serverIds.has(i.id));
       if (unsyncedLocals.length > 0) {
         try {
-          fetch('/api/vault/sync', {
+          fetch(resolveApiUrl('/api/vault/sync'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items: unsyncedLocals }),
@@ -369,7 +370,7 @@ export const supabaseService = {
     // 4. If server was empty but local has items, upload local items to server!
     if (localItems && localItems.length > 0) {
       try {
-        fetch('/api/vault/sync', {
+        fetch(resolveApiUrl('/api/vault/sync'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ items: localItems }),
@@ -395,7 +396,7 @@ export const supabaseService = {
 
     // 2. Persist to Central Express Server API
     try {
-      await fetch('/api/vault/upload', {
+      await fetch(resolveApiUrl('/api/vault/upload'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item),
@@ -449,7 +450,7 @@ export const supabaseService = {
 
     // 2. Update on central server
     try {
-      fetch(`/api/vault/items/${itemId}/like`, {
+      fetch(resolveApiUrl(`/api/vault/items/${itemId}/like`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ likesCount, likedBy }),
@@ -490,7 +491,7 @@ export const supabaseService = {
 
     // 2. Update on central server
     try {
-      fetch(`/api/vault/items/${itemId}/comment`, {
+      fetch(resolveApiUrl(`/api/vault/items/${itemId}/comment`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comments }),
@@ -521,7 +522,7 @@ export const supabaseService = {
     } catch {}
 
     try {
-      fetch(`/api/vault/items/${itemId}`, { method: 'DELETE' }).catch(() => {});
+      fetch(resolveApiUrl(`/api/vault/items/${itemId}`), { method: 'DELETE' }).catch(() => {});
     } catch {}
 
     if (supabase) {

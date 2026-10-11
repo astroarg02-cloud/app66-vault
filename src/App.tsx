@@ -355,12 +355,24 @@ function AppContent() {
 
     loadData();
 
-    // Background poll every 30 seconds
+    // Background poll every 30 seconds (READ-ONLY for users/lists/items so we never exhaust Firestore write quota)
     const interval = setInterval(async () => {
       try {
-        firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
-        receiptService.syncFromServer().then(() => {
+        firebaseService.fetchUsersFromDatabase().then((remoteAccounts) => {
+          const session = firebaseService.getLocalSession();
+          if (session && session.email) {
+            const matched = remoteAccounts[session.email.toLowerCase().trim()];
+            if (matched && matched.profile) {
+              const clean = sanitizeUserRole(matched.profile);
+              setCurrentUser(clean);
+              firebaseService.saveSession(clean);
+            }
+          }
+        }).catch(() => {});
+
+        receiptService.syncFromServer().then((syncedReceipts) => {
           setPendingApprovalsCount(receiptService.getPendingCount());
+          firebaseService.reconcileApprovedReceiptsWithUsers(syncedReceipts);
         }).catch(() => {});
 
         // Sync deleted lists first
@@ -377,16 +389,27 @@ function AppContent() {
           }
         } catch (e) {}
 
-        const resItems = await fetch(resolveApiUrl('/api/vault/items'));
-        if (resItems.ok) {
-          const json = await resItems.json();
-          if (json.items && Array.isArray(json.items)) mergeVaultItems(json.items);
-        }
-        const resLists = await fetch(resolveApiUrl('/api/vault/lists'));
-        if (resLists.ok) {
-          const jsonLists = await resLists.json();
-          if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
-        }
+        try {
+          const resItems = await fetch(resolveApiUrl('/api/vault/items'));
+          if (resItems.ok) {
+            const json = await resItems.json();
+            if (json.items && Array.isArray(json.items)) mergeVaultItems(json.items);
+          }
+        } catch (e) {}
+
+        try {
+          const resLists = await fetch(resolveApiUrl('/api/vault/lists'));
+          if (resLists.ok) {
+            const jsonLists = await resLists.json();
+            if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
+          }
+        } catch (e) {}
+
+        // Also poll Firestore lists & items so standalone APK always stays in sync
+        try {
+          const fsLists = await firebaseService.fetchVaultLists();
+          if (fsLists && fsLists.length > 0) mergeVaultLists(fsLists);
+        } catch (e) {}
       } catch (e) {}
     }, 30000);
 
@@ -438,7 +461,7 @@ function AppContent() {
 
     // 2. Save to Express server endpoint
     try {
-      const res = await fetch('/api/maintenance', {
+      const res = await fetch(resolveApiUrl('/api/maintenance'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -701,11 +724,13 @@ function AppContent() {
     };
 
     // Optimistic UI update
+    let nextListsSnapshot: VaultList[] = [];
     setLists((prev) => {
       const exists = prev.some((l) => l.id === fullList.id);
       const next = exists
         ? prev.map((l) => (l.id === fullList.id ? fullList : l))
         : [...prev, fullList];
+      nextListsSnapshot = next;
       try {
         localStorage.setItem('vault_lists_cache', JSON.stringify(next));
       } catch (e) {}
@@ -725,7 +750,11 @@ function AppContent() {
 
     // 2. Firestore
     try {
-      await firebaseService.saveVaultListToFirestore(fullList);
+      await firebaseService.saveVaultListToFirestore(
+        fullList,
+        nextListsSnapshot.length > 0 ? nextListsSnapshot : undefined,
+        Array.from(getDeletedListIds())
+      );
     } catch (e) {
       console.warn('Error saving list to Firestore:', e);
     }
@@ -742,8 +771,10 @@ function AppContent() {
     addDeletedListId(listId);
 
     // 2. Optimistic UI
+    let remainingSnapshot: VaultList[] = [];
     setLists((prev) => {
       const next = prev.filter((l) => l.id !== listId);
+      remainingSnapshot = next;
       try {
         localStorage.setItem('vault_lists_cache', JSON.stringify(next));
       } catch (e) {}
@@ -759,7 +790,11 @@ function AppContent() {
 
     // 4. Firestore
     try {
-      await firebaseService.deleteVaultListFromFirestore(listId);
+      await firebaseService.deleteVaultListFromFirestore(
+        listId,
+        remainingSnapshot,
+        Array.from(getDeletedListIds())
+      );
     } catch (e) {
       console.warn('Error deleting list from Firestore:', e);
     }
@@ -771,9 +806,10 @@ function AppContent() {
   // Toggle single item in list (Admin quick action)
   const handleToggleItemInList = async (listId: string, itemId: string) => {
     let updatedList: VaultList | null = null;
+    let nextListsSnapshot: VaultList[] = [];
 
-    setLists((prev) =>
-      prev.map((l) => {
+    setLists((prev) => {
+      const next = prev.map((l) => {
         if (l.id !== listId) return l;
         const exists = l.itemIds.includes(itemId);
         const newItemIds = exists
@@ -781,8 +817,13 @@ function AppContent() {
           : [...l.itemIds, itemId];
         updatedList = { ...l, itemIds: newItemIds };
         return updatedList;
-      })
-    );
+      });
+      nextListsSnapshot = next;
+      try {
+        localStorage.setItem('vault_lists_cache', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
     if (updatedList) {
       try {
@@ -791,7 +832,11 @@ function AppContent() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ itemId }),
         });
-        await firebaseService.saveVaultListToFirestore(updatedList);
+        await firebaseService.saveVaultListToFirestore(
+          updatedList,
+          nextListsSnapshot.length > 0 ? nextListsSnapshot : undefined,
+          Array.from(getDeletedListIds())
+        );
       } catch (e) {
         console.warn('Error toggling item in list:', e);
       }

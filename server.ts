@@ -38,16 +38,33 @@ app.use((req, res, next) => {
   next();
 });
 
-let serverFirestoreQuotaCooldownUntil = 0;
-function isServerFirestoreQuotaExhausted(): boolean {
-  return Date.now() < serverFirestoreQuotaCooldownUntil;
+let serverFirestoreWriteQuotaCooldownUntil = 0;
+let serverFirestoreReadQuotaCooldownUntil = 0;
+
+function isServerFirestoreWriteQuotaExhausted(): boolean {
+  return Date.now() < serverFirestoreWriteQuotaCooldownUntil;
 }
-function markServerFirestoreQuotaExhausted(): void {
-  serverFirestoreQuotaCooldownUntil = Date.now() + 30 * 60 * 1000;
+function isServerFirestoreReadQuotaExhausted(): boolean {
+  return Date.now() < serverFirestoreReadQuotaCooldownUntil;
+}
+function isServerFirestoreQuotaExhausted(): boolean {
+  return isServerFirestoreWriteQuotaExhausted();
+}
+function markServerFirestoreQuotaExhausted(isRead = false, errText = ''): void {
+  const isWriteErr = errText.toLowerCase().includes('write') || !isRead;
+  if (isWriteErr) {
+    serverFirestoreWriteQuotaCooldownUntil = Date.now() + 15 * 60 * 1000;
+  } else {
+    serverFirestoreReadQuotaCooldownUntil = Date.now() + 15 * 60 * 1000;
+  }
 }
 
 async function serverFirestoreFetch(docPath: string, options: RequestInit = {}, timeoutMs = 2500): Promise<Response | null> {
-  if (isServerFirestoreQuotaExhausted()) return null;
+  const method = String(options.method || 'GET').toUpperCase();
+  const isRead = method === 'GET' || method === 'HEAD';
+  if (isRead ? isServerFirestoreReadQuotaExhausted() : isServerFirestoreWriteQuotaExhausted()) {
+    return null;
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -59,7 +76,7 @@ async function serverFirestoreFetch(docPath: string, options: RequestInit = {}, 
     });
     clearTimeout(timer);
     if (res.status === 429) {
-      markServerFirestoreQuotaExhausted();
+      markServerFirestoreQuotaExhausted(isRead);
       return null;
     }
     if (!res.ok && res.status >= 400) {
@@ -67,7 +84,7 @@ async function serverFirestoreFetch(docPath: string, options: RequestInit = {}, 
         const clone = res.clone();
         const errText = await clone.text();
         if (errText.includes('RESOURCE_EXHAUSTED') || errText.includes('Quota exceeded')) {
-          markServerFirestoreQuotaExhausted();
+          markServerFirestoreQuotaExhausted(isRead, errText);
           return null;
         }
       } catch {}
@@ -2073,7 +2090,7 @@ async function saveUserToFirestoreREST(record: any, usersMap?: Record<string, an
 
 async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
   const result: Record<string, any> = {};
-  if (isServerFirestoreQuotaExhausted()) return result;
+  if (isServerFirestoreReadQuotaExhausted()) return result;
   try {
     const res = await serverFirestoreFetch('/system_config/users_registry');
     if (res && res.ok) {
@@ -2195,12 +2212,24 @@ app.post('/api/vault/users/sync', async (req, res) => {
       incomingEntries.push(...Object.values(accounts));
     }
 
+    let hasChangesForFirestore = false;
     for (const entry of incomingEntries) {
       const prof = entry?.profile || entry;
       const emailKey = String(entry?.email || prof?.email || '').toLowerCase().trim();
       if (!emailKey) continue;
 
       const existing = currentMap[emailKey];
+      const mergedProf = {
+        ...mergeUserProfileOnServer(existing?.profile, prof),
+        email: emailKey,
+      };
+      if (
+        !firestoreUsers[emailKey] ||
+        firestoreUsers[emailKey]?.profile?.updatedAt !== mergedProf.updatedAt ||
+        firestoreUsers[emailKey]?.profile?.membershipStatus !== mergedProf.membershipStatus
+      ) {
+        hasChangesForFirestore = true;
+      }
       currentMap[emailKey] = {
         email: emailKey,
         password:
@@ -2208,15 +2237,14 @@ app.post('/api/vault/users/sync', async (req, res) => {
             ? entry.password
             : existing?.password || entry?.password || 'password123',
         registeredAt: entry?.registeredAt || existing?.registeredAt || new Date().toISOString(),
-        profile: {
-          ...mergeUserProfileOnServer(existing?.profile, prof),
-          email: emailKey,
-        },
+        profile: mergedProf,
       };
     }
 
     writeRegisteredUsersMap(currentMap);
-    saveUsersRegistryToFirestoreREST(currentMap).catch(() => {});
+    if (hasChangesForFirestore) {
+      saveUsersRegistryToFirestoreREST(currentMap).catch(() => {});
+    }
 
     return res.json({
       success: true,
