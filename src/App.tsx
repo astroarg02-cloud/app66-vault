@@ -403,7 +403,6 @@ function AppContent() {
     }
     firebaseService.saveSession(cleanUser);
     if (cleanUser) {
-      firebaseService.updateUserProfile(cleanUser).catch(() => {});
       firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
     }
   };

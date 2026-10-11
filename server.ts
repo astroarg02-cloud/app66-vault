@@ -1954,7 +1954,38 @@ function writeRegisteredUsersMap(usersMap: Record<string, any>): boolean {
 }
 
 function mergeUserProfileOnServer(existingProf: any, incomingProf: any): any {
-  const base = { ...(existingProf || {}), ...(incomingProf || {}) };
+  if (!existingProf) return { ...(incomingProf || {}) };
+  if (!incomingProf) return { ...(existingProf || {}) };
+
+  const existingTime = existingProf?.updatedAt ? new Date(existingProf.updatedAt).getTime() : 0;
+  const incomingTime = incomingProf?.updatedAt ? new Date(incomingProf.updatedAt).getTime() : 0;
+  const validExistingTime = isNaN(existingTime) ? 0 : existingTime;
+  const validIncomingTime = isNaN(incomingTime) ? 0 : incomingTime;
+
+  // The profile with the newer updatedAt timestamp wins for user-editable profile fields
+  const existingIsNewer = validExistingTime > validIncomingTime;
+  const base = existingIsNewer
+    ? { ...incomingProf, ...existingProf }
+    : { ...existingProf, ...incomingProf };
+
+  if (existingIsNewer) {
+    base.displayName = existingProf.displayName ?? incomingProf.displayName;
+    base.avatarUrl = existingProf.avatarUrl ?? incomingProf.avatarUrl;
+    base.bio = existingProf.bio !== undefined ? existingProf.bio : incomingProf.bio;
+    base.phone = existingProf.phone !== undefined ? existingProf.phone : incomingProf.phone;
+    base.instagram = existingProf.instagram !== undefined ? existingProf.instagram : incomingProf.instagram;
+    base.customStatus = existingProf.customStatus !== undefined ? existingProf.customStatus : incomingProf.customStatus;
+    base.updatedAt = existingProf.updatedAt;
+  } else if (validIncomingTime > validExistingTime) {
+    base.displayName = incomingProf.displayName ?? existingProf.displayName;
+    base.avatarUrl = incomingProf.avatarUrl ?? existingProf.avatarUrl;
+    base.bio = incomingProf.bio !== undefined ? incomingProf.bio : existingProf.bio;
+    base.phone = incomingProf.phone !== undefined ? incomingProf.phone : existingProf.phone;
+    base.instagram = incomingProf.instagram !== undefined ? incomingProf.instagram : existingProf.instagram;
+    base.customStatus = incomingProf.customStatus !== undefined ? incomingProf.customStatus : existingProf.customStatus;
+    base.updatedAt = incomingProf.updatedAt;
+  }
+
   // Preserve active membership if existingProf has an active membership and incomingProf has 'none' (from a stale client sync)
   if (
     existingProf?.membershipStatus === 'active' &&
@@ -1968,6 +1999,18 @@ function mergeUserProfileOnServer(existingProf: any, incomingProf: any): any {
     base.membershipExpiresAt = existingProf.membershipExpiresAt;
     base.lastPaymentAmount = existingProf.lastPaymentAmount;
     base.tier = existingProf.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP';
+  } else if (
+    incomingProf?.membershipStatus === 'active' &&
+    incomingProf?.subscribedAt &&
+    existingProf?.membershipStatus === 'none' &&
+    !String(existingProf?.customStatus || '').startsWith('Membresía no aprobada:')
+  ) {
+    base.membershipStatus = 'active';
+    base.membershipPlan = incomingProf.membershipPlan;
+    base.subscribedAt = incomingProf.subscribedAt;
+    base.membershipExpiresAt = incomingProf.membershipExpiresAt;
+    base.lastPaymentAmount = incomingProf.lastPaymentAmount;
+    base.tier = incomingProf.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP';
   }
   return base;
 }
@@ -1986,14 +2029,14 @@ function userRecordToFirestoreFields(record: any): Record<string, any> {
     tier: { stringValue: String(prof?.tier || 'Invitado') },
     joinedAt: { stringValue: String(prof?.joinedAt || new Date().toISOString().split('T')[0]) },
     membershipStatus: { stringValue: String(prof?.membershipStatus || 'none') },
-    updatedAt: { stringValue: new Date().toISOString() },
+    updatedAt: { stringValue: String(prof?.updatedAt || new Date().toISOString()) },
+    bio: { stringValue: String(prof?.bio ?? '') },
+    phone: { stringValue: String(prof?.phone ?? '') },
+    customStatus: { stringValue: String(prof?.customStatus ?? '') },
+    instagram: { stringValue: String(prof?.instagram ?? '') },
   };
 
   if (prof?.avatarUrl) fields.avatarUrl = { stringValue: String(prof.avatarUrl) };
-  if (prof?.bio) fields.bio = { stringValue: String(prof.bio) };
-  if (prof?.phone) fields.phone = { stringValue: String(prof.phone) };
-  if (prof?.customStatus) fields.customStatus = { stringValue: String(prof.customStatus) };
-  if (prof?.instagram) fields.instagram = { stringValue: String(prof.instagram) };
   if (prof?.membershipPlan) fields.membershipPlan = { stringValue: String(prof.membershipPlan) };
   if (prof?.subscribedAt) fields.subscribedAt = { stringValue: String(prof.subscribedAt) };
   if (prof?.membershipExpiresAt) fields.membershipExpiresAt = { stringValue: String(prof.membershipExpiresAt) };
@@ -2020,7 +2063,7 @@ async function saveUsersRegistryToFirestoreREST(usersMap?: Record<string, any>):
         profile: {
           ...prof,
           avatarUrl:
-            prof.avatarUrl && String(prof.avatarUrl).length > 120000
+            prof.avatarUrl && String(prof.avatarUrl).length > 180000
               ? `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(prof.uid || k)}`
               : prof.avatarUrl,
         },
@@ -2031,11 +2074,15 @@ async function saveUsersRegistryToFirestoreREST(usersMap?: Record<string, any>):
       usersJson: { stringValue: JSON.stringify(compactMap) },
       updatedAt: { stringValue: new Date().toISOString() },
     };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     checkServerFirestoreResponse(res);
     return res.ok;
   } catch {
@@ -2043,7 +2090,7 @@ async function saveUsersRegistryToFirestoreREST(usersMap?: Record<string, any>):
   }
 }
 
-async function saveUserToFirestoreREST(record: any): Promise<boolean> {
+async function saveUserToFirestoreREST(record: any, usersMap?: Record<string, any>): Promise<boolean> {
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
     const prof = record?.profile || record;
@@ -2051,13 +2098,17 @@ async function saveUserToFirestoreREST(record: any): Promise<boolean> {
     if (!uid) return false;
     const url = `${FIRESTORE_DOCS_BASE}/users/${encodeURIComponent(uid)}?key=${rawFirebaseConfig.apiKey}`;
     const fields = userRecordToFirestoreFields(record);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     const response = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     checkServerFirestoreResponse(response);
-    await saveUsersRegistryToFirestoreREST();
+    await saveUsersRegistryToFirestoreREST(usersMap);
     return response.ok;
   } catch (err) {
     return false;
@@ -2069,7 +2120,10 @@ async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
   if (isServerFirestoreQuotaExhausted()) return result;
   try {
     const regUrl = `${FIRESTORE_DOCS_BASE}/system_config/users_registry?key=${rawFirebaseConfig.apiKey}`;
-    const regRes = await fetch(regUrl);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const regRes = await fetch(regUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
     checkServerFirestoreResponse(regRes);
     if (regRes.ok) {
       const regData: any = await regRes.json();
@@ -2131,22 +2185,28 @@ app.post('/api/vault/users', async (req, res) => {
     const emailKey = String(rawEmail).toLowerCase().trim();
     const currentMap = readRegisteredUsersMap();
     const existing = currentMap[emailKey];
+    const nowIso = new Date().toISOString();
+
+    const incomingProfileWithTimestamp = {
+      ...(profile || {}),
+      email: emailKey,
+      updatedAt: profile?.updatedAt || nowIso,
+    };
 
     const record = {
       email: emailKey,
-      password: body?.password || existing?.password || 'password123',
-      registeredAt: body?.registeredAt || existing?.registeredAt || new Date().toISOString(),
-      profile: {
-        ...(existing?.profile || {}),
-        ...(profile || {}),
-        email: emailKey,
-      },
+      password:
+        body?.password && body.password !== 'password123'
+          ? body.password
+          : existing?.password || body?.password || 'password123',
+      registeredAt: body?.registeredAt || existing?.registeredAt || nowIso,
+      profile: mergeUserProfileOnServer(existing?.profile, incomingProfileWithTimestamp),
     };
 
     currentMap[emailKey] = record;
     writeRegisteredUsersMap(currentMap);
 
-    const firestoreSynced = await saveUserToFirestoreREST(record);
+    const firestoreSynced = await saveUserToFirestoreREST(record, currentMap);
 
     return res.json({
       success: true,
@@ -2194,7 +2254,10 @@ app.post('/api/vault/users/sync', async (req, res) => {
       const existing = currentMap[emailKey];
       currentMap[emailKey] = {
         email: emailKey,
-        password: entry?.password || existing?.password || 'password123',
+        password:
+          entry?.password && entry.password !== 'password123'
+            ? entry.password
+            : existing?.password || entry?.password || 'password123',
         registeredAt: entry?.registeredAt || existing?.registeredAt || new Date().toISOString(),
         profile: {
           ...mergeUserProfileOnServer(existing?.profile, prof),
@@ -2239,7 +2302,23 @@ async function startServer() {
     try {
       const localUsers = readRegisteredUsersMap();
       const cloudUsers = await fetchAllUsersFromFirestoreREST();
-      const mergedUsers: Record<string, any> = { ...localUsers, ...cloudUsers };
+      const mergedUsers: Record<string, any> = { ...localUsers };
+      for (const [emailKey, fsRecord] of Object.entries(cloudUsers)) {
+        const existing = mergedUsers[emailKey];
+        if (!existing) {
+          mergedUsers[emailKey] = fsRecord;
+        } else {
+          mergedUsers[emailKey] = {
+            ...existing,
+            ...fsRecord,
+            password:
+              fsRecord.password && fsRecord.password !== 'password123'
+                ? fsRecord.password
+                : existing.password || fsRecord.password || 'password123',
+            profile: mergeUserProfileOnServer(existing.profile, fsRecord.profile),
+          };
+        }
+      }
       writeRegisteredUsersMap(mergedUsers);
       await saveUsersRegistryToFirestoreREST(mergedUsers);
 

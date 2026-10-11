@@ -87,10 +87,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Sincronizar campos de edición si cambia el usuario activo
+  useEffect(() => {
+    if (!showEditModal) {
+      setEditDisplayName(currentUser.displayName || '');
+      setEditBio(currentUser.bio || '');
+      setEditPhone(currentUser.phone || '');
+      setEditInstagram(currentUser.instagram || '');
+      setEditCustomStatus(currentUser.customStatus || '');
+      setEditAvatarUrl(currentUser.avatarUrl || '');
+    }
+  }, [currentUser, showEditModal]);
+
   // Sincronizar comprobantes cuando cambien
   useEffect(() => {
     const handleReceiptsUpdate = () => {
-      setUserReceipts(receiptService.getReceiptsByUser(currentUser.uid));
+      setUserReceipts(receiptService.getReceiptsByUser(currentUser.uid, currentUser.email));
     };
     window.addEventListener('vault_receipts_changed', handleReceiptsUpdate);
     window.addEventListener('vault_profile_updated', handleReceiptsUpdate);
@@ -98,7 +110,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       window.removeEventListener('vault_receipts_changed', handleReceiptsUpdate);
       window.removeEventListener('vault_profile_updated', handleReceiptsUpdate);
     };
-  }, [currentUser.uid]);
+  }, [currentUser.uid, currentUser.email]);
 
   // Publicaciones favoritas (guardadas por este usuario)
   const userFavoriteItems = items.filter((item) => 
@@ -116,20 +128,58 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     setShowEditModal(true);
   };
 
+  // Comprimir imagen de avatar para garantizar guardado instantáneo en localStorage, Servidor y Firestore
+  const compressAvatarDataUrl = (rawDataUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const maxDim = 320;
+            let width = img.width || 320;
+            let height = img.height || 320;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(rawDataUrl);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.84);
+            resolve(compressed);
+          } catch {
+            resolve(rawDataUrl);
+          }
+        };
+        img.onerror = () => resolve(rawDataUrl);
+        img.src = rawDataUrl;
+      } catch {
+        resolve(rawDataUrl);
+      }
+    });
+  };
+
   // Subir imagen personalizada para avatar
   const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('La imagen no debe superar los 5MB');
-      return;
-    }
-
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       if (typeof reader.result === 'string') {
-        setEditAvatarUrl(reader.result);
+        const optimized = await compressAvatarDataUrl(reader.result);
+        setEditAvatarUrl(optimized);
       }
     };
     reader.readAsDataURL(file);
@@ -138,31 +188,43 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // Guardar cambios en el perfil individual
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editDisplayName.trim()) return;
+    const cleanName = editDisplayName.trim() || currentUser.displayName || 'Usuario';
 
     setIsSavingProfile(true);
+    const nowIso = new Date().toISOString();
+
+    let finalAvatar = editAvatarUrl || currentUser.avatarUrl;
+    if (finalAvatar && finalAvatar.startsWith('data:image/') && finalAvatar.length > 80000) {
+      finalAvatar = await compressAvatarDataUrl(finalAvatar);
+    }
 
     const updatedProfile: UserProfile = {
       ...currentUser,
-      displayName: editDisplayName.trim(),
-      avatarUrl: editAvatarUrl || currentUser.avatarUrl,
+      displayName: cleanName,
+      avatarUrl: finalAvatar,
       bio: editBio.trim(),
       phone: editPhone.trim(),
-      instagram: editInstagram.trim(),
+      instagram: editInstagram.trim().replace(/^@/, ''),
       customStatus: editCustomStatus.trim(),
+      updatedAt: nowIso,
     };
 
     try {
-      await firebaseService.updateUserProfile(updatedProfile);
       if (onUpdateUser) {
         onUpdateUser(updatedProfile);
       }
+      await firebaseService.updateUserProfile(updatedProfile);
       setShowEditModal(false);
       setSaveToast('¡Tu perfil ha sido actualizado y guardado exitosamente!');
-      confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+      try {
+        confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+      } catch {}
       setTimeout(() => setSaveToast(null), 4000);
     } catch (err) {
       console.error('Error saving profile:', err);
+      setShowEditModal(false);
+      setSaveToast('¡Perfil guardado localmente!');
+      setTimeout(() => setSaveToast(null), 3500);
     } finally {
       setIsSavingProfile(false);
     }
@@ -170,17 +232,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   // Cambio rápido de avatar con 1 toque
   const handleQuickSelectAvatar = async (url: string) => {
+    const nowIso = new Date().toISOString();
     const updatedProfile: UserProfile = {
       ...currentUser,
       avatarUrl: url,
+      updatedAt: nowIso,
     };
+    setEditAvatarUrl(url);
     try {
-      await firebaseService.updateUserProfile(updatedProfile);
       if (onUpdateUser) {
         onUpdateUser(updatedProfile);
       }
+      await firebaseService.updateUserProfile(updatedProfile);
       setSaveToast('¡Foto de perfil actualizada exitosamente!');
-      confetti({ particleCount: 30, spread: 50, origin: { y: 0.5 } });
+      try {
+        confetti({ particleCount: 30, spread: 50, origin: { y: 0.5 } });
+      } catch {}
       setTimeout(() => setSaveToast(null), 3000);
     } catch (err) {
       console.error('Error changing avatar:', err);
@@ -295,6 +362,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <p className={`text-xs line-clamp-2 pt-0.5 ${isDark ? 'text-zinc-300' : 'text-slate-600'}`}>
                 {currentUser.bio}
               </p>
+            )}
+
+            {(currentUser.phone || currentUser.instagram) && (
+              <div className="flex items-center justify-center sm:justify-start gap-2.5 flex-wrap pt-1 text-[11px]">
+                {currentUser.phone && (
+                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-500">
+                    <Phone className="w-3 h-3" />
+                    <span>{currentUser.phone}</span>
+                  </span>
+                )}
+                {currentUser.instagram && (
+                  <span className="inline-flex items-center gap-1 font-semibold text-pink-500">
+                    <Instagram className="w-3 h-3" />
+                    <span>@{currentUser.instagram.replace(/^@/, '')}</span>
+                  </span>
+                )}
+              </div>
             )}
 
             {/* Badges de Rol y Membresía (Solo aparece lo de la membresía si la tienen comprada) */}

@@ -20,6 +20,7 @@ export interface UserProfile {
   phone?: string;
   instagram?: string;
   customStatus?: string;
+  updatedAt?: string;
 }
 
 export type ResourceCategory = 'video' | 'document' | 'audio' | 'preset' | 'code';

@@ -46,7 +46,8 @@
         "membershipStatus": { "type": "string" },
         "subscribedAt": { "type": "string" },
         "membershipExpiresAt": { "type": "string" },
-        "lastPaymentAmount": { "type": "number" }
+        "lastPaymentAmount": { "type": "number" },
+        "updatedAt": { "type": "string" }
       },
       "required": ["uid", "email"]
     },

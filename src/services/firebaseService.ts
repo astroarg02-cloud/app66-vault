@@ -126,6 +126,93 @@ if (isFirestoreQuotaExhausted()) {
 
 const LOCAL_STORAGE_SESSION_KEY = 'vault_firebase_session_v1';
 const LOCAL_STORAGE_REGISTERED_USERS_KEY = 'vault_registered_accounts_v1';
+const LOCAL_STORAGE_PROFILE_OVERRIDES_KEY = 'vault_profile_overrides_v1';
+
+interface ProfileOverrideRecord {
+  uid?: string;
+  email?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  bio?: string;
+  phone?: string;
+  instagram?: string;
+  customStatus?: string;
+  updatedAt: string;
+}
+
+function getProfileOverridesMap(): Record<string, ProfileOverrideRecord> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_PROFILE_OVERRIDES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+function saveProfileOverride(profile: UserProfile): void {
+  try {
+    if (!profile) return;
+    const map = getProfileOverridesMap();
+    const record: ProfileOverrideRecord = {
+      uid: profile.uid,
+      email: profile.email?.toLowerCase().trim(),
+      displayName: profile.displayName,
+      avatarUrl: profile.avatarUrl,
+      bio: profile.bio ?? '',
+      phone: profile.phone ?? '',
+      instagram: profile.instagram ?? '',
+      customStatus: profile.customStatus ?? '',
+      updatedAt: profile.updatedAt || new Date().toISOString(),
+    };
+    if (record.email) {
+      map[`email:${record.email}`] = record;
+    }
+    if (record.uid) {
+      map[`uid:${record.uid}`] = record;
+    }
+    localStorage.setItem(LOCAL_STORAGE_PROFILE_OVERRIDES_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Could not save profile override:', e);
+  }
+}
+
+function applyProfileOverride<T extends Partial<UserProfile>>(profile: T): T {
+  try {
+    if (!profile) return profile;
+    const map = getProfileOverridesMap();
+    const emailKey = profile.email ? `email:${profile.email.toLowerCase().trim()}` : '';
+    const uidKey = profile.uid ? `uid:${profile.uid}` : '';
+    const byEmail = emailKey ? map[emailKey] : undefined;
+    const byUid = uidKey ? map[uidKey] : undefined;
+
+    let override = byEmail || byUid;
+    if (byEmail && byUid) {
+      const tEmail = new Date(byEmail.updatedAt || 0).getTime() || 0;
+      const tUid = new Date(byUid.updatedAt || 0).getTime() || 0;
+      override = tEmail >= tUid ? byEmail : byUid;
+    }
+    if (!override) return profile;
+
+    const profTime = profile.updatedAt ? new Date(profile.updatedAt).getTime() || 0 : 0;
+    const overTime = override.updatedAt ? new Date(override.updatedAt).getTime() || 0 : 0;
+
+    if (overTime >= profTime) {
+      return {
+        ...profile,
+        displayName: override.displayName || profile.displayName,
+        avatarUrl: override.avatarUrl || profile.avatarUrl,
+        bio: override.bio !== undefined ? override.bio : profile.bio,
+        phone: override.phone !== undefined ? override.phone : profile.phone,
+        instagram: override.instagram !== undefined ? override.instagram : profile.instagram,
+        customStatus: override.customStatus !== undefined ? override.customStatus : profile.customStatus,
+        updatedAt: override.updatedAt,
+      };
+    }
+  } catch {}
+  return profile;
+}
 
 export interface RegisteredAccountRecord {
   email: string;
@@ -199,7 +286,35 @@ function mergeAccountProfiles(
   secondProf: Partial<UserProfile> | undefined,
   isAdmin: boolean
 ): UserProfile {
-  const base = { ...(firstProf || {}), ...(secondProf || {}) } as UserProfile;
+  const firstTime = firstProf?.updatedAt ? new Date(firstProf.updatedAt).getTime() || 0 : 0;
+  const secondTime = secondProf?.updatedAt ? new Date(secondProf.updatedAt).getTime() || 0 : 0;
+
+  // Determine which profile has newer user edits (if neither has updatedAt, prefer firstProf which is local)
+  const firstIsNewer = firstTime >= secondTime;
+  const base = (
+    firstIsNewer
+      ? { ...(secondProf || {}), ...(firstProf || {}) }
+      : { ...(firstProf || {}), ...(secondProf || {}) }
+  ) as UserProfile;
+
+  if (firstIsNewer && firstProf) {
+    if (firstProf.displayName) base.displayName = firstProf.displayName;
+    if (firstProf.avatarUrl) base.avatarUrl = firstProf.avatarUrl;
+    if (firstProf.bio !== undefined) base.bio = firstProf.bio;
+    if (firstProf.phone !== undefined) base.phone = firstProf.phone;
+    if (firstProf.instagram !== undefined) base.instagram = firstProf.instagram;
+    if (firstProf.customStatus !== undefined) base.customStatus = firstProf.customStatus;
+    if (firstProf.updatedAt) base.updatedAt = firstProf.updatedAt;
+  } else if (!firstIsNewer && secondProf) {
+    if (secondProf.displayName) base.displayName = secondProf.displayName;
+    if (secondProf.avatarUrl) base.avatarUrl = secondProf.avatarUrl;
+    if (secondProf.bio !== undefined) base.bio = secondProf.bio;
+    if (secondProf.phone !== undefined) base.phone = secondProf.phone;
+    if (secondProf.instagram !== undefined) base.instagram = secondProf.instagram;
+    if (secondProf.customStatus !== undefined) base.customStatus = secondProf.customStatus;
+    if (secondProf.updatedAt) base.updatedAt = secondProf.updatedAt;
+  }
+
   const firstActive = firstProf?.membershipStatus === 'active' && firstProf?.subscribedAt;
   const secondActive = secondProf?.membershipStatus === 'active' && secondProf?.subscribedAt;
   const explicitlyRejected = String(secondProf?.customStatus || '').startsWith('Membresía no aprobada:');
@@ -219,7 +334,8 @@ function mergeAccountProfiles(
     base.lastPaymentAmount = secondProf.lastPaymentAmount ?? firstProf?.lastPaymentAmount;
     base.tier = isAdmin ? 'Bóveda Diamante' : 'Acceso VIP';
   }
-  return base;
+
+  return applyProfileOverride(base);
 }
 
 export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountRecord> {
@@ -305,6 +421,8 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
   for (const [, record] of Object.entries(accounts)) {
     if (!record || !record.profile) continue;
 
+    record.profile = applyProfileOverride(record.profile);
+
     const isAllowedAdmin = isAuthorizedAdminEmail(record.email || record.profile.email);
     if (isAllowedAdmin && record.profile.role !== 'admin') {
       record.profile.role = 'admin';
@@ -365,9 +483,13 @@ export function getStoredRegisteredAccounts(): Record<string, RegisteredAccountR
       if (rawSession) {
         const sessionUser = JSON.parse(rawSession) as UserProfile;
         if (sessionUser && sessionUser.email) {
-          const updatedRecord = accounts[sessionUser.email.toLowerCase().trim()];
+          const emailKey = sessionUser.email.toLowerCase().trim();
+          const isAllowedAdmin = isAuthorizedAdminEmail(emailKey);
+          const updatedRecord = accounts[emailKey];
           if (updatedRecord && updatedRecord.profile) {
-            localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(updatedRecord.profile));
+            const mergedSession = mergeAccountProfiles(sessionUser, updatedRecord.profile, isAllowedAdmin);
+            updatedRecord.profile = mergedSession;
+            localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(mergedSession));
           }
         }
       }
@@ -446,10 +568,11 @@ export const firebaseService = {
       tier: isAdmin ? 'Bóveda Diamante' : (prof.tier === 'Bóveda Diamante' ? 'Acceso VIP' : (prof.tier || 'Invitado')),
       avatarUrl: prof.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(uid)}`,
       joinedAt: prof.joinedAt || new Date().toISOString().split('T')[0],
-      bio: prof.bio || null,
-      phone: prof.phone || null,
-      customStatus: prof.customStatus || null,
-      instagram: prof.instagram || null,
+      bio: prof.bio ?? '',
+      phone: prof.phone ?? '',
+      customStatus: prof.customStatus ?? '',
+      instagram: prof.instagram ?? '',
+      updatedAt: prof.updatedAt || new Date().toISOString(),
       membershipPlan: prof.membershipPlan || null,
       membershipStatus: prof.membershipStatus || 'none',
       subscribedAt: prof.subscribedAt || null,
@@ -641,6 +764,7 @@ export const firebaseService = {
       if (!emailKey) return;
       const isAdmin = isAuthorizedAdminEmail(emailKey);
       const existing = dbAccounts[emailKey];
+      const mergedProf = mergeAccountProfiles(existing?.profile, rec.profile, isAdmin);
       dbAccounts[emailKey] = {
         email: emailKey,
         password:
@@ -649,15 +773,14 @@ export const firebaseService = {
             : existing?.password || rec.password || 'password123',
         registeredAt: rec.registeredAt || existing?.registeredAt || new Date().toISOString(),
         profile: {
-          ...(existing?.profile || {}),
-          ...(rec.profile || {}),
+          ...mergedProf,
           email: emailKey,
           role: isAdmin ? 'admin' : 'vip_member',
           tier: isAdmin
             ? 'Bóveda Diamante'
-            : rec.profile?.tier === 'Bóveda Diamante'
+            : mergedProf.tier === 'Bóveda Diamante'
             ? 'Acceso VIP'
-            : rec.profile?.tier || existing?.profile?.tier || 'Invitado',
+            : mergedProf.tier || 'Invitado',
         },
       };
     };
@@ -822,78 +945,76 @@ export const firebaseService = {
     return localAccounts;
   },
 
-  // Listener en tiempo real para cuentas de usuarios en Firestore
+  // Listener en tiempo real para cuentas de usuarios en Firestore (mediante documento maestro system_config/users_registry)
   onUsersSnapshot(callback: (accounts: Record<string, RegisteredAccountRecord>) => void) {
     if (isFirestoreQuotaExhausted()) return () => {};
     try {
-      const colRef = collection(db, 'users');
+      const regDocRef = doc(db, 'system_config', 'users_registry');
       let unsub: (() => void) | null = null;
       unsub = onSnapshot(
-        colRef,
-        (snapshot) => {
-          if (!snapshot.empty) {
+        regDocRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const rawData = docSnap.data() as any;
+            if (!rawData?.usersJson) return;
+            let remoteMap: Record<string, RegisteredAccountRecord> = {};
+            try {
+              remoteMap = JSON.parse(rawData.usersJson);
+            } catch {
+              return;
+            }
+            if (!remoteMap || typeof remoteMap !== 'object') return;
+
             const currentAccounts = getStoredRegisteredAccounts();
             let updated = false;
 
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data();
-              const email = (data.email || '').toLowerCase().trim();
-              if (!email) return;
-              const uid = data.uid || docSnap.id;
+            for (const [key, remoteRec] of Object.entries(remoteMap)) {
+              const prof = remoteRec?.profile || (remoteRec as any);
+              const email = (remoteRec?.email || prof?.email || key || '').toLowerCase().trim();
+              if (!email) continue;
               const isAdmin = isAuthorizedAdminEmail(email);
               const existing = currentAccounts[email];
+              const uid = prof?.uid || existing?.profile?.uid || generateUniqueUserId(isAdmin ? 'admin' : 'usr');
 
-              const isPurchasedOrApproved = hasValidPurchasedOrApprovedMembership(uid, email, {
-                ...(existing?.profile || {}),
-                ...(data as any),
-                uid,
-                email,
-              });
-
+              const mergedProfile = mergeAccountProfiles(existing?.profile, prof, isAdmin);
+              const isPurchasedOrApproved = hasValidPurchasedOrApprovedMembership(uid, email, mergedProfile);
               const activeStatus =
-                isPurchasedOrApproved && (data.membershipStatus === 'active' || existing?.profile?.membershipStatus === 'active')
+                isPurchasedOrApproved && mergedProfile.membershipStatus === 'active'
                   ? 'active'
                   : isPurchasedOrApproved
-                  ? (data.membershipStatus ?? existing?.profile?.membershipStatus ?? 'none')
+                  ? (mergedProfile.membershipStatus ?? 'none')
                   : 'none';
 
-              const mergedProfile: UserProfile = {
-                ...(existing?.profile || {}),
+              const finalProfile: UserProfile = applyProfileOverride({
+                ...mergedProfile,
                 uid,
                 email,
-                displayName: data.displayName || existing?.profile?.displayName || email.split('@')[0] || 'Usuario',
                 role: isAdmin ? 'admin' : 'vip_member',
                 tier: isAdmin
                   ? 'Bóveda Diamante'
                   : activeStatus === 'active'
                   ? 'Acceso VIP'
-                  : existing?.profile?.tier === 'Bóveda Diamante'
+                  : mergedProfile.tier === 'Bóveda Diamante'
                   ? 'Invitado'
-                  : existing?.profile?.tier || 'Invitado',
-                avatarUrl: data.avatarUrl || existing?.profile?.avatarUrl,
-                joinedAt: data.joinedAt || existing?.profile?.joinedAt || new Date().toISOString().split('T')[0],
-                bio: data.bio ?? existing?.profile?.bio,
-                phone: data.phone ?? existing?.profile?.phone,
-                customStatus: data.customStatus ?? existing?.profile?.customStatus,
-                instagram: data.instagram ?? existing?.profile?.instagram,
-                membershipPlan: isPurchasedOrApproved ? (data.membershipPlan ?? existing?.profile?.membershipPlan) : undefined,
+                  : mergedProfile.tier || 'Invitado',
                 membershipStatus: activeStatus,
-                subscribedAt: isPurchasedOrApproved ? (data.subscribedAt ?? existing?.profile?.subscribedAt) : undefined,
-                membershipExpiresAt: isPurchasedOrApproved ? (data.membershipExpiresAt ?? existing?.profile?.membershipExpiresAt) : undefined,
-                lastPaymentAmount: isPurchasedOrApproved ? (data.lastPaymentAmount ?? existing?.profile?.lastPaymentAmount) : undefined,
-              };
+                membershipPlan: isPurchasedOrApproved ? mergedProfile.membershipPlan : undefined,
+                subscribedAt: isPurchasedOrApproved ? mergedProfile.subscribedAt : undefined,
+                membershipExpiresAt: isPurchasedOrApproved ? mergedProfile.membershipExpiresAt : undefined,
+                lastPaymentAmount: isPurchasedOrApproved ? mergedProfile.lastPaymentAmount : undefined,
+              });
 
               currentAccounts[email] = {
                 email,
                 password:
                   existing?.password && existing.password !== 'password123'
                     ? existing.password
-                    : data.password || existing?.password || 'password123',
-                registeredAt: existing?.registeredAt || data.registeredAt || new Date().toISOString(),
-                profile: mergedProfile,
+                    : remoteRec?.password || existing?.password || 'password123',
+                registeredAt: existing?.registeredAt || remoteRec?.registeredAt || new Date().toISOString(),
+                profile: finalProfile,
               };
               updated = true;
-            });
+            }
 
             if (updated) {
               try {
@@ -927,28 +1048,47 @@ export const firebaseService = {
     const normalized = email.toLowerCase().trim();
     const record = accounts[normalized];
     if (record && record.profile) {
-      this.saveSession(record.profile);
-      window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: record.profile } }));
-      return record.profile;
+      const prof = applyProfileOverride(record.profile);
+      this.saveSession(prof);
+      window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: prof } }));
+      return prof;
     }
     return null;
   },
 
-  // Actualizar perfil de un usuario garantizando persistencia local e individual
+  // Actualizar perfil de un usuario garantizando persistencia local, en servidor y en Firestore
   async updateUserProfile(profile: UserProfile): Promise<void> {
-    this.saveSession(profile);
+    const nowIso = new Date().toISOString();
+    const stampedProfile: UserProfile = {
+      ...profile,
+      updatedAt: profile.updatedAt || nowIso,
+    };
 
-    // Persistir de forma individual en el registro de cuentas
+    // 1. Guardar inmediatamente en el almacén dedicado de overrides y en la sesión activa
+    saveProfileOverride(stampedProfile);
+    this.saveSession(stampedProfile);
+
+    // 2. Actualizar Firebase Auth profile si hay usuario autenticado
+    try {
+      if (auth.currentUser && stampedProfile.displayName) {
+        updateProfile(auth.currentUser, {
+          displayName: stampedProfile.displayName,
+        }).catch(() => {});
+      }
+    } catch {}
+
+    // 3. Persistir de forma individual en el registro de cuentas y en el servidor/Firestore
+    let targetRecord: RegisteredAccountRecord | null = null;
     try {
       const accounts = getStoredRegisteredAccounts();
-      const emailKey = profile.email.toLowerCase().trim();
+      const emailKey = stampedProfile.email.toLowerCase().trim();
       let matchedKey: string | null = null;
 
       if (accounts[emailKey]) {
         matchedKey = emailKey;
       } else {
         for (const [key, record] of Object.entries(accounts)) {
-          if (record.profile?.uid === profile.uid) {
+          if (record.profile?.uid === stampedProfile.uid) {
             matchedKey = key;
             break;
           }
@@ -956,27 +1096,45 @@ export const firebaseService = {
       }
 
       if (matchedKey && accounts[matchedKey]) {
-        accounts[matchedKey].profile = { ...accounts[matchedKey].profile, ...profile };
+        accounts[matchedKey].profile = {
+          ...accounts[matchedKey].profile,
+          ...stampedProfile,
+          updatedAt: stampedProfile.updatedAt,
+        };
+        targetRecord = accounts[matchedKey];
         localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
-        await this.saveUserAccountToDatabase(accounts[matchedKey]);
       } else if (emailKey) {
-        // Si no existía, crear la entrada para este usuario y guardarla en la base de datos
         const newRecord: RegisteredAccountRecord = {
           email: emailKey,
           password: 'password123',
-          profile: { ...profile },
-          registeredAt: new Date().toISOString(),
+          profile: { ...stampedProfile },
+          registeredAt: nowIso,
         };
         accounts[emailKey] = newRecord;
+        targetRecord = newRecord;
         localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS_KEY, JSON.stringify(accounts));
-        await this.saveUserAccountToDatabase(newRecord);
       }
     } catch (e) {
       console.warn('Local account store update error:', e);
     }
 
-    // Notificar reactivamente a la UI
-    window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile } }));
+    // Re-afirmar la sesión local después de getStoredRegisteredAccounts
+    this.saveSession(stampedProfile);
+
+    // Notificar reactivamente a la UI de inmediato
+    window.dispatchEvent(new CustomEvent('vault_profile_updated', { detail: { profile: stampedProfile } }));
+
+    // 4. Sincronizar con Base de Datos (con timeout rápido para no bloquear la UI)
+    if (targetRecord) {
+      try {
+        await Promise.race([
+          this.saveUserAccountToDatabase(targetRecord),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 1500)),
+        ]);
+      } catch (e) {
+        console.warn('Background database profile sync warning:', e);
+      }
+    }
   },
 
   // Activar o mejorar la membresía de un usuario por su UID o Email dependiendo del monto establecido por el usuario
@@ -1243,10 +1401,16 @@ export const firebaseService = {
       const accounts = getStoredRegisteredAccounts();
       const stored = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
       if (stored) {
-        const user = JSON.parse(stored) as UserProfile;
+        let user = JSON.parse(stored) as UserProfile;
         if (user && typeof user === 'object') {
+          user = applyProfileOverride(user);
+          const emailKey = (user.email || '').toLowerCase().trim();
+          const isAllowedAdmin = isAuthorizedAdminEmail(emailKey);
+          if (emailKey && accounts[emailKey]?.profile) {
+            user = mergeAccountProfiles(user, accounts[emailKey].profile, isAllowedAdmin);
+          }
+
           let sessionChanged = false;
-          const isAllowedAdmin = isAuthorizedAdminEmail(user.email);
           if (!user.uid) {
             user.uid = generateUniqueUserId(isAllowedAdmin ? 'admin' : 'usr');
             sessionChanged = true;
@@ -1287,17 +1451,17 @@ export const firebaseService = {
 
   // Map a Firebase Auth User + Firestore data into app's UserProfile
   async mapFirebaseUserToProfile(fbUser: FirebaseUser): Promise<UserProfile> {
-    const email = fbUser.email || '';
+    const email = (fbUser.email || '').toLowerCase().trim();
     const isAdmin = isAuthorizedAdminEmail(email);
     const userDocRef = doc(db, 'users', fbUser.uid);
 
-    let tier: 'Bóveda Diamante' | 'Acceso VIP' | 'Invitado' = isAdmin ? 'Bóveda Diamante' : 'Invitado';
-    let displayName = fbUser.displayName || (email.split('@')[0] ? email.split('@')[0] : 'Usuario');
+    const tier: 'Bóveda Diamante' | 'Acceso VIP' | 'Invitado' = isAdmin ? 'Bóveda Diamante' : 'Invitado';
+    const displayName = fbUser.displayName || (email.split('@')[0] ? email.split('@')[0] : 'Usuario');
     const nowIso = new Date().toISOString();
 
-    const profile: UserProfile = {
+    let profile: UserProfile = {
       uid: fbUser.uid,
-      email: fbUser.email || 'user@vault.firebase',
+      email: email || 'user@vault.firebase',
       displayName,
       role: isAdmin ? 'admin' : 'vip_member',
       avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${fbUser.uid}`,
@@ -1306,21 +1470,13 @@ export const firebaseService = {
       membershipStatus: 'none',
     };
 
-    // Check local profile first to retain customizations & exact real membership dates
+    // Check local profile & overrides first to retain customizations & exact real membership dates
     const localAccounts = getStoredRegisteredAccounts();
-    const localMatch = localAccounts[email.toLowerCase()];
+    const localMatch = localAccounts[email];
     if (localMatch && localMatch.profile) {
-      if (localMatch.profile.avatarUrl) profile.avatarUrl = localMatch.profile.avatarUrl;
-      if (localMatch.profile.displayName) profile.displayName = localMatch.profile.displayName;
-      if (localMatch.profile.bio) profile.bio = localMatch.profile.bio;
-      if (localMatch.profile.phone) profile.phone = localMatch.profile.phone;
-      if (localMatch.profile.customStatus) profile.customStatus = localMatch.profile.customStatus;
-      if (localMatch.profile.instagram) profile.instagram = localMatch.profile.instagram;
-      if (localMatch.profile.membershipPlan) profile.membershipPlan = localMatch.profile.membershipPlan;
-      if (localMatch.profile.membershipStatus) profile.membershipStatus = localMatch.profile.membershipStatus;
-      if (localMatch.profile.subscribedAt) profile.subscribedAt = localMatch.profile.subscribedAt;
-      if (localMatch.profile.membershipExpiresAt) profile.membershipExpiresAt = localMatch.profile.membershipExpiresAt;
-      if (localMatch.profile.lastPaymentAmount) profile.lastPaymentAmount = localMatch.profile.lastPaymentAmount;
+      profile = mergeAccountProfiles(localMatch.profile, profile, isAdmin);
+    } else {
+      profile = applyProfileOverride(profile);
     }
 
     // Non-blocking firestore sync with timeout to prevent loading hangs
@@ -1332,22 +1488,9 @@ export const firebaseService = {
             new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
           ]);
           if (snap && snap.exists()) {
-            const data = snap.data();
-            const isPurchased = hasValidPurchasedOrApprovedMembership(fbUser.uid, email, data as any);
-            if (data.displayName) profile.displayName = data.displayName;
-            if (data.avatarUrl) profile.avatarUrl = data.avatarUrl;
-            if (data.bio) profile.bio = data.bio;
-            if (data.phone) profile.phone = data.phone;
-            if (data.customStatus) profile.customStatus = data.customStatus;
-            if (data.instagram) profile.instagram = data.instagram;
-            if (isPurchased) {
-              if (data.tier) profile.tier = isAdmin ? 'Bóveda Diamante' : (data.tier === 'Bóveda Diamante' ? 'Acceso VIP' : data.tier);
-              if (data.membershipPlan) profile.membershipPlan = data.membershipPlan;
-              if (data.membershipStatus) profile.membershipStatus = data.membershipStatus;
-              if (data.membershipExpiresAt) profile.membershipExpiresAt = data.membershipExpiresAt;
-              if (data.subscribedAt) profile.subscribedAt = data.subscribedAt;
-              if (data.lastPaymentAmount) profile.lastPaymentAmount = data.lastPaymentAmount;
-            }
+            const data = snap.data() as any;
+            const merged = mergeAccountProfiles(profile, data, isAdmin);
+            Object.assign(profile, merged);
           } else {
             await setDoc(userDocRef, {
               uid: fbUser.uid,
@@ -1356,9 +1499,11 @@ export const firebaseService = {
               role: isAdmin ? 'admin' : 'vip_member',
               tier: profile.tier,
               avatarUrl: profile.avatarUrl,
-              bio: profile.bio || null,
-              phone: profile.phone || null,
-              customStatus: profile.customStatus || null,
+              bio: profile.bio ?? '',
+              phone: profile.phone ?? '',
+              customStatus: profile.customStatus ?? '',
+              instagram: profile.instagram ?? '',
+              updatedAt: profile.updatedAt || nowIso,
               createdAt: serverTimestamp(),
               lastLoginAt: serverTimestamp(),
             });

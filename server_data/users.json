@@ -1,0 +1,104 @@
+{
+  "astroarg02@gmail.com": {
+    "email": "astroarg02@gmail.com",
+    "password": "360",
+    "registeredAt": "2025-01-01T00:00:00.000Z",
+    "profile": {
+      "uid": "admin_master_astro",
+      "email": "astroarg02@gmail.com",
+      "displayName": "Administrador (astroarg02)",
+      "role": "admin",
+      "joinedAt": "2025-01-01",
+      "tier": "Bóveda Diamante",
+      "membershipStatus": "none",
+      "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "bio": "Administrador central de Bóveda App 66. Gestión de contenidos y verificaciones.",
+      "phone": "+54 9 11 6554-6038",
+      "customStatus": "🛡️ En línea - Modo Administrador"
+    }
+  },
+  "cuentaninja989@gmail.com": {
+    "email": "cuentaninja989@gmail.com",
+    "password": "360",
+    "registeredAt": "2025-01-15T00:00:00.000Z",
+    "profile": {
+      "uid": "admin_ninja_989",
+      "email": "cuentaninja989@gmail.com",
+      "displayName": "Administrador (Cuenta Ninja)",
+      "role": "admin",
+      "joinedAt": "2025-01-15",
+      "tier": "Bóveda Diamante",
+      "membershipStatus": "none",
+      "avatarUrl": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80",
+      "customStatus": "🛡️ Administrador Secundario"
+    }
+  },
+  "member@vault.com": {
+    "email": "member@vault.com",
+    "password": "password123",
+    "registeredAt": "2025-02-14T00:00:00.000Z",
+    "profile": {
+      "uid": "usr_mv32941rx3m1o2272e43a",
+      "email": "member@vault.com",
+      "displayName": "Alex Rivera (VIP)",
+      "role": "vip_member",
+      "joinedAt": "2025-02-14",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "avatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "bio": "Miembro VIP de la comunidad. Acceso a recursos exclusivos.",
+      "customStatus": "💎 Miembro VIP"
+    }
+  },
+  "vip.member@privatehub.io": {
+    "email": "vip.member@privatehub.io",
+    "password": "password123",
+    "registeredAt": "2025-02-14T00:00:00.000Z",
+    "profile": {
+      "uid": "vip_user_449",
+      "email": "vip.member@privatehub.io",
+      "displayName": "Alex Vance",
+      "role": "vip_member",
+      "joinedAt": "2025-02-14",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "avatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "bio": "Miembro VIP de la comunidad. Acceso a recursos exclusivos.",
+      "customStatus": "💎 Miembro VIP"
+    }
+  },
+  "compracompra470@gmail.com": {
+    "email": "compracompra470@gmail.com",
+    "password": "carlos2020@€",
+    "registeredAt": "2026-10-11T00:47:46.232Z",
+    "profile": {
+      "uid": "usr_mv33t9y1r6l66ca665b7f",
+      "email": "compracompra470@gmail.com",
+      "displayName": "Carlos",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv33t9y1r6l66ca665b7f",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-11"
+    }
+  },
+  "afklives@gmail.com": {
+    "email": "afklives@gmail.com",
+    "password": "password123",
+    "registeredAt": "2026-10-11T00:48:27.531Z",
+    "profile": {
+      "uid": "usr_mv1cg915wt64vfd0aaa81",
+      "email": "afklives@gmail.com",
+      "displayName": "afklives",
+      "role": "vip_member",
+      "tier": "Acceso VIP",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv1cg915wt64vfd0aaa81",
+      "joinedAt": "2026-10-11",
+      "membershipPlan": "monthly",
+      "membershipStatus": "active",
+      "subscribedAt": "2026-10-11T00:48:27.531Z",
+      "membershipExpiresAt": "2026-11-10T00:48:27.531Z",
+      "lastPaymentAmount": 1
+    }
+  }
+}
