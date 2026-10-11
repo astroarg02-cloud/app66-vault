@@ -13,43 +13,59 @@ jobs:
       - name: 1. Descargar código del repositorio
         uses: actions/checkout@v4
 
-      - name: 2. Configurar Node.js 20
+      - name: 2. Configurar Node.js 22 (Requerido por Capacitor 8)
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: 3. Instalar dependencias del proyecto y Capacitor
+      - name: 3. Preparar proyecto Capacitor con link de Vercel
         run: |
-          npm install
+          mkdir -p cap-app/dist
+          cd cap-app
+          npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-
-      - name: 4. Compilar aplicación web (Vite)
-        run: npx vite build
-
-      - name: 5. Generar y sincronizar proyecto nativo Android
-        run: |
-          if [ ! -f "capacitor.config.json" ] && [ ! -f "capacitor.config.ts" ]; then
-            npx cap init "Sei6 App" "com.sei6.app" --web-dir dist
-          fi
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
+          cat << 'EOF' > dist/index.html
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Vault Private</title>
+          </head>
+          <body style="background:#09090b;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;">
+            Cargando Vault Private...
+          </body>
+          </html>
+          EOF
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.vault.privateserver",
+            "appName": "Vault Private",
+            "webDir": "dist",
+            "server": {
+              "url": "https://private-server66.vercel.app",
+              "cleartext": true,
+              "androidScheme": "https"
+            }
+          }
+          EOF
+          npx cap add android
           npx cap sync android
 
-      - name: 6. Configurar Java JDK 21 (Requerido por Android Gradle)
+      - name: 4. Configurar Java JDK 21 (Requerido por Android Gradle)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 7. Compilar archivo APK con Gradle
-        working-directory: ./android
+      - name: 5. Compilar archivo APK con Gradle
+        working-directory: ./cap-app/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: 8. Subir APK listo para descargar
+      - name: 6. Subir APK listo para descargar
         uses: actions/upload-artifact@v4
         with:
-          name: Sei6-App-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Vault-Android-APK
+          path: cap-app/android/app/build/outputs/apk/debug/app-debug.apk
