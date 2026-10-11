@@ -1,0 +1,52 @@
+name: Generar APK de Android (Capacitor)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Descargar código del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 3. Configurar Java JDK 21 (Requerido por Android Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 4. Instalar dependencias del proyecto y Capacitor
+        run: |
+          npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: 5. Compilar aplicación web (Vite)
+        run: npx vite build
+
+      - name: 6. Generar y sincronizar proyecto nativo Android
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: 7. Compilar archivo APK con Gradle
+        working-directory: ./android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: 8. Subir APK listo para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vault-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk

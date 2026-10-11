@@ -1,0 +1,8 @@
+{
+  "appId": "com.vault.privateserver",
+  "appName": "Vault Private",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
