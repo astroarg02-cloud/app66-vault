@@ -3,6 +3,17 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
+import { initializeApp as initFirebaseServerApp, getApps as getFirebaseServerApps, getApp as getFirebaseServerApp } from 'firebase/app';
+import {
+  getFirestore as getServerFirestore,
+  doc as fsDoc,
+  setDoc as fsSetDoc,
+  getDoc as fsGetDoc,
+  getDocs as fsGetDocs,
+  deleteDoc as fsDeleteDoc,
+  collection as fsCollection,
+  serverTimestamp as fsServerTimestamp,
+} from 'firebase/firestore';
 import rawFirebaseConfig from './firebase-applet-config.json';
 
 const app = express();
@@ -25,6 +36,12 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ADMIN_SECURITY_KEY = '360';
 const FIRESTORE_DB_ID = (rawFirebaseConfig as any).firestoreDatabaseId || '(default)';
 const FIRESTORE_DOCS_BASE = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/${encodeURIComponent(FIRESTORE_DB_ID)}/documents`;
+
+const serverFirebaseApp = !getFirebaseServerApps().length ? initFirebaseServerApp(rawFirebaseConfig) : getFirebaseServerApp();
+const serverDb =
+  FIRESTORE_DB_ID && FIRESTORE_DB_ID !== '(default)'
+    ? getServerFirestore(serverFirebaseApp, FIRESTORE_DB_ID)
+    : getServerFirestore(serverFirebaseApp);
 
 // Allow cross-origin requests from deployed clients (Vercel / APK / Shared URL)
 app.use((req, res, next) => {
@@ -171,21 +188,20 @@ function writeMaintenanceState(state: MaintenanceState): void {
   }
 }
 
-// Sync maintenance state with Firestore REST
+// Sync maintenance state with Firestore SDK
 async function saveMaintenanceToFirestoreREST(state: MaintenanceState): Promise<boolean> {
   try {
-    const url = `${FIRESTORE_DOCS_BASE}/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
-    const fields = {
-      isMaintenance: { booleanValue: Boolean(state.isMaintenance) },
-      message: { stringValue: String(state.message || '') },
-      updatedAt: { stringValue: String(state.updatedAt || new Date().toISOString()) },
-    };
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-    });
-    return response.ok;
+    await fsSetDoc(
+      fsDoc(serverDb, 'system_config', 'maintenance'),
+      {
+        isMaintenance: Boolean(state.isMaintenance),
+        message: String(state.message || ''),
+        updatedAt: String(state.updatedAt || new Date().toISOString()),
+        serverTimestamp: fsServerTimestamp(),
+      },
+      { merge: true }
+    );
+    return true;
   } catch (err) {
     console.warn('[Firestore Maintenance Sync Error]:', err);
     return false;
@@ -194,17 +210,16 @@ async function saveMaintenanceToFirestoreREST(state: MaintenanceState): Promise<
 
 async function fetchMaintenanceFromFirestoreREST(): Promise<MaintenanceState | null> {
   try {
-    const url = `${FIRESTORE_DOCS_BASE}/system_config/maintenance?key=${rawFirebaseConfig.apiKey}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    if (!data || !data.fields) return null;
-    const fields = data.fields;
-    return {
-      isMaintenance: Boolean(fields.isMaintenance?.booleanValue),
-      message: String(fields.message?.stringValue || ''),
-      updatedAt: String(fields.updatedAt?.stringValue || new Date().toISOString()),
-    };
+    const snap = await fsGetDoc(fsDoc(serverDb, 'system_config', 'maintenance'));
+    if (snap.exists()) {
+      const data: any = snap.data();
+      return {
+        isMaintenance: Boolean(data.isMaintenance),
+        message: String(data.message || ''),
+        updatedAt: String(data.updatedAt || new Date().toISOString()),
+      };
+    }
+    return null;
   } catch (err) {
     return null;
   }
@@ -290,66 +305,63 @@ function listToFirestoreFields(list: any): Record<string, any> {
   return fields;
 }
 
-// Save list to Firestore REST
+// Save list to Firestore SDK
 async function saveListToFirestoreREST(list: any): Promise<boolean> {
   try {
     if (!list || !list.id) return false;
-    const url = `${FIRESTORE_DOCS_BASE}/vault_lists/${encodeURIComponent(list.id)}?key=${rawFirebaseConfig.apiKey}`;
-    const fields = listToFirestoreFields(list);
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-    });
-    return response.ok;
+    await fsSetDoc(
+      fsDoc(serverDb, 'vault_lists', String(list.id)),
+      {
+        id: String(list.id || ''),
+        name: String(list.name || ''),
+        description: String(list.description || ''),
+        icon: String(list.icon || 'folder'),
+        color: String(list.color || '#0066FF'),
+        createdAt: String(list.createdAt || new Date().toISOString().split('T')[0]),
+        createdBy: String(list.createdBy || 'admin_master_astro'),
+        itemIds: Array.isArray(list.itemIds) ? list.itemIds.map(String) : [],
+        updatedAt: fsServerTimestamp(),
+      },
+      { merge: true }
+    );
+    return true;
   } catch (err) {
     console.error('[Firestore List Sync Error]:', err);
     return false;
   }
 }
 
-// Delete list from Firestore REST
+// Delete list from Firestore SDK
 async function deleteListFromFirestoreREST(listId: string): Promise<boolean> {
   try {
     if (!listId) return false;
-    const url = `${FIRESTORE_DOCS_BASE}/vault_lists/${encodeURIComponent(listId)}?key=${rawFirebaseConfig.apiKey}`;
-    const response = await fetch(url, { method: 'DELETE' });
-    return response.ok;
+    await fsDeleteDoc(fsDoc(serverDb, 'vault_lists', String(listId)));
+    return true;
   } catch (err) {
     console.error('[Firestore List Delete Error]:', err);
     return false;
   }
 }
 
-// Fetch all lists from Firestore REST
+// Fetch all lists from Firestore SDK
 async function fetchAllListsFromFirestoreREST(): Promise<any[]> {
   try {
-    const url = `${FIRESTORE_DOCS_BASE}/vault_lists?key=${rawFirebaseConfig.apiKey}&pageSize=100`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data: any = await res.json();
-    if (!data || !Array.isArray(data.documents)) return [];
-
-    return data.documents.map((doc: any) => {
-      const fields = doc.fields || {};
-      const id = doc.name.split('/').pop() || '';
-      let itemIds: string[] = [];
-      if (fields.itemIds?.arrayValue?.values) {
-        itemIds = fields.itemIds.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
-      }
+    const snap = await fsGetDocs(fsCollection(serverDb, 'vault_lists'));
+    return snap.docs.map((docSnap) => {
+      const data: any = docSnap.data();
       return {
-        id,
-        name: fields.name?.stringValue || 'Lista sin nombre',
-        description: fields.description?.stringValue || '',
-        icon: fields.icon?.stringValue || 'folder',
-        color: fields.color?.stringValue || '#0066FF',
-        itemIds,
-        createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
-        createdBy: fields.createdBy?.stringValue || 'admin_master_astro',
+        id: docSnap.id,
+        name: data.name || 'Lista sin nombre',
+        description: data.description || '',
+        icon: data.icon || 'folder',
+        color: data.color || '#0066FF',
+        itemIds: Array.isArray(data.itemIds) ? data.itemIds.map(String) : [],
+        createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+        createdBy: data.createdBy || 'admin_master_astro',
       };
     });
   } catch (err) {
-    console.error('Error fetching Firestore REST lists:', err);
+    console.error('Error fetching Firestore SDK lists:', err);
     return [];
   }
 }
@@ -440,58 +452,60 @@ function itemToFirestoreFields(item: any): Record<string, any> {
   return fields;
 }
 
-// Synchronize an item to Firebase Firestore REST API
+// Synchronize an item to Firebase Firestore SDK
 async function saveToFirestoreREST(item: any): Promise<boolean> {
   try {
     if (!item || !item.id) return false;
-    const url = `${FIRESTORE_DOCS_BASE}/vault_items/${encodeURIComponent(item.id)}?key=${rawFirebaseConfig.apiKey}`;
-    const fields = itemToFirestoreFields(item);
-    
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-    });
+    const sanitized = {
+      id: String(item.id || ''),
+      title: String(item.title || ''),
+      description: String(item.description || ''),
+      category: String(item.category || 'code'),
+      fileType: String(item.fileType || ''),
+      fileSize: String(item.fileSize || ''),
+      fileName: String(item.fileName || ''),
+      fileMimeType: String(item.fileMimeType || ''),
+      downloadUrl: String(item.downloadUrl || ''),
+      coverImage: String(item.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80'),
+      createdAt: String(item.createdAt || new Date().toISOString().split('T')[0]),
+      likesCount: Number(item.likesCount ?? 0),
+      likedBy: Array.isArray(item.likedBy) ? item.likedBy : [],
+      comments: Array.isArray(item.comments) ? item.comments : [],
+      listIds: Array.isArray(item.listIds) ? item.listIds : [],
+      isLockedForTier: Boolean(item.isLockedForTier),
+      version: String(item.version || 'v1.0'),
+      author: item.author || { name: 'Seis6 Mod', badge: 'ADMIN ROOT' },
+      updatedAt: fsServerTimestamp(),
+    };
 
-    if (response.ok) {
-      console.log(`[Firestore Server Sync] Item "${item.title}" (${item.id}) saved to Firestore.`);
-      return true;
-    } else {
-      const errText = await response.text();
-      console.warn(`[Firestore Server Sync Warning] Status ${response.status}:`, errText);
-      return false;
-    }
+    await fsSetDoc(fsDoc(serverDb, 'vault_items', String(item.id)), sanitized, { merge: true });
+    console.log(`[Firestore Server Sync] Item "${item.title}" (${item.id}) saved to Firestore.`);
+    return true;
   } catch (err) {
     console.error('[Firestore Server Sync Error]:', err);
     return false;
   }
 }
 
-// Delete item from Firebase Firestore REST API
+// Delete item from Firebase Firestore SDK
 async function deleteFromFirestoreREST(itemId: string): Promise<boolean> {
   try {
     if (!itemId) return false;
-    const url = `${FIRESTORE_DOCS_BASE}/vault_items/${encodeURIComponent(itemId)}?key=${rawFirebaseConfig.apiKey}`;
-    const response = await fetch(url, { method: 'DELETE' });
-    return response.ok;
+    await fsDeleteDoc(fsDoc(serverDb, 'vault_items', String(itemId)));
+    return true;
   } catch (err) {
     console.error('[Firestore Server Delete Error]:', err);
     return false;
   }
 }
 
-// Fetch all items from Firestore REST API
+// Fetch all items from Firestore SDK
 async function fetchAllFromFirestoreREST(): Promise<any[]> {
   try {
-    const url = `${FIRESTORE_DOCS_BASE}/vault_items?key=${rawFirebaseConfig.apiKey}&pageSize=300`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data: any = await res.json();
-    if (!data || !Array.isArray(data.documents)) return [];
-
-    return data.documents
-      .filter((doc: any) => {
-        const id = doc.name.split('/').pop() || '';
+    const snap = await fsGetDocs(fsCollection(serverDb, 'vault_items'));
+    return snap.docs
+      .filter((docSnap) => {
+        const id = docSnap.id;
         return (
           id &&
           !id.startsWith('res_00') &&
@@ -500,57 +514,31 @@ async function fetchAllFromFirestoreREST(): Promise<any[]> {
           id !== 'vault-res-direct-1787703256063'
         );
       })
-      .map((doc: any) => {
-      const fields = doc.fields || {};
-      const id = doc.name.split('/').pop() || '';
-      
-      let author = { name: 'Administrador (astroarg02)', badge: 'ADMIN ROOT' };
-      if (fields.author?.stringValue) {
-        try {
-          author = JSON.parse(fields.author.stringValue);
-        } catch (e) {
-          author = { name: fields.author.stringValue, badge: 'ADMIN ROOT' };
-        }
-      }
-
-      let comments: any[] = [];
-      if (fields.comments?.arrayValue?.values) {
-        comments = fields.comments.arrayValue.values.map((v: any) => {
-          try {
-            return JSON.parse(v.stringValue);
-          } catch (e) {
-            return v.stringValue;
-          }
-        });
-      }
-
-      let likedBy: string[] = [];
-      if (fields.likedBy?.arrayValue?.values) {
-        likedBy = fields.likedBy.arrayValue.values.map((v: any) => v.stringValue).filter(Boolean);
-      }
-
-      return {
-        id,
-        title: fields.title?.stringValue || 'Sin título',
-        description: fields.description?.stringValue || '',
-        category: fields.category?.stringValue || 'code',
-        fileType: fields.fileType?.stringValue || '',
-        fileSize: fields.fileSize?.stringValue || '',
-        fileName: fields.fileName?.stringValue || undefined,
-        fileMimeType: fields.fileMimeType?.stringValue || undefined,
-        downloadUrl: fields.downloadUrl?.stringValue || '',
-        coverImage: fields.coverImage?.stringValue || '',
-        createdAt: fields.createdAt?.stringValue || new Date().toISOString().split('T')[0],
-        likesCount: Number(fields.likesCount?.integerValue || 0),
-        likedBy,
-        comments,
-        isLockedForTier: Boolean(fields.isLockedForTier?.booleanValue),
-        version: fields.version?.stringValue || 'v1.0',
-        author,
-      };
-    });
+      .map((docSnap) => {
+        const data: any = docSnap.data();
+        return {
+          id: docSnap.id,
+          title: data.title || 'Sin título',
+          description: data.description || '',
+          category: data.category || 'code',
+          fileType: data.fileType || '',
+          fileSize: data.fileSize || '',
+          fileName: data.fileName || undefined,
+          fileMimeType: data.fileMimeType || undefined,
+          downloadUrl: data.downloadUrl || '',
+          coverImage: data.coverImage || '',
+          createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+          likesCount: Number(data.likesCount || 0),
+          likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
+          comments: Array.isArray(data.comments) ? data.comments : [],
+          listIds: Array.isArray(data.listIds) ? data.listIds : [],
+          isLockedForTier: Boolean(data.isLockedForTier),
+          version: data.version || 'v1.0',
+          author: data.author || { name: 'Seis6 Mod', badge: 'ADMIN ROOT' },
+        };
+      });
   } catch (err) {
-    console.error('Error fetching Firestore REST items:', err);
+    console.error('Error fetching Firestore SDK items:', err);
     return [];
   }
 }
@@ -1337,15 +1325,21 @@ function parseFirestoreReceiptDoc(docSnap: any, deletedSet: Set<string>): Record
 async function fetchSingleReceiptFromFirestoreREST(receiptId: string, deletedSet: Set<string>): Promise<any | null> {
   if (isServerFirestoreQuotaExhausted() || !receiptId) return null;
   try {
-    const url = `${FIRESTORE_DOCS_BASE}/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(res);
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    return parseFirestoreReceiptDoc(data, deletedSet);
+    const snap = await fsGetDoc(fsDoc(serverDb, 'payment_receipts', String(receiptId)));
+    if (!snap.exists()) return null;
+    const data: any = snap.data();
+    const id = data.id || snap.id;
+    if (!id || deletedSet.has(id) || String(id).startsWith('rec-demo')) return null;
+    let imgUrl = data.receiptImageUrl || '';
+    if (!imgUrl || String(imgUrl).startsWith('/api/vault/receipts/')) {
+      const diskImg = loadReceiptImageFromDisk(id);
+      if (diskImg) imgUrl = diskImg;
+    }
+    return {
+      ...data,
+      id,
+      receiptImageUrl: imgUrl,
+    };
   } catch {
     return null;
   }
@@ -1360,7 +1354,6 @@ async function saveReceiptsRegistryToFirestoreREST(receipts: any[], deletedIds?:
       (r) => r && r.id && !delSet.has(r.id) && !String(r.id).startsWith('rec-demo')
     );
 
-    // Keep full images in registry if total serialized length < 650KB; otherwise store lightweight URL in registry
     let serialized = JSON.stringify(clean);
     if (serialized.length > 650000) {
       const compact = clean.map((r, idx) => {
@@ -1382,33 +1375,17 @@ async function saveReceiptsRegistryToFirestoreREST(receipts: any[], deletedIds?:
       }
     }
 
-    const fields: Record<string, any> = {
-      receiptsJson: { stringValue: serialized },
-      receiptIds: {
-        arrayValue: {
-          values: clean.map((r) => ({ stringValue: String(r.id) })),
-        },
+    await fsSetDoc(
+      fsDoc(serverDb, 'system_config', 'receipts_registry'),
+      {
+        receiptsJson: serialized,
+        receiptIds: clean.map((r) => String(r.id)),
+        deletedIds: delArr.map((id) => String(id)),
+        updatedAt: new Date().toISOString(),
       },
-      deletedIds: {
-        arrayValue: {
-          values: delArr.map((id) => ({ stringValue: String(id) })),
-        },
-      },
-      updatedAt: { stringValue: new Date().toISOString() },
-    };
-
-    const url = `${FIRESTORE_DOCS_BASE}/system_config/receipts_registry?key=${rawFirebaseConfig.apiKey}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(res);
-    return res.ok;
+      { merge: true }
+    );
+    return true;
   } catch {
     return false;
   }
@@ -1418,20 +1395,45 @@ async function saveReceiptToFirestoreREST(rec: any, allReceipts?: any[]): Promis
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
     if (!rec || !rec.id) return false;
-    const url = `${FIRESTORE_DOCS_BASE}/payment_receipts/${encodeURIComponent(rec.id)}?key=${rawFirebaseConfig.apiKey}`;
-    const fields = receiptToFirestoreFields(rec);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(response);
+    const id = String(rec.id);
+    const imgUrl = String(rec.receiptImageUrl || '');
+    const safeImgUrl =
+      imgUrl && imgUrl.length < 750000
+        ? imgUrl
+        : imgUrl
+        ? `/api/vault/receipts/${encodeURIComponent(id)}/image`
+        : '';
+
+    const payload: Record<string, any> = {
+      id,
+      userId: String(rec.userId || 'user'),
+      userDisplayName: String(rec.userDisplayName || 'Usuario'),
+      userEmail: String(rec.userEmail || ''),
+      plan: String(rec.plan || 'monthly'),
+      amount: Number(rec.amount) || 1,
+      currency: String(rec.currency || 'USD'),
+      paymentMethod: String(rec.paymentMethod || 'Transferencia'),
+      referenceCode: String(rec.referenceCode || ''),
+      receiptImageUrl: safeImgUrl,
+      receiptFileName: String(rec.receiptFileName || 'comprobante.jpg'),
+      notes: String(rec.notes || ''),
+      whatsappContact: String(rec.whatsappContact || '+54 9 11 6554-6038'),
+      status: String(rec.status || 'pending'),
+      createdAt: String(rec.createdAt || new Date().toISOString()),
+      updatedAt: new Date().toISOString(),
+    };
+    if (rec.userAvatar && String(rec.userAvatar).length < 250000) {
+      payload.userAvatar = String(rec.userAvatar);
+    }
+    if (rec.reviewedAt) payload.reviewedAt = String(rec.reviewedAt);
+    if (rec.reviewedBy) payload.reviewedBy = String(rec.reviewedBy);
+    if (rec.adminNote !== undefined) payload.adminNote = String(rec.adminNote);
+    if (rec.membershipStartsAt) payload.membershipStartsAt = String(rec.membershipStartsAt);
+    if (rec.membershipExpiresAt) payload.membershipExpiresAt = String(rec.membershipExpiresAt);
+
+    await fsSetDoc(fsDoc(serverDb, 'payment_receipts', id), payload, { merge: true });
     await saveReceiptsRegistryToFirestoreREST(allReceipts || readReceipts());
-    return response.ok;
+    return true;
   } catch (err) {
     return false;
   }
@@ -1440,14 +1442,9 @@ async function saveReceiptToFirestoreREST(rec: any, allReceipts?: any[]): Promis
 async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolean> {
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
-    const url = `${FIRESTORE_DOCS_BASE}/payment_receipts/${encodeURIComponent(receiptId)}?key=${rawFirebaseConfig.apiKey}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const response = await fetch(url, { method: 'DELETE', signal: controller.signal });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(response);
+    await fsDeleteDoc(fsDoc(serverDb, 'payment_receipts', String(receiptId)));
     await saveReceiptsRegistryToFirestoreREST(readReceipts());
-    return response.ok;
+    return true;
   } catch {
     return false;
   }
@@ -1458,31 +1455,21 @@ async function fetchAllReceiptsFromFirestoreREST(): Promise<any[]> {
   if (isServerFirestoreQuotaExhausted()) return [];
   const deletedSet = readDeletedReceiptIds();
 
-  // 1. Primary: Read single-document master registry (system_config/receipts_registry) - fast & Enterprise-compatible!
   try {
-    const regUrl = `${FIRESTORE_DOCS_BASE}/system_config/receipts_registry?key=${rawFirebaseConfig.apiKey}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const regRes = await fetch(regUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(regRes);
-
-    if (regRes.ok) {
-      const regData: any = await regRes.json();
-      const fields = regData?.fields || {};
-
-      if (fields.deletedIds?.arrayValue?.values) {
-        for (const v of fields.deletedIds.arrayValue.values) {
-          if (v?.stringValue) {
-            deletedSet.add(v.stringValue);
-            addDeletedReceiptId(v.stringValue);
+    const regSnap = await fsGetDoc(fsDoc(serverDb, 'system_config', 'receipts_registry'));
+    if (regSnap.exists()) {
+      const regData: any = regSnap.data();
+      if (Array.isArray(regData.deletedIds)) {
+        for (const v of regData.deletedIds) {
+          if (v) {
+            deletedSet.add(String(v));
+            addDeletedReceiptId(String(v));
           }
         }
       }
-
-      if (fields.receiptsJson?.stringValue) {
+      if (regData.receiptsJson) {
         try {
-          const parsed = JSON.parse(fields.receiptsJson.stringValue);
+          const parsed = JSON.parse(regData.receiptsJson);
           if (Array.isArray(parsed)) {
             for (const r of parsed) {
               if (r && r.id && !deletedSet.has(r.id) && !String(r.id).startsWith('rec-demo')) {
@@ -1499,29 +1486,6 @@ async function fetchAllReceiptsFromFirestoreREST(): Promise<any[]> {
             }
           }
         } catch {}
-      }
-
-      // Check receiptIds array and hydrate any missing receipts or missing base64 images from payment_receipts/{id}
-      const idValues = fields.receiptIds?.arrayValue?.values || [];
-      const idsToHydrate: string[] = [];
-      for (const v of idValues) {
-        const rid = v?.stringValue;
-        if (!rid || deletedSet.has(rid) || String(rid).startsWith('rec-demo')) continue;
-        const existing = map.get(rid);
-        if (!existing || !existing.receiptImageUrl || !String(existing.receiptImageUrl).startsWith('data:image/')) {
-          idsToHydrate.push(rid);
-        }
-      }
-
-      if (idsToHydrate.length > 0) {
-        const hydratedList = await Promise.all(
-          idsToHydrate.slice(0, 15).map((rid) => fetchSingleReceiptFromFirestoreREST(rid, deletedSet))
-        );
-        for (const h of hydratedList) {
-          if (h && h.id) {
-            map.set(h.id, mergeReceiptRecords(map.get(h.id), h));
-          }
-        }
       }
     }
   } catch (err) {
@@ -2053,7 +2017,6 @@ async function saveUsersRegistryToFirestoreREST(usersMap?: Record<string, any>):
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
     const mapToSave = usersMap || readRegisteredUsersMap();
-    // Strip overly large base64 avatars from registry if needed so document stays well under 1MB
     const compactMap: Record<string, any> = {};
     for (const [k, v] of Object.entries(mapToSave)) {
       if (!v) continue;
@@ -2069,22 +2032,15 @@ async function saveUsersRegistryToFirestoreREST(usersMap?: Record<string, any>):
         },
       };
     }
-    const url = `${FIRESTORE_DOCS_BASE}/system_config/users_registry?key=${rawFirebaseConfig.apiKey}`;
-    const fields = {
-      usersJson: { stringValue: JSON.stringify(compactMap) },
-      updatedAt: { stringValue: new Date().toISOString() },
-    };
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(res);
-    return res.ok;
+    await fsSetDoc(
+      fsDoc(serverDb, 'system_config', 'users_registry'),
+      {
+        usersJson: JSON.stringify(compactMap),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return true;
   } catch {
     return false;
   }
@@ -2096,20 +2052,32 @@ async function saveUserToFirestoreREST(record: any, usersMap?: Record<string, an
     const prof = record?.profile || record;
     const uid = prof?.uid;
     if (!uid) return false;
-    const url = `${FIRESTORE_DOCS_BASE}/users/${encodeURIComponent(uid)}?key=${rawFirebaseConfig.apiKey}`;
-    const fields = userRecordToFirestoreFields(record);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(response);
+    const email = String(record?.email || prof?.email || '').toLowerCase().trim();
+    const payload: Record<string, any> = {
+      uid: String(uid),
+      email,
+      password: String(record?.password || 'password123'),
+      registeredAt: String(record?.registeredAt || new Date().toISOString()),
+      displayName: String(prof?.displayName || email.split('@')[0] || 'Usuario'),
+      role: String(prof?.role || 'vip_member'),
+      tier: String(prof?.tier || 'Invitado'),
+      joinedAt: String(prof?.joinedAt || new Date().toISOString().split('T')[0]),
+      membershipStatus: String(prof?.membershipStatus || 'none'),
+      updatedAt: String(prof?.updatedAt || new Date().toISOString()),
+      bio: String(prof?.bio ?? ''),
+      phone: String(prof?.phone ?? ''),
+      customStatus: String(prof?.customStatus ?? ''),
+      instagram: String(prof?.instagram ?? ''),
+    };
+    if (prof?.avatarUrl && String(prof.avatarUrl).length < 250000) payload.avatarUrl = String(prof.avatarUrl);
+    if (prof?.membershipPlan) payload.membershipPlan = String(prof.membershipPlan);
+    if (prof?.subscribedAt) payload.subscribedAt = String(prof.subscribedAt);
+    if (prof?.membershipExpiresAt) payload.membershipExpiresAt = String(prof.membershipExpiresAt);
+    if (typeof prof?.lastPaymentAmount === 'number') payload.lastPaymentAmount = prof.lastPaymentAmount;
+
+    await fsSetDoc(fsDoc(serverDb, 'users', String(uid)), payload, { merge: true });
     await saveUsersRegistryToFirestoreREST(usersMap);
-    return response.ok;
+    return true;
   } catch (err) {
     return false;
   }
@@ -2119,18 +2087,12 @@ async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
   const result: Record<string, any> = {};
   if (isServerFirestoreQuotaExhausted()) return result;
   try {
-    const regUrl = `${FIRESTORE_DOCS_BASE}/system_config/users_registry?key=${rawFirebaseConfig.apiKey}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const regRes = await fetch(regUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    checkServerFirestoreResponse(regRes);
-    if (regRes.ok) {
-      const regData: any = await regRes.json();
-      const rawJson = regData?.fields?.usersJson?.stringValue;
-      if (rawJson) {
+    const regSnap = await fsGetDoc(fsDoc(serverDb, 'system_config', 'users_registry'));
+    if (regSnap.exists()) {
+      const regData: any = regSnap.data();
+      if (regData?.usersJson) {
         try {
-          const parsed = JSON.parse(rawJson);
+          const parsed = JSON.parse(regData.usersJson);
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             Object.assign(result, parsed);
           }
@@ -2138,7 +2100,7 @@ async function fetchAllUsersFromFirestoreREST(): Promise<Record<string, any>> {
       }
     }
   } catch (err) {
-    console.warn('Error fetching Firestore REST users_registry:', err);
+    console.warn('Error fetching Firestore SDK users_registry:', err);
   }
   return result;
 }
@@ -2298,8 +2260,45 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Vault Server running on http://0.0.0.0:${PORT}`);
 
-    // Lightweight non-exhaustive cloud read on startup
+    // Lightweight non-exhaustive cloud read and sync on startup
     try {
+      const localItems = readVaultItems();
+      const cloudItems = await fetchAllFromFirestoreREST();
+      const itemMap = new Map<string, any>();
+      for (const it of localItems) {
+        if (it && it.id) itemMap.set(it.id, it);
+      }
+      for (const it of cloudItems) {
+        if (it && it.id) itemMap.set(it.id, { ...(itemMap.get(it.id) || {}), ...it });
+      }
+      const mergedItems = Array.from(itemMap.values());
+      if (mergedItems.length > 0) {
+        writeVaultItems(mergedItems);
+        for (const it of mergedItems) {
+          await saveToFirestoreREST(it);
+        }
+      }
+
+      const deletedListSet = readDeletedListIds();
+      const localLists = readVaultLists();
+      const cloudLists = await fetchAllListsFromFirestoreREST();
+      const listMap = new Map<string, any>();
+      for (const l of localLists) {
+        if (l && l.id && !deletedListSet.has(l.id)) listMap.set(l.id, l);
+      }
+      for (const l of cloudLists) {
+        if (l && l.id && !deletedListSet.has(l.id)) {
+          listMap.set(l.id, { ...(listMap.get(l.id) || {}), ...l });
+        }
+      }
+      const mergedLists = Array.from(listMap.values());
+      if (mergedLists.length > 0) {
+        writeVaultLists(mergedLists);
+        for (const l of mergedLists) {
+          await saveListToFirestoreREST(l);
+        }
+      }
+
       const localUsers = readRegisteredUsersMap();
       const cloudUsers = await fetchAllUsersFromFirestoreREST();
       const mergedUsers: Record<string, any> = { ...localUsers };

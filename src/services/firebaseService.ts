@@ -1784,6 +1784,7 @@ export const firebaseService = {
       likesCount: typeof item.likesCount === 'number' ? item.likesCount : 0,
       likedBy: Array.isArray(item.likedBy) ? item.likedBy.filter(Boolean) : [],
       comments: Array.isArray(item.comments) ? item.comments.filter(Boolean) : [],
+      listIds: Array.isArray(item.listIds) ? item.listIds.filter(Boolean) : [],
       isLockedForTier: Boolean(item.isLockedForTier),
       version: item.version || 'v1.0',
       author: {
@@ -1966,6 +1967,7 @@ export const firebaseService = {
                 likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
                 likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
                 comments: Array.isArray(data.comments) ? data.comments : [],
+                listIds: Array.isArray(data.listIds) ? data.listIds : undefined,
                 isLockedForTier: data.isLockedForTier ?? false,
                 version: data.version || 'v1.0',
                 author: data.author || {
@@ -2048,6 +2050,7 @@ export const firebaseService = {
             likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
             likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
             comments: Array.isArray(data.comments) ? data.comments : [],
+            listIds: Array.isArray(data.listIds) ? data.listIds : undefined,
             isLockedForTier: data.isLockedForTier ?? false,
             version: data.version || 'v1.0',
             author: data.author || {
