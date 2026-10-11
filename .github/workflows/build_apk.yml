@@ -33,14 +33,14 @@ jobs:
             <title>Vault Private</title>
           </head>
           <body style="background:#09090b;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;">
-            Cargando Vault Private...
+            Cargando Seis6 App...
           </body>
           </html>
           EOF
           cat << 'EOF' > capacitor.config.json
           {
-            "appId": "com.vault.privateserver",
-            "appName": "Vault Private",
+            "appId": "com.seis6.app",
+            "appName": "Seis6 App",
             "webDir": "dist",
             "server": {
               "url": "https://private-server66.vercel.app",
@@ -67,5 +67,5 @@ jobs:
       - name: 6. Subir APK listo para descargar
         uses: actions/upload-artifact@v4
         with:
-          name: Vault-Android-APK
+          name: Seis6-App-APK
           path: cap-app/android/app/build/outputs/apk/debug/app-debug.apk
