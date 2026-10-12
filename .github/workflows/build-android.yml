@@ -14,14 +14,14 @@ jobs:
       - name: 1. Descargar código del repositorio
         uses: actions/checkout@v4
 
-      - name: 2. Configurar Node.js 20
+      - name: 2. Configurar Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 3. Configurar Java JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -74,5 +74,5 @@ jobs:
           echo "- **Motor:** Vite + React + Capacitor Nativo" >> $GITHUB_STEP_SUMMARY
           echo "- **Diseño:** 100% AMOLED Dark (#000000) Edge-to-Edge" >> $GITHUB_STEP_SUMMARY
           echo "- **Base de Datos:** Firebase Firestore + Cloud Sync" >> $GITHUB_STEP_SUMMARY
-          echo "- **Archivo:** \`Seis6_Vault_v1.0.apk\` disponible para descarga en Artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "- **Archivo:** \`Seis6_App_v1.0.apk\` disponible para descarga en Artifacts." >> $GITHUB_STEP_SUMMARY
 
