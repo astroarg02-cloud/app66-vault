@@ -4314,20 +4314,44 @@ ${item.description}
                               item.listIds.contains(l.id))
                           .toList();
 
-                      // Tarjeta de Publicación idéntica a VaultScreen.tsx (List View)
-                      return GestureDetector(
-                        onTap: () => _openItemDetailModal(item),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: isDark ? kDarkCard : Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                                color: isDark
-                                    ? kDarkBorder
-                                    : const Color(0xFFE2E8F0)),
+                      // Tarjeta de Publicación idéntica a VaultScreen.tsx (List View) con animación suave
+                      return TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0.0, end: 1.0),
+                        duration: Duration(
+                            milliseconds: 220 + (idx * 25).clamp(0, 300)),
+                        curve: Curves.easeOutCubic,
+                        builder: (ctx, animVal, child) => Opacity(
+                          opacity: animVal,
+                          child: Transform.translate(
+                            offset: Offset(0, 14 * (1 - animVal)),
+                            child: child,
                           ),
+                        ),
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            _openItemDetailModal(item);
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: isDark ? kDarkCard : Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                  color: isDark
+                                      ? kDarkBorder
+                                      : const Color(0xFFE2E8F0)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: isDark
+                                      ? Colors.black.withOpacity(0.35)
+                                      : Colors.blueGrey.withOpacity(0.06),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -4479,8 +4503,9 @@ ${item.description}
                             ],
                           ),
                         ),
-                      );
-                    },
+                      ),
+                    );
+                  },
                   ),
           ),
         ),

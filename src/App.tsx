@@ -1332,8 +1332,8 @@ function AppContent() {
         <div className={`w-full max-w-lg flex items-center justify-around sm:justify-center gap-1.5 sm:gap-3 px-3 sm:px-4 py-1.5 rounded-full border shadow-inner backdrop-blur-2xl transition-colors ${
           isDark ? 'bg-[#0A0A0C]/90 border-[#1E1E24]/80' : 'bg-[#F1F5F9]/90 border-slate-200'
         }`}>
-          {/* Publicaciones (SOLO ICONO, SOLO ADMINISTRADORES) */}
-          {currentUser?.role === 'admin' && (() => {
+          {/* Publicaciones (SOLO ICONO, DISPONIBLE PARA TODOS) */}
+          {(() => {
             const isActive = currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId;
             return (
               <motion.button
