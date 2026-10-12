@@ -59,124 +59,124 @@ jobs:
           for dir in values values-night; do
             mkdir -p android/app/src/main/res/$dir
             cat << 'EOF' > android/app/src/main/res/$dir/colors.xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="colorPrimary">#000000</color>
-    <color name="colorPrimaryDark">#000000</color>
-    <color name="colorAccent">#0066FF</color>
-</resources>
-EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="colorPrimary">#000000</color>
+              <color name="colorPrimaryDark">#000000</color>
+              <color name="colorAccent">#0066FF</color>
+          </resources>
+          EOF
           done
 
           # 2. Configurar styles.xml base en values y values-night (Fuerza tema oscuro puro sin bordes)
           for dir in values values-night; do
             mkdir -p android/app/src/main/res/$dir
             cat << 'EOF' > android/app/src/main/res/$dir/styles.xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
-        <item name="colorPrimary">#000000</item>
-        <item name="colorPrimaryDark">#000000</item>
-        <item name="colorAccent">#0066FF</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:colorBackground">#000000</item>
-    </style>
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources xmlns:tools="http://schemas.android.com/tools">
+              <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+                  <item name="colorPrimary">#000000</item>
+                  <item name="colorPrimaryDark">#000000</item>
+                  <item name="colorAccent">#0066FF</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:colorBackground">#000000</item>
+              </style>
 
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
-        <item name="windowActionBar">false</item>
-        <item name="windowNoTitle">true</item>
-        <item name="android:background">#000000</item>
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:colorBackground">#000000</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
-        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
-        <item name="android:windowTranslucentStatus">false</item>
-        <item name="android:windowTranslucentNavigation">false</item>
-    </style>
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:colorBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+                  <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+                  <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+                  <item name="android:windowTranslucentStatus">false</item>
+                  <item name="android:windowTranslucentNavigation">false</item>
+              </style>
 
-    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
-        <item name="android:background">#000000</item>
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-    </style>
-</resources>
-EOF
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+              </style>
+          </resources>
+          EOF
           done
 
           # 3. Configurar cutout notch en Android 9+ (API 28+) para values-v28 y values-night-v28
           for dir in values-v28 values-night-v28; do
             mkdir -p android/app/src/main/res/$dir
             cat << 'EOF' > android/app/src/main/res/$dir/styles.xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
-        <item name="windowActionBar">false</item>
-        <item name="windowNoTitle">true</item>
-        <item name="android:background">#000000</item>
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:colorBackground">#000000</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:windowTranslucentStatus">false</item>
-        <item name="android:windowTranslucentNavigation">false</item>
-    </style>
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources xmlns:tools="http://schemas.android.com/tools">
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:colorBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:windowLightNavigationBar">false</item>
+                  <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+                  <item name="android:windowTranslucentStatus">false</item>
+                  <item name="android:windowTranslucentNavigation">false</item>
+              </style>
 
-    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
-        <item name="android:background">#000000</item>
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-    </style>
-</resources>
-EOF
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+              </style>
+          </resources>
+          EOF
           done
 
           # 4. Configurar Android 10+ (API 29+) para remover el scrim gris forzado de la barra de navegación
           for dir in values-v29 values-night-v29 values-v31 values-night-v31; do
             mkdir -p android/app/src/main/res/$dir
             cat << 'EOF' > android/app/src/main/res/$dir/styles.xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
-        <item name="windowActionBar">false</item>
-        <item name="windowNoTitle">true</item>
-        <item name="android:background">#000000</item>
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:colorBackground">#000000</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
-        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
-        <item name="android:windowTranslucentStatus">false</item>
-        <item name="android:windowTranslucentNavigation">false</item>
-    </style>
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources xmlns:tools="http://schemas.android.com/tools">
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:colorBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:windowLightNavigationBar">false</item>
+                  <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+                  <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
+                  <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
+                  <item name="android:windowTranslucentStatus">false</item>
+                  <item name="android:windowTranslucentNavigation">false</item>
+              </style>
 
-    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
-        <item name="android:background">#000000</item>
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
-        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
-    </style>
-</resources>
-EOF
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+                  <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
+                  <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
+              </style>
+          </resources>
+          EOF
           done
 
           # 5. Configurar MainActivity.java para forzar WebView negro, layout extendido y sin bordes grises
