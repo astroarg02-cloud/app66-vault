@@ -27,13 +27,54 @@ jobs:
           cd cap-app
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          cp ../capacitor.config.json .
+          cp ../capacitor.config.json . || true
           npx cap add android
           npx cap sync android
-          node ../scripts/configure-android.cjs
+          if [ -f ../scripts/configure-android.cjs ]; then
+            node ../scripts/configure-android.cjs
+          else
+            node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const resDir = path.resolve("android/app/src/main/res");
+            const colors = `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="colorPrimary">#000000</color>\n    <color name="colorPrimaryDark">#000000</color>\n    <color name="colorAccent">#0066FF</color>\n</resources>`;
+            for (const d of ["values", "values-night"]) {
+              fs.mkdirSync(path.join(resDir, d), { recursive: true });
+              fs.writeFileSync(path.join(resDir, d, "colors.xml"), colors);
+            }
+            const baseStyles = `<?xml version="1.0" encoding="utf-8"?>\n<resources xmlns:tools="http://schemas.android.com/tools">\n    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">\n        <item name="colorPrimary">#000000</item>\n        <item name="colorPrimaryDark">#000000</item>\n        <item name="colorAccent">#0066FF</item>\n        <item name="android:statusBarColor">#000000</item>\n        <item name="android:navigationBarColor">#000000</item>\n        <item name="android:windowBackground">#000000</item>\n        <item name="android:colorBackground">#000000</item>\n    </style>\n    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">\n        <item name="windowActionBar">false</item>\n        <item name="windowNoTitle">true</item>\n        <item name="android:background">#000000</item>\n        <item name="android:windowBackground">#000000</item>\n        <item name="android:colorBackground">#000000</item>\n        <item name="android:statusBarColor">#000000</item>\n        <item name="android:navigationBarColor">#000000</item>\n        <item name="android:windowDrawsSystemBarBackgrounds">true</item>\n        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>\n        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>\n        <item name="android:windowTranslucentStatus">false</item>\n        <item name="android:windowTranslucentNavigation">false</item>\n    </style>\n    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:background">#000000</item>\n        <item name="android:windowBackground">#000000</item>\n        <item name="android:statusBarColor">#000000</item>\n        <item name="android:navigationBarColor">#000000</item>\n    </style>\n</resources>`;
+            for (const d of ["values", "values-night"]) {
+              fs.writeFileSync(path.join(resDir, d, "styles.xml"), baseStyles);
+            }
+            const v28Styles = `<?xml version="1.0" encoding="utf-8"?>\n<resources xmlns:tools="http://schemas.android.com/tools">\n    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">\n        <item name="windowActionBar">false</item>\n        <item name="windowNoTitle">true</item>\n        <item name="android:background">#000000</item>\n        <item name="android:windowBackground">#000000</item>\n        <item name="android:colorBackground">#000000</item>\n        <item name="android:statusBarColor">#000000</item>\n        <item name="android:navigationBarColor">#000000</item>\n        <item name="android:windowDrawsSystemBarBackgrounds">true</item>\n        <item name="android:windowLightStatusBar">false</item>\n        <item name="android:windowLightNavigationBar">false</item>\n        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>\n        <item name="android:windowTranslucentStatus">false</item>\n        <item name="android:windowTranslucentNavigation">false</item>\n    </style>\n    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:background">#000000</item>\n        <item name="android:windowBackground">#000000</item>\n        <item name="android:statusBarColor">#000000</item>\n        <item name="android:navigationBarColor">#000000</item>\n        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>\n    </style>\n</resources>`;
+            for (const d of ["values-v28", "values-night-v28"]) {
+              fs.mkdirSync(path.join(resDir, d), { recursive: true });
+              fs.writeFileSync(path.join(resDir, d, "styles.xml"), v28Styles);
+            }
+            const v29Styles = `<?xml version="1.0" encoding="utf-8"?>\n<resources xmlns:tools="http://schemas.android.com/tools">\n    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">\n        <item name="windowActionBar">false</item>\n        <item name="windowNoTitle">true</item>\n        <item name="android:background">#000000</item>\n        <item name="android:windowBackground">#000000</item>\n        <item name="android:colorBackground">#000000</item>\n        <item name="android:statusBarColor">#000000</item>\n        <item name="android:navigationBarColor">#000000</item>\n        <item name="android:windowDrawsSystemBarBackgrounds">true</item>\n        <item name="android:windowLightStatusBar">false</item>\n        <item name="android:windowLightNavigationBar">false</item>\n        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>\n        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>\n        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>\n        <item name="android:windowTranslucentStatus">false</item>\n        <item name="android:windowTranslucentNavigation">false</item>\n    </style>\n    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:background">#000000</item>\n        <item name="android:windowBackground">#000000</item>\n        <item name="android:statusBarColor">#000000</item>\n        <item name="android:navigationBarColor">#000000</item>\n        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>\n        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>\n        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>\n    </style>\n</resources>`;
+            for (const d of ["values-v29", "values-night-v29", "values-v31", "values-night-v31"]) {
+              fs.mkdirSync(path.join(resDir, d), { recursive: true });
+              fs.writeFileSync(path.join(resDir, d, "styles.xml"), v29Styles);
+            }
+            const javaDir = path.resolve("android/app/src/main/java/com/seis6/app");
+            fs.mkdirSync(javaDir, { recursive: true });
+            const javaCode = `package com.seis6.app;\n\nimport android.os.Bundle;\nimport android.os.Build;\nimport android.graphics.Color;\nimport android.webkit.WebView;\nimport android.view.WindowManager;\nimport android.view.View;\nimport android.view.Window;\nimport androidx.core.view.WindowCompat;\nimport androidx.core.view.WindowInsetsControllerCompat;\nimport com.getcapacitor.BridgeActivity;\n\npublic class MainActivity extends BridgeActivity {\n    @Override\n    public void onCreate(Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        applyEdgeToEdge();\n    }\n    @Override\n    public void onResume() {\n        super.onResume();\n        applyEdgeToEdge();\n    }\n    @Override\n    public void onWindowFocusChanged(boolean hasFocus) {\n        super.onWindowFocusChanged(hasFocus);\n        if (hasFocus) applyEdgeToEdge();\n    }\n    private void applyEdgeToEdge() {\n        try {\n            Window window = getWindow();\n            if (window != null) {\n                window.setBackgroundDrawableResource(android.R.color.black);\n                if (window.getDecorView() != null) window.getDecorView().setBackgroundColor(Color.BLACK);\n                View content = window.findViewById(android.R.id.content);\n                if (content != null) content.setBackgroundColor(Color.BLACK);\n                window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);\n                window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);\n                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);\n                window.setStatusBarColor(Color.BLACK);\n                window.setNavigationBarColor(Color.BLACK);\n                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {\n                    WindowManager.LayoutParams lp = window.getAttributes();\n                    lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;\n                    window.setAttributes(lp);\n                }\n                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {\n                    window.setNavigationBarContrastEnforced(false);\n                    window.setStatusBarContrastEnforced(false);\n                }\n                WindowCompat.setDecorFitsSystemWindows(window, false);\n                WindowInsetsControllerCompat ctrl = new WindowInsetsControllerCompat(window, window.getDecorView());\n                ctrl.setAppearanceLightStatusBars(false);\n                ctrl.setAppearanceLightNavigationBars(false);\n            }\n            WebView wv = getBridge() != null ? getBridge().getWebView() : null;\n            if (wv != null) {\n                wv.setBackgroundColor(Color.BLACK);\n                wv.setOverScrollMode(WebView.OVER_SCROLL_NEVER);\n            }\n        } catch (Exception ignored) {}\n    }\n}`;
+            fs.writeFileSync(path.join(javaDir, "MainActivity.java"), javaCode);
+            const manifestPath = path.resolve("android/app/src/main/AndroidManifest.xml");
+            if (fs.existsSync(manifestPath)) {
+              let m = fs.readFileSync(manifestPath, "utf8");
+              if (!m.includes("android.max_aspect")) m = m.replace("</application>", "    <meta-data android:name=\"android.max_aspect\" android:value=\"3.0\" />\n    </application>");
+              if (!m.includes("android:resizeableActivity")) {
+                m = m.replace("<activity", "<activity android:resizeableActivity=\"true\" android:windowSoftInputMode=\"adjustResize\"");
+                m = m.replace("<application", "<application android:resizeableActivity=\"true\"");
+              }
+              fs.writeFileSync(manifestPath, m);
+            }
+            '
+          fi
 
       - name: 4. Configurar Java JDK 21 (Requerido por Android Gradle)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
