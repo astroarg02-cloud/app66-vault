@@ -604,11 +604,26 @@ app.get('/api/flutter/source', (_req, res) => {
     const pubspecPath = path.join(process.cwd(), 'flutter_app', 'pubspec.yaml');
     const mainDartPath = path.join(process.cwd(), 'flutter_app', 'lib', 'main.dart');
     const workflowPath = path.join(process.cwd(), '.github', 'workflows', 'build-android.yml');
+
+    const readSafe = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '';
+
+    const androidFiles: Record<string, string> = {
+      'android/settings.gradle': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'settings.gradle')),
+      'android/build.gradle': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'build.gradle')),
+      'android/app/build.gradle': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'app', 'build.gradle')),
+      'android/app/src/main/AndroidManifest.xml': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'app', 'src', 'main', 'AndroidManifest.xml')),
+      'android/app/src/main/kotlin/com/seis6/seis6_vault_native/MainActivity.kt': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'app', 'src', 'main', 'kotlin', 'com', 'seis6', 'seis6_vault_native', 'MainActivity.kt')),
+      'android/app/src/main/res/values/styles.xml': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'app', 'src', 'main', 'res', 'values', 'styles.xml')),
+      'android/app/src/main/res/values-night/styles.xml': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'app', 'src', 'main', 'res', 'values-night', 'styles.xml')),
+      'android/gradle/wrapper/gradle-wrapper.properties': readSafe(path.join(process.cwd(), 'flutter_app', 'android', 'gradle', 'wrapper', 'gradle-wrapper.properties')),
+    };
+
     res.json({
       success: true,
-      pubspec: fs.existsSync(pubspecPath) ? fs.readFileSync(pubspecPath, 'utf-8') : '',
-      mainDart: fs.existsSync(mainDartPath) ? fs.readFileSync(mainDartPath, 'utf-8') : '',
-      workflowYml: fs.existsSync(workflowPath) ? fs.readFileSync(workflowPath, 'utf-8') : '',
+      pubspec: readSafe(pubspecPath),
+      mainDart: readSafe(mainDartPath),
+      workflowYml: readSafe(workflowPath),
+      androidFiles,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

@@ -309,6 +309,7 @@ export async function exportFlutterNativeProjectZip(): Promise<boolean> {
     let pubspec = '';
     let mainDart = '';
     let workflowYml = '';
+    let androidFiles: Record<string, string> = {};
 
     try {
       const res = await fetch(resolveApiUrl('/api/flutter/source'));
@@ -317,6 +318,7 @@ export async function exportFlutterNativeProjectZip(): Promise<boolean> {
         pubspec = data.pubspec || '';
         mainDart = data.mainDart || '';
         workflowYml = data.workflowYml || '';
+        androidFiles = data.androidFiles || {};
       }
     } catch {}
 
@@ -328,6 +330,11 @@ export async function exportFlutterNativeProjectZip(): Promise<boolean> {
     }
     if (workflowYml) {
       zip.file('.github/workflows/build-android.yml', workflowYml);
+    }
+    for (const [filePath, fileContent] of Object.entries(androidFiles)) {
+      if (fileContent) {
+        zip.file(`flutter_app/${filePath}`, fileContent);
+      }
     }
 
     const readme = `# Seis6 Vault - Proyecto 100% Nativo en Flutter (Android APK)
