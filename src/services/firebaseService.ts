@@ -2648,9 +2648,16 @@ export const firebaseService = {
 
   // Save Maintenance Mode state to Firestore via stateless REST
   async saveMaintenance(isMaintenance: boolean, message: string): Promise<boolean> {
-    if (isFirestoreQuotaExhausted()) return false;
     const cleanMessage = String(message || '').trim();
     const updatedAt = new Date().toISOString();
+
+    // Cache locally immediately so the app reflects state even offline or if Firestore quota is full
+    try {
+      localStorage.setItem('vault_maintenance_active', String(isMaintenance));
+      if (cleanMessage) localStorage.setItem('vault_maintenance_message', cleanMessage);
+    } catch {}
+
+    if (isFirestoreQuotaExhausted()) return false;
 
     try {
       const fields = {
@@ -2670,7 +2677,7 @@ export const firebaseService = {
   },
 
   // Fetch Maintenance Mode state from Firestore
-  async fetchMaintenance(): Promise<{ isMaintenance: boolean; message: string } | null> {
+  async fetchMaintenance(): Promise<{ isMaintenance: boolean; message: string; updatedAt?: string } | null> {
     if (isFirestoreQuotaExhausted()) return null;
     try {
       const res = await firestoreRestFetch('/system_config/maintenance');
@@ -2680,6 +2687,7 @@ export const firebaseService = {
           return {
             isMaintenance: Boolean(data.fields.isMaintenance?.booleanValue),
             message: String(data.fields.message?.stringValue || ''),
+            updatedAt: data.fields.updatedAt?.stringValue,
           };
         }
       }

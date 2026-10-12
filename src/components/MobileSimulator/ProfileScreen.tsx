@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Moon, Sun, Palette, Shield, Sparkles, AlertCircle,
   Edit3, Camera, Phone, Heart, FileText, Crown, Users, Check,
   ChevronRight, ArrowRight, ExternalLink, RefreshCw, Upload, Image as ImageIcon,
-  Instagram, Settings, Copy
+  Instagram, Settings, Copy, Wrench
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VerifiedBadge } from '../VerifiedBadge';
@@ -36,6 +36,8 @@ interface ProfileScreenProps {
   onNavigateToMembership?: () => void;
   onNavigateToReceipts?: () => void;
   onNavigateToVault?: () => void;
+  isMaintenanceActive?: boolean;
+  onOpenMaintenanceModal?: () => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ 
@@ -47,6 +49,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onNavigateToMembership,
   onNavigateToReceipts,
   onNavigateToVault,
+  isMaintenanceActive = false,
+  onOpenMaintenanceModal,
 }) => {
   const { setTheme, isDark } = useTheme();
   const hasPurchasedMembership = Boolean(
@@ -823,6 +827,60 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </motion.button>
             </div>
           </div>
+
+          {/* Panel de Control de Modo Mantenimiento (Exclusivo Administrador) */}
+          {currentUser.role === 'admin' && onOpenMaintenanceModal && (
+            <div
+              className={`p-4 rounded-2xl border transition-colors ${
+                isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                    isMaintenanceActive
+                      ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                      : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                  }`}>
+                    <Wrench className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                      Control de Modo Mantenimiento
+                    </span>
+                    <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                      {isMaintenanceActive
+                        ? 'Acceso bloqueado: Solo administradores con Key pueden ingresar'
+                        : 'Acceso normal: Plataforma libre para todos los miembros'}
+                    </p>
+                  </div>
+                </div>
+
+                <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                  isMaintenanceActive
+                    ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
+                    : 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
+                }`}>
+                  {isMaintenanceActive ? 'ACTIVO (ON)' : 'INACTIVO (OFF)'}
+                </span>
+              </div>
+
+              <motion.button
+                type="button"
+                onClick={onOpenMaintenanceModal}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
+                  isMaintenanceActive
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/20'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#15151D] dark:hover:bg-[#1E1E28] text-slate-800 dark:text-white border border-slate-200 dark:border-[#252533]'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                <span>Configurar Modo Mantenimiento</span>
+              </motion.button>
+            </div>
+          )}
 
           {/* Role-Based Permissions Matrix */}
           <div className="space-y-2">

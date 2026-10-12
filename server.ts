@@ -599,21 +599,29 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// GET /api/maintenance - Fetch current maintenance mode status (checks local + Firestore)
-app.get('/api/maintenance', async (req, res) => {
+// GET /api/maintenance & /api/maintenance/status - Fetch current maintenance mode status
+const handleGetMaintenance = async (req: express.Request, res: express.Response) => {
   let state = readMaintenanceState();
   try {
     const cloudState = await fetchMaintenanceFromFirestoreREST();
     if (cloudState && cloudState.updatedAt) {
-      state = cloudState;
-      writeMaintenanceState(cloudState);
+      const localTime = new Date(state.updatedAt).getTime() || 0;
+      const cloudTime = new Date(cloudState.updatedAt).getTime() || 0;
+      // Only adopt Firestore state if it is genuinely newer than server state
+      if (cloudTime > localTime) {
+        state = cloudState;
+        writeMaintenanceState(cloudState);
+      }
     }
   } catch {}
   res.json({ success: true, ...state });
-});
+};
 
-// POST /api/maintenance - Update maintenance mode (Admin with key or admin session)
-app.post('/api/maintenance', async (req, res) => {
+app.get('/api/maintenance', handleGetMaintenance);
+app.get('/api/maintenance/status', handleGetMaintenance);
+
+// POST /api/maintenance & /api/maintenance/status - Update maintenance mode (Admin with key or admin session)
+const handlePostMaintenance = async (req: express.Request, res: express.Response) => {
   try {
     const { isMaintenance, message, adminKey } = req.body;
     // Allow if adminKey matches 360 or ADMIN_SECURITY_KEY
@@ -623,14 +631,14 @@ app.post('/api/maintenance', async (req, res) => {
     const current = readMaintenanceState();
     const updated: MaintenanceState = {
       isMaintenance: typeof isMaintenance === 'boolean' ? isMaintenance : current.isMaintenance,
-      message: typeof message === 'string' ? message.trim() : current.message,
+      message: typeof message === 'string' && message.trim() ? message.trim() : current.message,
       updatedAt: new Date().toISOString(),
     };
     writeMaintenanceState(updated);
     
-    // Sync to Firestore REST in background/async so Cloud Firestore is always synchronized
+    // Sync to Firestore REST in background/async so Cloud Firestore is always synchronized if quota permits
     try {
-      await saveMaintenanceToFirestoreREST(updated);
+      saveMaintenanceToFirestoreREST(updated).catch(() => {});
     } catch (fsErr) {
       console.warn('[Firestore Maintenance Save Warning]:', fsErr);
     }
@@ -640,7 +648,10 @@ app.post('/api/maintenance', async (req, res) => {
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+
+app.post('/api/maintenance', handlePostMaintenance);
+app.post('/api/maintenance/status', handlePostMaintenance);
 
 // GET /api/vault/items - Fetch all items from Firestore + Server Store
 app.get('/api/vault/items', async (req, res) => {

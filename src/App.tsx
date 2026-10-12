@@ -116,7 +116,14 @@ function AppContent() {
   const [showAdminUpload, setShowAdminUpload] = useState(false);
   const [showAdminListModal, setShowAdminListModal] = useState(false);
   const [editingList, setEditingList] = useState<VaultList | null>(null);
-  const [isMaintenanceActive, setIsMaintenanceActive] = useState<boolean>(false);
+  const [isMaintenanceActive, setIsMaintenanceActive] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('vault_maintenance_active');
+      return cached === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
   const [maintenanceMessage, setMaintenanceMessage] = useState<string>(() => {
     try {
       const cached = localStorage.getItem('vault_maintenance_message');
@@ -254,8 +261,18 @@ function AppContent() {
       firebaseService.reconcileApprovedReceiptsWithUsers(receipts);
     });
 
-    // Real-time Firestore maintenance mode listener (disabled since no user has admin)
-    const unsubFirestoreMaintenance = () => {};
+    // Real-time Firestore maintenance mode listener
+    let unsubFirestoreMaintenance = () => {};
+    try {
+      unsubFirestoreMaintenance = firebaseService.onMaintenanceSnapshot((maint) => {
+        setIsMaintenanceActive(maint.isMaintenance);
+        if (maint.message) setMaintenanceMessage(maint.message);
+        localStorage.setItem('vault_maintenance_active', String(maint.isMaintenance));
+        if (maint.message) localStorage.setItem('vault_maintenance_message', maint.message);
+      });
+    } catch (err) {
+      console.warn('Notice: Firestore maintenance listener error:', err);
+    }
 
     // Safety fallback
     const timer = setTimeout(() => {
@@ -345,9 +362,38 @@ function AppContent() {
           } catch {}
         }
 
-        // 4. Ensure maintenance mode is off so users are not locked out
-        setIsMaintenanceActive(false);
-        localStorage.setItem('vault_maintenance_active', 'false');
+        // 4. Fetch and synchronize maintenance mode state from server and Firestore
+        try {
+          let syncedMaint = false;
+          if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+            const resMaint = await safeFetchApi('/api/maintenance', {}, 2500);
+            if (resMaint && resMaint.ok) {
+              const maintJson = await resMaint.json();
+              if (typeof maintJson.isMaintenance === 'boolean') {
+                setIsMaintenanceActive(maintJson.isMaintenance);
+                localStorage.setItem('vault_maintenance_active', String(maintJson.isMaintenance));
+                if (maintJson.message) {
+                  setMaintenanceMessage(maintJson.message);
+                  localStorage.setItem('vault_maintenance_message', maintJson.message);
+                }
+                syncedMaint = true;
+              }
+            }
+          }
+          if (!syncedMaint) {
+            const cloudMaint = await firebaseService.fetchMaintenance().catch(() => null);
+            if (cloudMaint && typeof cloudMaint.isMaintenance === 'boolean') {
+              setIsMaintenanceActive(cloudMaint.isMaintenance);
+              localStorage.setItem('vault_maintenance_active', String(cloudMaint.isMaintenance));
+              if (cloudMaint.message) {
+                setMaintenanceMessage(cloudMaint.message);
+                localStorage.setItem('vault_maintenance_message', cloudMaint.message);
+              }
+            }
+          }
+        } catch (maintErr) {
+          console.warn('Notice: Could not sync maintenance mode status on start:', maintErr);
+        }
       } catch (err) {
         console.warn('Error loading initial vault data:', err);
       }
@@ -374,6 +420,31 @@ function AppContent() {
           setPendingApprovalsCount(receiptService.getPendingCount());
           firebaseService.reconcileApprovedReceiptsWithUsers(syncedReceipts);
         }).catch(() => {});
+
+        // Also poll maintenance state in background
+        if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+          safeFetchJson<{ success?: boolean; isMaintenance?: boolean; message?: string }>('/api/maintenance', {}, 2000).then((maint) => {
+            if (maint && typeof maint.isMaintenance === 'boolean') {
+              setIsMaintenanceActive(maint.isMaintenance);
+              localStorage.setItem('vault_maintenance_active', String(maint.isMaintenance));
+              if (maint.message) {
+                setMaintenanceMessage(maint.message);
+                localStorage.setItem('vault_maintenance_message', maint.message);
+              }
+            }
+          }).catch(() => {});
+        } else {
+          firebaseService.fetchMaintenance().then((cloudMaint) => {
+            if (cloudMaint && typeof cloudMaint.isMaintenance === 'boolean') {
+              setIsMaintenanceActive(cloudMaint.isMaintenance);
+              localStorage.setItem('vault_maintenance_active', String(cloudMaint.isMaintenance));
+              if (cloudMaint.message) {
+                setMaintenanceMessage(cloudMaint.message);
+                localStorage.setItem('vault_maintenance_message', cloudMaint.message);
+              }
+            }
+          }).catch(() => {});
+        }
 
         // Optional server poll if server is active
         if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
@@ -451,20 +522,24 @@ function AppContent() {
 
   const handleSaveMaintenance = async (newStatus: boolean, newMessage: string): Promise<boolean> => {
     const cleanMsg = newMessage.trim();
-    let cloudSaved = false;
-    let serverSaved = false;
 
-    // 1. Save directly to Firebase Firestore for real-time propagation across all browsers
+    // 1. Immediately update local state and localStorage so the UI updates with zero delay
+    setIsMaintenanceActive(newStatus);
+    if (cleanMsg) setMaintenanceMessage(cleanMsg);
+    localStorage.setItem('vault_maintenance_active', String(newStatus));
+    if (cleanMsg) localStorage.setItem('vault_maintenance_message', cleanMsg);
+
+    // 2. Save directly to Firebase Firestore for real-time propagation across browsers/devices
     try {
-      cloudSaved = await firebaseService.saveMaintenance(newStatus, cleanMsg);
+      await firebaseService.saveMaintenance(newStatus, cleanMsg);
     } catch (fbErr) {
       console.warn('Firebase saveMaintenance warning:', fbErr);
     }
 
-    // 2. Save to Express server endpoint if available
+    // 3. Save to Express server endpoint if available
     if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
       try {
-        const data = await safeFetchJson<{ success?: boolean }>('/api/maintenance', {
+        await safeFetchJson<{ success?: boolean }>('/api/maintenance', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -472,20 +547,11 @@ function AppContent() {
             message: cleanMsg,
             adminKey: ADMIN_SECURITY_KEY,
           }),
-        }, 2000);
-        if (data && data.success) {
-          serverSaved = true;
-        }
+        }, 2500);
       } catch (err) {
         console.warn('Server API maintenance update warning:', err);
       }
     }
-
-    // 3. Update local state and localStorage immediately
-    setIsMaintenanceActive(newStatus);
-    if (cleanMsg) setMaintenanceMessage(cleanMsg);
-    localStorage.setItem('vault_maintenance_active', String(newStatus));
-    if (cleanMsg) localStorage.setItem('vault_maintenance_message', cleanMsg);
 
     // Always succeed so admin UI is updated reliably
     return true;
@@ -1166,6 +1232,8 @@ function AppContent() {
                     setVaultTabMode(currentUser?.role === 'admin' ? 'items' : 'collections');
                     setSelectedVaultListId(null);
                   }}
+                  isMaintenanceActive={isMaintenanceActive}
+                  onOpenMaintenanceModal={() => setShowMaintenanceModal(true)}
                 />
               </motion.div>
             )}

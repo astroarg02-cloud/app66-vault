@@ -1,5 +1,5 @@
 {
-  "isMaintenance": false,
-  "message": "Estamos realizando labores de mantenimiento.",
-  "updatedAt": "2026-10-09T18:18:00Z"
+  "isMaintenance": true,
+  "message": "Estamos realizando labores de mantenimiento y optimización en la plataforma. Volveremos muy pronto.",
+  "updatedAt": "2026-10-12T02:13:35.969Z"
 }
