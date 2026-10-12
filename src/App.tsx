@@ -1000,15 +1000,15 @@ function AppContent() {
     >
       {/* Top Header Bar for Private Server */}
       <header
-        className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 pt-[max(0.6rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] border-b backdrop-blur-xl ${
+        className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 pt-[max(0.6rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] border-b backdrop-blur-2xl transition-all ${
           isDark
-            ? 'border-[#1E1E24] bg-black shadow-black/80'
-            : 'border-[#E2E8F0] bg-white/95 shadow-sm'
+            ? 'border-white/[0.08] bg-black/85 shadow-[0_4px_30px_rgba(0,0,0,0.85)]'
+            : 'border-slate-200/90 bg-white/90 shadow-[0_4px_20px_rgba(0,0,0,0.06)]'
         }`}
       >
         <div className="w-full flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand & Logo */}
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <motion.div 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -1018,18 +1018,20 @@ function AppContent() {
                   setVaultTabMode('collections');
                 }
               }}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/30 text-white shrink-0 cursor-pointer"
+              className="relative w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-xl bg-gradient-to-br from-[#0066FF] to-blue-700 flex items-center justify-center shadow-lg shadow-[#0066FF]/35 text-white shrink-0 cursor-pointer border border-white/20"
             >
               <ShieldCheck className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+              <div className="absolute inset-0 rounded-xl bg-white/15 opacity-0 hover:opacity-100 transition-opacity" />
             </motion.div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="text-sm sm:text-base lg:text-lg font-black tracking-tight leading-none truncate">
+              <div className="flex items-center gap-2 sm:gap-2.5">
+                <h1 className="text-sm sm:text-base lg:text-lg font-black tracking-tight leading-none truncate bg-gradient-to-r from-white via-white to-slate-300 dark:from-white dark:to-slate-300 bg-clip-text">
                   App 66
                 </h1>
-                <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[8.5px] sm:text-[10px] font-extrabold uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30 shrink-0">
-                  SERVIDOR PRIVADO
-                </span>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[8.5px] sm:text-[9.5px] font-black uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>SERVIDOR PRIVADO</span>
+                </div>
                 {isSupabaseConfigured && (
                   <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                     <Database className="w-2.5 h-2.5" /> SUPABASE
@@ -1040,7 +1042,7 @@ function AppContent() {
           </div>
 
           {/* Right Controls: User info with Avatar, Theme & Logout */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             {/* Admin Maintenance Control Button */}
             {currentUser.role === 'admin' && (
               <motion.button
@@ -1055,7 +1057,7 @@ function AppContent() {
                 title="Configurar Modo Mantenimiento"
               >
                 <Wrench className="w-3.5 h-3.5 shrink-0" />
-                <span className="inline">Mantenimiento:</span>
+                <span className="hidden sm:inline">Mantenimiento:</span>
                 <span className={isMaintenanceActive ? 'font-black text-amber-500 dark:text-amber-400' : 'font-semibold text-slate-400'}>
                   {isMaintenanceActive ? 'ON' : 'OFF'}
                 </span>
@@ -1069,11 +1071,11 @@ function AppContent() {
               whileTap={{ scale: 0.97 }}
               onClick={() => setCurrentTab('profile')}
               title={`Ver Perfil: ${currentUser.displayName}`}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+              className={`flex items-center gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all shadow-sm ${
                 currentTab === 'profile'
-                  ? 'border-[#0066FF] bg-[#0066FF]/15 text-[#0066FF]'
+                  ? 'border-[#0066FF] bg-[#0066FF]/20 text-[#0066FF] ring-2 ring-[#0066FF]/20'
                   : isDark
-                  ? 'bg-[#0A0A0C] border-[#1E1E24] text-white hover:border-[#0066FF]/40'
+                  ? 'bg-zinc-900/90 border-white/[0.12] text-white hover:border-[#0066FF]/50 hover:bg-zinc-800'
                   : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300'
               }`}
             >
@@ -1081,10 +1083,10 @@ function AppContent() {
                 <img
                   src={currentUser.avatarUrl}
                   alt={currentUser.displayName}
-                  className="w-5 h-5 sm:w-6 sm:h-6 rounded-full object-cover border border-[#0066FF] shrink-0"
+                  className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full object-cover border border-[#0066FF]/60 shrink-0 shadow-xs"
                 />
               ) : (
-                <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-[#0066FF] to-blue-700 text-[10px] sm:text-xs text-white flex items-center justify-center font-black shrink-0">
+                <div className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-[#0066FF] to-blue-700 text-[10px] sm:text-xs text-white flex items-center justify-center font-black shrink-0">
                   {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
                 </div>
               )}
@@ -1094,7 +1096,7 @@ function AppContent() {
               {currentUser.role === 'admin' ? (
                 <VerifiedBadge className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0066FF] shrink-0" />
               ) : currentUser.membershipStatus === 'active' && currentUser.membershipPlan ? (
-                <span className="px-1.5 py-0.5 rounded-full text-[8.5px] sm:text-[9px] font-extrabold bg-[#0066FF]/15 text-[#0066FF] shrink-0">
+                <span className="px-1.5 py-0.5 rounded-full text-[8.5px] sm:text-[9px] font-black bg-gradient-to-r from-amber-400 to-amber-500 text-black shadow-xs shrink-0">
                   VIP
                 </span>
               ) : null}
@@ -1319,18 +1321,16 @@ function AppContent() {
         </div>
       </main>
 
-      {/* GLOBAL BOTTOM HOME BAR (Solo iconos en Mobile y PC) */}
+      {/* GLOBAL BOTTOM HOME BAR (Luxury Floating Dock) */}
       <nav 
         id="global-bottom-home-bar"
         aria-label="Barra de Navegación Inferior"
-        className={`shrink-0 z-40 px-3 sm:px-6 py-1.5 sm:py-2 border-t flex justify-center pb-[max(0.6rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] ${
-          isDark 
-            ? 'bg-black border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
-            : 'bg-white/95 border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
-        }`}
+        className="shrink-0 z-40 px-3 sm:px-6 py-2 sm:py-2.5 flex justify-center pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pointer-events-none"
       >
-        <div className={`w-full max-w-lg flex items-center justify-around sm:justify-center gap-1.5 sm:gap-3 px-3 sm:px-4 py-1.5 rounded-full border shadow-inner backdrop-blur-2xl transition-colors ${
-          isDark ? 'bg-[#0A0A0C]/90 border-[#1E1E24]/80' : 'bg-[#F1F5F9]/90 border-slate-200'
+        <div className={`pointer-events-auto flex items-center justify-around sm:justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border shadow-2xl backdrop-blur-2xl transition-all ${
+          isDark 
+            ? 'bg-zinc-950/90 border-white/[0.12] ring-1 ring-inset ring-white/[0.05] shadow-[0_16px_40px_rgba(0,0,0,0.85)]' 
+            : 'bg-white/95 border-slate-200/90 ring-1 ring-inset ring-slate-100 shadow-[0_12px_32px_rgba(0,0,0,0.12)]'
         }`}>
           {/* Publicaciones (SOLO ICONO, DISPONIBLE PARA TODOS) */}
           {(() => {

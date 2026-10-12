@@ -16,11 +16,12 @@ import {
   ArrowLeft,
   Crown,
   Sparkles,
+  ShieldCheck
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { firebaseService } from '../../services/firebaseService';
-import { isAuthorizedAdminKey, INITIAL_ADMIN_USER, INITIAL_MEMBER_USER } from '../../data/initialVaultData';
+import { isAuthorizedAdminKey } from '../../data/initialVaultData';
 
 interface AuthScreenProps {
   onLogin: (user: UserProfile) => void;
@@ -40,12 +41,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { isDark } = useTheme();
 
-  // Sincronizar todas las cuentas existentes en el dispositivo y en la base de datos al abrir el login/registro
   useEffect(() => {
     firebaseService.syncAllRegisteredAccountsToDatabase().catch(() => {});
   }, []);
 
-  // Acceso directo de Administrador en el inicio de sesión con Key
   const handleAdminKeySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -76,7 +75,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     }
   };
 
-  // Formulario con Email / Contraseña Firebase
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -115,11 +113,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       const code = err?.code || '';
 
       if (code === 'auth/user-not-found') {
-        friendlyMsg = 'Esta cuenta no está registrada. Por favor ve a la pestaña "Registrarse" para crearla.';
+        friendlyMsg = 'Esta cuenta no está registrada. Selecciona la pestaña "Registrarse" para crearla.';
       } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
-        friendlyMsg = 'Correo o contraseña incorrectos. Verifica tus datos o regístrate si es tu primera vez.';
+        friendlyMsg = 'Correo o contraseña incorrectos. Verifica tus datos o regístrate si eres nuevo.';
       } else if (code === 'auth/email-already-in-use') {
-        friendlyMsg = 'Este correo ya está registrado. Por favor selecciona "Iniciar Sesión".';
+        friendlyMsg = 'Este correo ya está registrado. Selecciona "Iniciar Sesión".';
       } else if (code === 'auth/weak-password') {
         friendlyMsg = 'La contraseña es muy débil. Debe tener al menos 6 caracteres.';
       } else if (code === 'auth/invalid-email') {
@@ -142,53 +140,52 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.25 }}
       className={`h-full w-full min-h-[100dvh] flex flex-col justify-between p-4 sm:p-6 select-none overflow-y-auto custom-scrollbar transition-colors duration-300 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] ${
-        isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
+        isDark ? 'bg-[#050507] text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >
-      <div className="w-full max-w-sm sm:max-w-md mx-auto my-auto space-y-4">
-        {/* Animated Vault Emblem */}
-        <div className="flex flex-col items-center text-center space-y-2.5">
+      <div className="relative w-full max-w-sm sm:max-w-md mx-auto my-auto p-6 sm:p-8 rounded-3xl border shadow-2xl backdrop-blur-3xl transition-all space-y-5 border-white/[0.08] bg-zinc-950/85 ring-1 ring-inset ring-white/[0.05]">
+        {/* Ambient glow behind emblem */}
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 w-56 h-56 bg-[#0066FF]/15 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Vault Emblem & Branding */}
+        <div className="flex flex-col items-center text-center space-y-3 relative z-10">
           <motion.div 
             className="relative"
             animate={{ y: [0, -4, 0] }}
-            transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+            transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut" }}
           >
             <div
-              className={`w-18 h-18 rounded-full flex items-center justify-center border transition-all ${
+              className={`w-18 h-18 rounded-3xl flex items-center justify-center border transition-all ${
                 isDark
-                  ? 'bg-[#0A0A0C] border-[#1E1E24] shadow-[0_0_50px_-10px_rgba(0,102,255,0.45)]'
+                  ? 'bg-zinc-900/90 border-white/10 shadow-[0_0_50px_-10px_rgba(0,102,255,0.45)]'
                   : 'bg-white border-blue-100 shadow-xl shadow-blue-500/15'
               }`}
             >
               <Shield className="w-9 h-9 text-[#0066FF]" />
             </div>
-            <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/40">
+            <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#0066FF] flex items-center justify-center shadow-md shadow-[#0066FF]/40 border border-white/20">
               <Key className="w-2.5 h-2.5 text-white" />
             </div>
           </motion.div>
 
           <div>
-            <div className="flex items-center justify-center gap-1.5 text-[11px] font-extrabold tracking-[0.2em] text-[#0066FF] uppercase">
-              <Flame className="w-3 h-3 text-amber-400" />
+            <div className="inline-flex items-center justify-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#0066FF]/10 border border-[#0066FF]/30 text-[10px] font-extrabold tracking-widest text-[#0066FF] uppercase mb-1">
+              <Sparkles className="w-2.5 h-2.5" />
               <span>BÓVEDA PRIVADA</span>
             </div>
-            <h1
-              className={`text-2xl font-black tracking-tight mt-1 ${
-                isDark ? 'text-white' : 'text-[#0F172A]'
-              }`}
-            >
+            <h1 className={`text-2xl font-black tracking-tight ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
               {isAdminMode
                 ? 'Acceso Administrador'
                 : isSignUp
                 ? 'Crear Cuenta'
                 : 'Acceso al Servidor'}
             </h1>
-            <p className={`text-xs max-w-xs mt-1 leading-relaxed ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+            <p className={`text-xs max-w-xs mt-1 leading-relaxed ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
               {isAdminMode
-                ? 'Ingresa la Key de seguridad para entrar como Administrador.'
+                ? 'Ingresa la Key de seguridad para gestionar comprobantes y miembros.'
                 : isSignUp
-                ? 'Crea tu cuenta de acceso a la bóveda privada.'
-                : 'Servidor privado con autenticación segura.'}
+                ? 'Registra tu perfil para acceder al contenido y servicios de la bóveda.'
+                : 'Ingresa con tu correo y contraseña para acceder.'}
             </p>
           </div>
         </div>
@@ -200,10 +197,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-start gap-2.5"
+              className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5"
             >
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{errorMessage}</span>
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+              <span className="leading-relaxed">{errorMessage}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -215,31 +212,31 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-start gap-2.5"
+              className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2.5"
             >
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{successMessage}</span>
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+              <span className="leading-relaxed">{successMessage}</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Toggle de Acceso Administrador en el Inicio de Sesión */}
+        {/* Mode Toggle: Modo Administrador con Key */}
         <div
-          className={`p-3 rounded-2xl border flex items-center justify-between transition-colors ${
+          className={`p-3.5 rounded-2xl border flex items-center justify-between transition-colors ${
             isAdminMode
-              ? 'bg-[#0066FF]/10 border-[#0066FF]/40'
+              ? 'bg-[#0066FF]/10 border-[#0066FF]/40 ring-1 ring-inset ring-[#0066FF]/20'
               : isDark
-              ? 'bg-[#0A0A0C] border-[#1E1E24]'
+              ? 'bg-zinc-900/60 border-white/[0.06]'
               : 'bg-slate-50 border-slate-200'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <div
               className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
                 isAdminMode
-                  ? 'bg-[#0066FF] text-white'
+                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/40'
                   : isDark
-                  ? 'bg-[#121216] text-[#0066FF]'
+                  ? 'bg-zinc-800 text-[#0066FF]'
                   : 'bg-white text-[#0066FF] border border-slate-200'
               }`}
             >
@@ -249,8 +246,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               <div className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
                 Modo Administrador
               </div>
-              <div className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                Acceso al panel con Key de seguridad
+              <div className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
+                Acceso con Key de seguridad
               </div>
             </div>
           </div>
@@ -264,7 +261,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               setSuccessMessage(null);
             }}
             className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer relative ${
-              isAdminMode ? 'bg-[#0066FF]' : isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'
+              isAdminMode ? 'bg-[#0066FF]' : isDark ? 'bg-zinc-800' : 'bg-slate-300'
             }`}
           >
             <div
@@ -277,29 +274,29 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
 
         {isAdminMode ? (
           /* Formulario de Acceso Administrador con Key */
-          <form onSubmit={handleAdminKeySubmit} className="space-y-3">
+          <form onSubmit={handleAdminKeySubmit} className="space-y-3.5">
             <div>
-              <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
                 Key de Administrador
               </label>
               <div className="relative">
-                <Key className="w-4 h-4 absolute left-3.5 top-2.5 text-[#0066FF]" />
+                <Key className="w-4 h-4 absolute left-3.5 top-3 text-[#0066FF]" />
                 <input
                   type={showAdminKey ? 'text' : 'password'}
                   required
                   value={adminKey}
                   onChange={(e) => setAdminKey(e.target.value)}
                   placeholder="Ingresa la Key de seguridad..."
-                  className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] transition-colors font-mono ${
+                  className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] focus:ring-1 focus:ring-[#0066FF] transition-all font-mono ${
                     isDark
-                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-slate-600'
+                      ? 'bg-black/60 border-white/[0.08] text-white placeholder-zinc-600'
                       : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                   }`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowAdminKey(!showAdminKey)}
-                  className="absolute right-3.5 top-2.5 text-slate-400 hover:text-white cursor-pointer"
+                  className="absolute right-3.5 top-3 text-zinc-400 hover:text-white cursor-pointer"
                 >
                   {showAdminKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -309,15 +306,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
             <motion.button
               type="submit"
               disabled={isLoading}
-              whileHover={{ scale: 1.02 }}
+              whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              className="w-full py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white font-bold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-blue-600 text-white font-bold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer disabled:opacity-50"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <Shield className="w-4 h-4" />
+                  <ShieldCheck className="w-4 h-4" />
                   <span>Entrar como Administrador</span>
                 </>
               )}
@@ -330,18 +327,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 setErrorMessage(null);
               }}
               className={`w-full py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
-                isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Volver al inicio de sesión de usuarios</span>
+              <span>Volver a Inicio de Sesión de Usuarios</span>
             </button>
           </form>
         ) : (
-          /* Formulario Normal de Auth (Login y Register) */
-          <div className="space-y-3">
+          /* Formulario Normal de Auth (Login y Registro) */
+          <div className="space-y-3.5">
             {/* Tab Toggle: Iniciar Sesión / Registrarse */}
-            <div className={`p-1 rounded-2xl flex border relative ${isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'}`}>
+            <div className={`p-1 rounded-2xl flex border relative ${
+              isDark ? 'bg-zinc-900/80 border-white/[0.06]' : 'bg-slate-100 border-slate-200'
+            }`}>
               <button
                 type="button"
                 onClick={() => {
@@ -350,13 +349,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                   setSuccessMessage(null);
                 }}
                 className={`relative flex-1 py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer select-none ${
-                  !isSignUp ? 'text-white' : 'text-slate-400 hover:text-white'
+                  !isSignUp ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
                 {!isSignUp && (
                   <motion.div
                     layoutId="active-auth-tab-pill"
-                    className="absolute inset-0 rounded-xl bg-[#0066FF] shadow-[0_0_15px_rgba(0,102,255,0.4)]"
+                    className="absolute inset-0 rounded-xl bg-[#0066FF] shadow-md shadow-[#0066FF]/40"
                     transition={{ type: "spring", stiffness: 450, damping: 32 }}
                   />
                 )}
@@ -371,13 +370,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                   setSuccessMessage(null);
                 }}
                 className={`relative flex-1 py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer select-none ${
-                  isSignUp ? 'text-white' : 'text-slate-400 hover:text-white'
+                  isSignUp ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
                 {isSignUp && (
                   <motion.div
                     layoutId="active-auth-tab-pill"
-                    className="absolute inset-0 rounded-xl bg-[#0066FF] shadow-[0_0_15px_rgba(0,102,255,0.4)]"
+                    className="absolute inset-0 rounded-xl bg-[#0066FF] shadow-md shadow-[#0066FF]/40"
                     transition={{ type: "spring", stiffness: 450, damping: 32 }}
                   />
                 )}
@@ -386,8 +385,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               </button>
             </div>
 
-            {/* Formulario de Login & Register */}
-            <form onSubmit={handleSubmit} className="space-y-2.5">
+            {/* Formulario */}
+            <form onSubmit={handleSubmit} className="space-y-3">
               <AnimatePresence>
                 {isSignUp && (
                   <motion.div
@@ -395,19 +394,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
                   >
-                    <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
-                      Nombre o Usuario
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+                      Nombre o Apodo
                     </label>
                     <div className="relative">
-                      <User className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" />
+                      <User className="w-4 h-4 absolute left-3.5 top-3 text-zinc-400" />
                       <input
                         type="text"
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="Tu nombre o apodo"
-                        className={`w-full pl-10 pr-3 py-2 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] transition-colors ${
+                        placeholder="Tu nombre o alias"
+                        className={`w-full pl-10 pr-3 py-2.5 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] focus:ring-1 focus:ring-[#0066FF] transition-all ${
                           isDark
-                            ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-slate-600'
+                            ? 'bg-black/60 border-white/[0.08] text-white placeholder-zinc-600'
                             : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                         }`}
                       />
@@ -417,20 +416,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               </AnimatePresence>
 
               <div>
-                <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
                   Correo Electrónico
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" />
+                  <Mail className="w-4 h-4 absolute left-3.5 top-3 text-zinc-400" />
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="usuario@ejemplo.com"
-                    className={`w-full pl-10 pr-3 py-2 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] transition-colors ${
+                    className={`w-full pl-10 pr-3 py-2.5 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] focus:ring-1 focus:ring-[#0066FF] transition-all ${
                       isDark
-                        ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-slate-600'
+                        ? 'bg-black/60 border-white/[0.08] text-white placeholder-zinc-600'
                         : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                     }`}
                   />
@@ -438,27 +437,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
                   Contraseña
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" />
+                  <Lock className="w-4 h-4 absolute left-3.5 top-3 text-zinc-400" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Mínimo 6 caracteres"
-                    className={`w-full pl-10 pr-10 py-2 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] transition-colors ${
+                    className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-xs sm:text-sm border focus:outline-none focus:border-[#0066FF] focus:ring-1 focus:ring-[#0066FF] transition-all ${
                       isDark
-                        ? 'bg-[#0A0A0C] border-[#1E1E24] text-white placeholder-slate-600'
+                        ? 'bg-black/60 border-white/[0.08] text-white placeholder-zinc-600'
                         : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'
                     }`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-2.5 text-slate-400 hover:text-white cursor-pointer"
+                    className="absolute right-3.5 top-3 text-zinc-400 hover:text-white cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -468,9 +467,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               <motion.button
                 type="submit"
                 disabled={isLoading}
-                whileHover={{ scale: 1.02 }}
+                whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] active:scale-[0.99] text-white font-bold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer disabled:opacity-50 mt-3"
+                className="w-full py-3 px-4 rounded-xl bg-[#0066FF] hover:bg-blue-600 text-white font-bold text-xs sm:text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-[#0066FF]/30 transition-all cursor-pointer disabled:opacity-50 mt-2"
               >
                 {isLoading ? (
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -482,79 +481,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 )}
               </motion.button>
             </form>
-
-            {/* Accesos Rápidos para Probar y Entrar Directo */}
-            <div className="pt-2 space-y-2">
-              <div className="flex items-center gap-2">
-                <div className={`flex-1 h-px ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-200'}`} />
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                  O ingresar con 1 toque
-                </span>
-                <div className={`flex-1 h-px ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-200'}`} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const guestUser: UserProfile = {
-                      uid: `guest_${Date.now()}`,
-                      email: 'invitado@seis6.vault',
-                      displayName: 'Invitado Free',
-                      role: 'vip_member',
-                      tier: 'Invitado',
-                      membershipStatus: 'none',
-                      joinedAt: new Date().toISOString().split('T')[0],
-                      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-                    };
-                    firebaseService.saveSession(guestUser);
-                    onLogin(guestUser);
-                  }}
-                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    isDark
-                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-slate-300 hover:text-white hover:border-[#0066FF]/40'
-                      : 'bg-white border-slate-200 text-slate-700 hover:text-black hover:border-slate-300 shadow-xs'
-                  }`}
-                >
-                  <User className="w-3.5 h-3.5 text-[#0066FF]" />
-                  <span>Invitado Free</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const vipUser: UserProfile = {
-                      ...INITIAL_MEMBER_USER,
-                      role: 'vip_member',
-                      tier: 'Acceso VIP',
-                      membershipStatus: 'active',
-                      membershipPlan: 'monthly',
-                      subscribedAt: new Date().toISOString(),
-                      membershipExpiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
-                    };
-                    firebaseService.saveSession(vipUser);
-                    onLogin(vipUser);
-                  }}
-                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    isDark
-                      ? 'bg-[#10B981]/10 border-[#10B981]/30 text-emerald-400 hover:bg-[#10B981]/15'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 shadow-xs'
-                  }`}
-                >
-                  <Crown className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Demo VIP 💎</span>
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className={`w-full max-w-sm sm:max-w-md mx-auto pt-3 text-center border-t ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
+      <div className={`w-full max-w-sm sm:max-w-md mx-auto pt-4 text-center border-t ${
+        isDark ? 'border-white/[0.06]' : 'border-slate-200'
+      }`}>
         <span
           className={`text-[10px] uppercase tracking-widest font-mono flex items-center justify-center gap-1.5 ${
-            isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'
+            isDark ? 'text-zinc-500' : 'text-slate-400'
           }`}
         >
           <Flame className="w-3 h-3 text-amber-500" />
@@ -564,4 +501,3 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     </motion.div>
   );
 };
-

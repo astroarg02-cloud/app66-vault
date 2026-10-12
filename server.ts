@@ -1807,9 +1807,11 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
       membershipExpiresAt: status === 'approved' ? expiresIso : undefined,
     };
 
-    currentReceipts[targetIndex] = updated;
-    writeReceipts(currentReceipts);
-    saveReceiptToFirestoreREST(updated, currentReceipts).catch(() => {});
+    // Borrar el comprobante de la lista de aprobaciones activas inmediatamente
+    addDeletedReceiptId(id);
+    const updatedReceiptsList = currentReceipts.filter((r) => r.id !== id);
+    writeReceipts(updatedReceiptsList);
+    deleteReceiptFromFirestoreREST(id).catch(() => {});
 
     // Also update the user's membership in users.json + Firestore immediately according to the receipt amount
     try {
@@ -1874,7 +1876,7 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
       console.warn('Error updating user membership on receipt status change:', userUpdateErr);
     }
 
-    return res.json({ success: true, receipt: updated, receipts: currentReceipts });
+    return res.json({ success: true, deletedId: id, receipt: updated, receipts: updatedReceiptsList });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }

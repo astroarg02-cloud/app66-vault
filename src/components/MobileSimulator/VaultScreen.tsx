@@ -408,10 +408,10 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.22, delay: idx * 0.04 }}
                         whileHover={{ y: -3, scale: 1.01 }}
-                        className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between group ${
+                        className={`p-4 sm:p-5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between group relative overflow-hidden ${
                           isDark
-                            ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/60 hover:shadow-lg hover:shadow-[#0066FF]/10'
-                            : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/60 shadow-sm hover:shadow-md'
+                            ? 'bg-zinc-950/80 border-white/[0.08] hover:border-[#0066FF]/70 hover:shadow-xl hover:shadow-[#0066FF]/15 ring-1 ring-inset ring-white/[0.04]'
+                            : 'bg-white border-slate-200/90 hover:border-[#0066FF]/70 shadow-sm hover:shadow-md ring-1 ring-inset ring-slate-100'
                         }`}
                         onClick={() => handleSelectCollection(list.id)}
                       >
@@ -603,9 +603,9 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                     whileTap={{ scale: 0.98 }}
                     id={`vault-item-grid-${item.id}`}
                     onClick={() => onSelectItem(item)}
-                    className={`border rounded-xl overflow-hidden cursor-pointer transition-shadow flex flex-col group relative ${
+                    className={`border rounded-2xl overflow-hidden cursor-pointer transition-all flex flex-col group relative ${
                       isDark
-                        ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/70 hover:shadow-lg hover:shadow-[#0066FF]/10'
+                        ? 'bg-zinc-950/80 border-white/[0.08] hover:border-[#0066FF]/70 hover:shadow-xl hover:shadow-[#0066FF]/15 ring-1 ring-inset ring-white/[0.04]'
                         : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/70 shadow-sm hover:shadow-md'
                     }`}
                   >
@@ -707,10 +707,10 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
                     whileTap={{ scale: 0.985 }}
                     id={`vault-item-list-${item.id}`}
                     onClick={() => onSelectItem(item)}
-                    className={`border rounded-2xl p-3 sm:p-4 cursor-pointer transition-shadow flex items-start gap-3 sm:gap-3.5 group relative ${
+                    className={`border rounded-2xl p-3.5 sm:p-4 cursor-pointer transition-all flex items-start gap-3 sm:gap-3.5 group relative ${
                       isDark
-                        ? 'bg-[#0A0A0C] border-[#1E1E24] hover:border-[#0066FF]/60 hover:shadow-lg hover:shadow-[#0066FF]/10'
-                        : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/60 shadow-sm hover:shadow-md'
+                        ? 'bg-zinc-950/80 border-white/[0.08] hover:border-[#0066FF]/70 hover:shadow-xl hover:shadow-[#0066FF]/15 ring-1 ring-inset ring-white/[0.04]'
+                        : 'bg-white border-[#E2E8F0] hover:border-[#0066FF]/70 shadow-sm hover:shadow-md'
                     }`}
                   >
                     {/* Cover / Icon Thumbnail */}

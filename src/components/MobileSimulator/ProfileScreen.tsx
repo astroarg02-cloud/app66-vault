@@ -419,7 +419,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <div className="flex items-center justify-between mb-2">
             <span className={`text-[11px] font-bold flex items-center gap-1.5 ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>
               <Camera className="w-3.5 h-3.5 text-[#0066FF]" />
-              <span>Cambiar Foto Rápida (1 toque):</span>
+              <span>Seleccionar Foto de Perfil:</span>
             </span>
             <button
               onClick={handleOpenEdit}

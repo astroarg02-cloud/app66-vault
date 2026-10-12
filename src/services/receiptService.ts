@@ -429,8 +429,11 @@ async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
 
 export const receiptService = {
   // Compress image before saving so it loads fast and never exceeds localStorage (5MB) or Firestore (1MB) limits
-  async compressReceiptImage(dataUrl: string, maxDimension = 1280, quality = 0.78): Promise<string> {
+  async compressReceiptImage(dataUrl: string, maxDimension = 1200, quality = 0.8): Promise<string> {
     if (!dataUrl || !dataUrl.startsWith('data:image/')) return dataUrl;
+    // If image is already moderately sized (< 350KB), return immediately to avoid latency
+    if (dataUrl.length < 350000) return dataUrl;
+
     return new Promise((resolve) => {
       let settled = false;
       const done = (result: string) => {
@@ -439,7 +442,7 @@ export const receiptService = {
           resolve(result);
         }
       };
-      const safetyTimer = setTimeout(() => done(dataUrl), 1500);
+      const safetyTimer = setTimeout(() => done(dataUrl), 450);
 
       try {
         const img = new Image();
@@ -468,9 +471,8 @@ export const receiptService = {
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
             let compressed = canvas.toDataURL('image/jpeg', quality);
-            // If still > 550KB, compress slightly more so Firestore document is guaranteed < 1MB
-            if (compressed.length > 550000) {
-              compressed = canvas.toDataURL('image/jpeg', 0.6);
+            if (compressed.length > 500000) {
+              compressed = canvas.toDataURL('image/jpeg', 0.65);
             }
             clearTimeout(safetyTimer);
             done(compressed);
@@ -848,7 +850,6 @@ export const receiptService = {
     notes?: string;
     whatsappContact?: string;
   }): Promise<PaymentReceipt> {
-    const compressedImage = await this.compressReceiptImage(data.receiptImageUrl);
     const all = this.getAllReceipts();
     const id = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     unmarkDeletedReceiptId(id);
@@ -866,7 +867,7 @@ export const receiptService = {
       currency: 'USD',
       paymentMethod: data.paymentMethod || 'Transferencia',
       referenceCode: data.referenceCode?.trim() || `REF-${Math.floor(100000 + Math.random() * 900000)}`,
-      receiptImageUrl: compressedImage || data.receiptImageUrl,
+      receiptImageUrl: data.receiptImageUrl,
       receiptFileName: data.receiptFileName || 'comprobante.jpg',
       notes: data.notes?.trim() || '',
       whatsappContact: data.whatsappContact || '+54 9 11 6554-6038',
@@ -880,51 +881,30 @@ export const receiptService = {
       new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: updated } })
     );
 
-    // 1. Persist to Central Server API and Firestore Registry in parallel, bounded by a 1.6s max UI wait so submission never hangs on "Confirmando envío..."
-    const serverUploadPromise = (async () => {
+    // Asynchronously compress (if needed) and sync with Central Server API and Firestore in background
+    (async () => {
       try {
-        const res = await safeFetchApi('/api/vault/receipts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newReceipt),
-        }, 2500);
-        if (res && res.ok) {
-          const json = await res.json();
-          if (json && Array.isArray(json.receipts)) {
-            const deletedSet = getDeletedReceiptIds();
-            const map = new Map<string, PaymentReceipt>();
-            for (const r of updated) {
-              if (isValidRealReceipt(r, deletedSet)) map.set(r.id, r);
-            }
-            for (const r of json.receipts) {
-              if (isValidRealReceipt(r, deletedSet)) {
-                map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
-              }
-            }
-            const finalMerged = Array.from(map.values()).sort(
-              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-            );
-            saveReceiptsToLocalStore(finalMerged);
-            window.dispatchEvent(
-              new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: finalMerged } })
-            );
-          }
+        let finalImage = newReceipt.receiptImageUrl;
+        if (finalImage && finalImage.length > 350000) {
+          finalImage = await this.compressReceiptImage(finalImage);
         }
+        const finalizedReceipt: PaymentReceipt = {
+          ...newReceipt,
+          receiptImageUrl: finalImage,
+        };
+
+        await Promise.allSettled([
+          safeFetchApi('/api/vault/receipts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(finalizedReceipt),
+          }, 4000),
+          saveReceiptToFirestoreSDK(finalizedReceipt, updated),
+        ]);
       } catch (err) {
-        console.warn('Server receipt upload warning (saved locally & Firestore):', err);
+        console.warn('Background receipt persistence notice:', err);
       }
     })();
-
-    const firestoreUploadPromise = saveReceiptToFirestoreSDK(newReceipt, updated).catch(() => false);
-
-    await Promise.race([
-      Promise.allSettled([serverUploadPromise, firestoreUploadPromise]),
-      new Promise((resolve) => setTimeout(resolve, 1600)),
-    ]);
-
-    window.dispatchEvent(
-      new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: this.getAllReceipts() } })
-    );
 
     return newReceipt;
   },

@@ -190,16 +190,13 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     }
 
     setIsSubmitting(true);
-    const submitSafetyTimer = setTimeout(() => {
-      setIsSubmitting(false);
-    }, 2500);
 
     try {
       const payload = {
-        userId: currentUser.uid,
-        userDisplayName: currentUser.displayName,
-        userEmail: currentUser.email,
-        userAvatar: currentUser.avatarUrl,
+        userId: currentUser?.uid || `usr_${Date.now()}`,
+        userDisplayName: currentUser?.displayName || 'Usuario',
+        userEmail: currentUser?.email || '',
+        userAvatar: currentUser?.avatarUrl,
         plan: resolvedUploadMembership.plan,
         amount: resolvedUploadMembership.amount,
         paymentMethod,
@@ -212,8 +209,8 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
 
       const newRec = await receiptService.createReceiptAsync(payload);
 
-      // Trigger background sync so central server and admin panel receive it immediately
-      receiptService.syncFromServer().catch(() => {});
+      // Immediately add to local screen state so it's guaranteed visible in history
+      setReceipts((prev) => [newRec, ...prev.filter((r) => r.id !== newRec.id)]);
 
       // Confetti burst
       try {
@@ -225,30 +222,9 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
       } catch {}
 
       showToast(
-        `¡Comprobante #${newRec.id.slice(-6)} por $${newRec.amount} USD enviado con éxito! Ya está disponible para aprobación del administrador.`,
+        `¡Comprobante #${newRec.id.slice(-6)} por $${newRec.amount} USD enviado con éxito! Ya está en la bandeja de revisión.`,
         'success'
       );
-
-      // If user explicitly checked WhatsApp notification
-      if (sendWhatsAppAlert) {
-        const planText = `${resolvedUploadMembership.planName.toUpperCase()} (${resolvedUploadMembership.durationLabel})`;
-        const refText = newRec.referenceCode ? `\n• Ref/Operación: ${newRec.referenceCode}` : '';
-        const msg = `¡Hola! Acabo de subir mi comprobante de pago en App 66 📄✨
-        
-📌 Detalles del comprobante:
-• Plan: ${planText}
-• Monto: $${newRec.amount} USD
-• Método de pago: ${paymentMethod}${refText}
-• ID de Comprobante: #${newRec.id}
-• Usuario: ${currentUser.displayName} (${currentUser.email})
-
-Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
-
-        const waUrl = `https://wa.me/${WHATSAPP_PHONE_RAW}?text=${encodeURIComponent(msg)}`;
-        setTimeout(() => {
-          window.open(waUrl, '_blank');
-        }, 400);
-      }
 
       // Reset form and switch to history view immediately
       setPreviewImage(null);
@@ -258,89 +234,96 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
-      refreshReceipts();
       setActiveTab('history');
     } catch (err) {
       console.error(err);
       showToast('Ocurrió un error al guardar el comprobante.', 'error');
     } finally {
-      clearTimeout(submitSafetyTimer);
       setIsSubmitting(false);
     }
   };
 
-  // Admin action: Approve receipt and activate VIP depending on the user's established amount
+  // Admin action: Approve receipt and activate VIP, then delete receipt from approvals queue
   const handleApproveReceipt = (receipt: PaymentReceipt) => {
     const resolved = receiptService.resolveMembershipByAmount(receipt.amount, receipt.plan);
-    const updated = receiptService.updateReceiptStatus(
-      receipt.id,
-      'approved',
-      `Comprobante verificado por $${resolved.amount} USD. Membresía VIP (${resolved.planName} • ${resolved.durationLabel}) activada.`,
-      currentUser.displayName,
-      resolved.amount
+    const nowIso = new Date().toISOString();
+    const expiresIso = new Date(Date.now() + resolved.durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Upgrade the specific user account associated with the receipt
+    const upgradedProfile = firebaseService.upgradeUserMembershipByUidOrEmail(
+      receipt.userId,
+      receipt.userEmail,
+      resolved.plan,
+      nowIso,
+      resolved.amount,
+      expiresIso
     );
 
-    if (updated) {
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
-      showToast(
-        `¡Comprobante #${receipt.id.slice(-6)} aprobado! Se activó ${resolved.planName} (${resolved.durationLabel}) por $${resolved.amount} USD.`,
-        'success'
+    // 2. If the current user happens to be the one who owns it, also update in-memory
+    if (
+      (currentUser.uid === receipt.userId ||
+        (receipt.userEmail && currentUser.email.toLowerCase() === receipt.userEmail.toLowerCase())) &&
+      onUpdateUser
+    ) {
+      onUpdateUser(
+        upgradedProfile || {
+          ...currentUser,
+          tier: currentUser.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP',
+          membershipPlan: resolved.plan,
+          membershipStatus: 'active',
+          subscribedAt: nowIso,
+          membershipExpiresAt: expiresIso,
+          lastPaymentAmount: resolved.amount,
+        }
       );
-      refreshReceipts();
-      if (viewingReceipt && viewingReceipt.id === receipt.id) {
-        setViewingReceipt(updated);
-      }
-
-      // Upgrade the specific user account associated with the receipt according to the amount established by the user
-      const upgradedProfile = firebaseService.upgradeUserMembershipByUidOrEmail(
-        receipt.userId,
-        receipt.userEmail,
-        resolved.plan,
-        updated.membershipStartsAt,
-        resolved.amount,
-        updated.membershipExpiresAt
-      );
-
-      // If the current user happens to be the one who owns it, also update in-memory
-      if (
-        (currentUser.uid === receipt.userId ||
-          (receipt.userEmail && currentUser.email.toLowerCase() === receipt.userEmail.toLowerCase())) &&
-        onUpdateUser
-      ) {
-        onUpdateUser(
-          upgradedProfile || {
-            ...currentUser,
-            tier: currentUser.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP',
-            membershipPlan: resolved.plan,
-            membershipStatus: 'active',
-            subscribedAt: updated.membershipStartsAt || new Date().toISOString(),
-            membershipExpiresAt:
-              updated.membershipExpiresAt ||
-              new Date(Date.now() + resolved.durationDays * 24 * 60 * 60 * 1000).toISOString(),
-            lastPaymentAmount: resolved.amount,
-          }
-        );
-      }
     }
+
+    // 3. Patch central server to register upgrade and delete receipt from server storage
+    safeFetchApi(`/api/vault/receipts/${encodeURIComponent(receipt.id)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'approved',
+        amount: resolved.amount,
+        plan: resolved.plan,
+        adminNote: `Comprobante verificado con éxito. Membresía VIP (${resolved.planName}) activada.`,
+        reviewerName: currentUser.displayName || 'Administrador',
+      }),
+    }, 2000).catch(() => {});
+
+    // 4. Borrar el comprobante de la lista de aprobaciones y base de datos
+    receiptService.deleteReceipt(receipt.id);
+    setReceipts((prev) => prev.filter((r) => r.id !== receipt.id));
+    if (viewingReceipt && viewingReceipt.id === receipt.id) {
+      setViewingReceipt(null);
+    }
+
+    confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+    showToast(
+      `¡Comprobante #${receipt.id.slice(-6)} aprobado y retirado de aprobaciones! Se activó ${resolved.planName} (${resolved.durationLabel}).`,
+      'success'
+    );
   };
 
-  // Admin action: Reject receipt
+  // Admin action: Reject receipt and delete from approvals queue
   const handleRejectReceipt = (receipt: PaymentReceipt) => {
     const reason = 'El comprobante no es legible o el pago aún no fue acreditado.';
-    const updated = receiptService.updateReceiptStatus(
-      receipt.id,
-      'rejected',
-      reason,
-      currentUser.displayName
-    );
-    if (updated) {
-      firebaseService.denyOrRevokeUserMembershipByUidOrEmail(receipt.userId, receipt.userEmail, reason);
-      showToast(`Comprobante #${receipt.id.slice(-6)} rechazado.`, 'info');
-      refreshReceipts();
-      if (viewingReceipt && viewingReceipt.id === receipt.id) {
-        setViewingReceipt(updated);
-      }
+    firebaseService.denyOrRevokeUserMembershipByUidOrEmail(receipt.userId, receipt.userEmail, reason);
+    safeFetchApi(`/api/vault/receipts/${encodeURIComponent(receipt.id)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'rejected',
+        adminNote: reason,
+        reviewerName: currentUser.displayName || 'Administrador',
+      }),
+    }, 2000).catch(() => {});
+    receiptService.deleteReceipt(receipt.id);
+    setReceipts((prev) => prev.filter((r) => r.id !== receipt.id));
+    if (viewingReceipt && viewingReceipt.id === receipt.id) {
+      setViewingReceipt(null);
     }
+    showToast(`Comprobante #${receipt.id.slice(-6)} rechazado y retirado de aprobaciones.`, 'info');
   };
 
   // User action: Delete pending receipt
@@ -491,14 +474,14 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`p-4 sm:p-6 rounded-3xl border shadow-xl ${
-              isDark ? 'bg-[#0E0E12] border-[#1E1E24]' : 'bg-white border-[#E2E8F0]'
+            className={`p-4 sm:p-6 rounded-3xl border shadow-2xl backdrop-blur-2xl transition-all ${
+              isDark ? 'bg-zinc-950/80 border-white/[0.08] ring-1 ring-inset ring-white/[0.04]' : 'bg-white border-slate-200/90 shadow-xl ring-1 ring-inset ring-slate-100'
             }`}
           >
-            <div className="border-b pb-4 mb-5 flex items-center justify-between">
+            <div className="border-b border-white/[0.08] dark:border-white/[0.08] pb-4 mb-5 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-black">Formulario de Envío de Comprobante</h2>
-                <p className={`text-xs mt-0.5 ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                <h2 className="text-base font-black tracking-tight">Formulario de Envío de Comprobante</h2>
+                <p className={`text-xs mt-0.5 ${isDark ? 'text-zinc-400' : 'text-[#64748B]'}`}>
                   Adjunta los datos de tu transferencia para validación y desbloqueo del contenido VIP
                 </p>
               </div>
@@ -517,15 +500,15 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                   {/* Plan Mensual */}
                   <div
                     onClick={() => handleSelectPlanCard('monthly')}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                    className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between relative overflow-hidden ${
                       selectedPlan === 'monthly'
-                        ? 'border-[#0066FF] bg-[#0066FF]/10 ring-2 ring-[#0066FF]/30'
-                        : isDark ? 'border-[#1E1E24] bg-black/40 hover:border-[#2E2E38]' : 'border-[#E2E8F0] bg-slate-50 hover:border-slate-300'
+                        ? 'border-[#0066FF] bg-[#0066FF]/15 ring-2 ring-[#0066FF]/30 shadow-lg shadow-[#0066FF]/10'
+                        : isDark ? 'border-white/[0.08] bg-zinc-900/60 hover:border-white/20' : 'border-slate-200 bg-slate-50 hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
-                        selectedPlan === 'monthly' ? 'bg-[#0066FF] text-white' : 'bg-black/10 dark:bg-white/10'
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shadow-xs ${
+                        selectedPlan === 'monthly' ? 'bg-[#0066FF] text-white shadow-[#0066FF]/40' : 'bg-black/10 dark:bg-white/10'
                       }`}>
                         1M
                       </div>
@@ -542,10 +525,10 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                   {/* Plan Anual */}
                   <div
                     onClick={() => handleSelectPlanCard('annual')}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                    className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between relative overflow-hidden ${
                       selectedPlan === 'annual'
-                        ? 'border-[#0066FF] bg-[#0066FF]/10 ring-2 ring-[#0066FF]/30'
-                        : isDark ? 'border-[#1E1E24] bg-black/40 hover:border-[#2E2E38]' : 'border-[#E2E8F0] bg-slate-50 hover:border-slate-300'
+                        ? 'border-amber-500 bg-amber-500/15 ring-2 ring-amber-500/30 shadow-lg shadow-amber-500/10'
+                        : isDark ? 'border-white/[0.08] bg-zinc-900/60 hover:border-white/20' : 'border-slate-200 bg-slate-50 hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -692,7 +675,7 @@ Quedo a la espera de la activación de mi Membresía VIP. ¡Gracias!`;
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/png, image/jpeg, image/jpg, image/webp"
+                  accept="image/*"
                   onChange={handleFileChange}
                   className="hidden"
                 />
