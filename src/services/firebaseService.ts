@@ -2612,7 +2612,6 @@ export const firebaseService = {
 
   // Real-time listener for Maintenance Mode in Firestore
   onMaintenanceSnapshot(callback: (maint: { isMaintenance: boolean; message: string; updatedAt?: string }) => void) {
-    if (isFirestoreReadQuotaExhausted()) return () => {};
     try {
       const docRef = doc(db, 'system_config', 'maintenance');
       let unsub: (() => void) | null = null;
@@ -2629,7 +2628,8 @@ export const firebaseService = {
           }
         },
         (err) => {
-          handleFirestoreError(err);
+          // Read operation - do not treat as write quota failure
+          handleFirestoreError(err, true);
           if (unsub) {
             try { unsub(); } catch {}
           }
@@ -2641,24 +2641,26 @@ export const firebaseService = {
         }
       };
     } catch (err) {
-      handleFirestoreError(err);
+      handleFirestoreError(err, true);
       return () => {};
     }
   },
 
-  // Save Maintenance Mode state to Firestore via stateless REST
+  // Save Maintenance Mode state to Firestore and ensure robust local and cloud persistence
   async saveMaintenance(isMaintenance: boolean, message: string): Promise<boolean> {
     const cleanMessage = String(message || '').trim();
     const updatedAt = new Date().toISOString();
 
-    // Cache locally immediately with timestamp so the app reflects state reliably even offline or across APK restarts
+    // 1. Cache locally immediately with timestamp so the app reflects state reliably even offline or across APK restarts
     try {
       localStorage.setItem('vault_maintenance_active', String(isMaintenance));
       if (cleanMessage) localStorage.setItem('vault_maintenance_message', cleanMessage);
       localStorage.setItem('vault_maintenance_updated_at', updatedAt);
     } catch {}
 
-    // Attempt cloud persistence if quota allows (non-blocking)
+    let savedCloud = false;
+
+    // 2. Attempt cloud persistence via REST PATCH
     try {
       const fields = {
         isMaintenance: { booleanValue: Boolean(isMaintenance) },
@@ -2669,18 +2671,36 @@ export const firebaseService = {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }),
-      });
-      return Boolean(res && res.ok);
-    } catch {
-      return false;
-    }
+      }, 3000);
+      if (res && res.ok) {
+        savedCloud = true;
+      }
+    } catch {}
+
+    // 3. Also attempt cloud persistence via Firestore SDK setDoc (merge)
+    try {
+      const docRef = doc(db, 'system_config', 'maintenance');
+      await withFirestoreTimeout(
+        setDoc(docRef, {
+          isMaintenance: Boolean(isMaintenance),
+          message: cleanMessage,
+          updatedAt,
+          serverTimestamp: serverTimestamp(),
+        }, { merge: true }),
+        2500,
+        false
+      );
+      savedCloud = true;
+    } catch {}
+
+    return savedCloud;
   },
 
-  // Fetch Maintenance Mode state from Firestore
+  // Fetch Maintenance Mode state from Firestore with multiple fallbacks
   async fetchMaintenance(): Promise<{ isMaintenance: boolean; message: string; updatedAt?: string } | null> {
-    if (isFirestoreReadQuotaExhausted()) return null;
+    // 1. Try Firestore REST first (stateless, direct)
     try {
-      const res = await firestoreRestFetch('/system_config/maintenance');
+      const res = await firestoreRestFetch('/system_config/maintenance', {}, 3000);
       if (res && res.ok) {
         const data: any = await res.json();
         if (data && data.fields) {
@@ -2690,6 +2710,32 @@ export const firebaseService = {
             updatedAt: data.fields.updatedAt?.stringValue,
           };
         }
+      }
+    } catch {}
+
+    // 2. Fallback to Firestore SDK getDoc
+    try {
+      const docRef = doc(db, 'system_config', 'maintenance');
+      const snap = await withFirestoreTimeout(getDoc(docRef), 2500, true);
+      if (snap && snap.exists()) {
+        const d = snap.data();
+        return {
+          isMaintenance: Boolean(d.isMaintenance),
+          message: String(d.message || ''),
+          updatedAt: d.updatedAt ? String(d.updatedAt) : undefined,
+        };
+      }
+    } catch {}
+
+    // 3. Fallback to local storage cache
+    try {
+      const cached = localStorage.getItem('vault_maintenance_active');
+      if (cached !== null) {
+        return {
+          isMaintenance: cached === 'true',
+          message: localStorage.getItem('vault_maintenance_message') || '',
+          updatedAt: localStorage.getItem('vault_maintenance_updated_at') || undefined,
+        };
       }
     } catch {}
 

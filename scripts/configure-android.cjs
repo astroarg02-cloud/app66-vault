@@ -187,6 +187,22 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onPause() {
+        super.onPause();
+        try {
+            android.webkit.CookieManager.getInstance().flush();
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        try {
+            android.webkit.CookieManager.getInstance().flush();
+        } catch (Exception ignored) {}
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
@@ -237,6 +253,11 @@ public class MainActivity extends BridgeActivity {
             if (webView != null) {
                 webView.setBackgroundColor(Color.BLACK);
                 webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
+                try {
+                    android.webkit.WebSettings settings = webView.getSettings();
+                    settings.setDomStorageEnabled(true);
+                    settings.setDatabaseEnabled(true);
+                } catch (Exception ignoredSettings) {}
             }
         } catch (Exception ignored) {}
     }

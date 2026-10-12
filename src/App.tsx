@@ -32,7 +32,9 @@ import {
   Wrench,
   FileText,
   FileCheck,
-  Settings
+  Settings,
+  Eye,
+  CheckCircle2
 } from 'lucide-react';
 
 // Helper to manage deleted list IDs in localStorage to prevent deleted lists from resurfacing
@@ -132,6 +134,7 @@ function AppContent() {
     return 'Estamos realizando labores de mantenimiento y optimización en la plataforma. Volveremos muy pronto.';
   });
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [isPreviewingAsVisitor, setIsPreviewingAsVisitor] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
   // Helper to safely apply maintenance state based on timestamp priority
@@ -143,8 +146,8 @@ function AppContent() {
       const localTime = localUpdatedAtStr ? new Date(localUpdatedAtStr).getTime() : 0;
       const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
 
-      // If local state has a newer explicit timestamp than remote, do NOT allow stale remote to overwrite it
-      if (localTime > 0 && remoteTime > 0 && remoteTime < localTime) {
+      // Only reject remote update if local has an explicitly newer change by more than 2 seconds
+      if (localTime > 0 && remoteTime > 0 && (localTime - remoteTime) > 2000) {
         return false;
       }
 
@@ -948,13 +951,34 @@ function AppContent() {
     );
   }
 
-  // Priority 1: When maintenance mode is active, block everything for non-admins and display MaintenanceScreen
-  if (isMaintenanceActive && (!currentUser || currentUser.role !== 'admin')) {
+  // Priority 1: When maintenance mode is active, block everything for non-admins (or when admin explicitly tests visitor mode)
+  if (isMaintenanceActive && ((!currentUser || currentUser.role !== 'admin') || isPreviewingAsVisitor)) {
     return (
-      <MaintenanceScreen
-        onAdminLogin={handleLogin}
-        customMessage={maintenanceMessage}
-      />
+      <div className="relative w-full h-full min-h-[100dvh]">
+        {isPreviewingAsVisitor && (
+          <div className="fixed top-0 inset-x-0 z-[100000] bg-amber-500 text-black px-4 py-2.5 text-xs font-black flex items-center justify-between shadow-2xl border-b-2 border-amber-600">
+            <div className="flex items-center gap-2 min-w-0">
+              <Wrench className="w-4 h-4 shrink-0" />
+              <span className="truncate">
+                VISTA PREVIA DE VISITANTE (ADMINISTRADOR) &bull; Así se muestra la app a los usuarios
+              </span>
+            </div>
+            <button
+              onClick={() => setIsPreviewingAsVisitor(false)}
+              className="bg-black text-white hover:bg-slate-900 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 shadow-sm ml-2"
+            >
+              Volver a Administrador
+            </button>
+          </div>
+        )}
+        <MaintenanceScreen
+          onAdminLogin={(admin) => {
+            setIsPreviewingAsVisitor(false);
+            handleLogin(admin);
+          }}
+          customMessage={maintenanceMessage}
+        />
+      </div>
     );
   }
 
@@ -1124,34 +1148,49 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Admin Notice Banner when Maintenance Mode is Active */}
+      {/* Top Banner when Maintenance is Active (Exclusive for Admin) */}
       {isMaintenanceActive && currentUser?.role === 'admin' && (
-        <aside 
-          aria-label="Aviso de Modo Mantenimiento"
-          className="bg-amber-500/15 border-b border-amber-500/30 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 z-30 shadow-inner"
-        >
-          <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-amber-500 dark:text-amber-400">
-            <Wrench className="w-4 h-4 shrink-0 animate-spin [animation-duration:8s]" />
-            <span>
-              <strong>Modo Mantenimiento ACTIVO:</strong> El acceso está bloqueado para visitantes y miembros normales. Como administrador tienes acceso total.
+        <div className="shrink-0 z-30 px-3 sm:px-6 py-2 bg-gradient-to-r from-amber-500/20 via-amber-500/15 to-amber-500/20 border-b border-amber-500/35 text-amber-500 dark:text-amber-400 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-bold min-w-0">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+            </span>
+            <span className="truncate">
+              <strong className="uppercase">Modo Mantenimiento Activo:</strong> Plataforma bloqueada para visitantes y miembros regulares.
             </span>
           </div>
-          <div className="flex items-center gap-2 text-xs shrink-0 ml-auto">
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
             <button
-              onClick={() => setShowMaintenanceModal(true)}
-              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-600 dark:text-amber-300 font-bold transition-all cursor-pointer border border-amber-500/30"
+              type="button"
+              onClick={() => setIsPreviewingAsVisitor(true)}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[11px] font-bold text-amber-500 dark:text-amber-300 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+              title="Ver cómo ven la pantalla de bloqueo los usuarios"
             >
-              Configurar
+              <Eye className="w-3 h-3" />
+              <span>Probar como Visitante</span>
             </button>
             <button
-              onClick={handleLogout}
-              className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-500 dark:text-red-400 font-bold transition-all cursor-pointer border border-red-500/30"
-              title="Cerrar sesión para ver la pantalla de mantenimiento como visitante"
+              type="button"
+              onClick={() => setShowMaintenanceModal(true)}
+              className="px-2.5 py-1 rounded-lg bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20 border border-amber-500/30 text-[11px] font-bold text-amber-600 dark:text-amber-300 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
             >
-              Ver como visitante
+              <Wrench className="w-3 h-3" />
+              <span>Configurar</span>
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await handleSaveMaintenance(false, maintenanceMessage);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+              title="Desactivar mantenimiento y permitir acceso libre"
+            >
+              <CheckCircle2 className="w-3 h-3" />
+              <span>Desactivar</span>
             </button>
           </div>
-        </aside>
+        </div>
       )}
 
       {/* Main Content Area: Always 100% full-bleed edge-to-edge */}
@@ -1275,6 +1314,7 @@ function AppContent() {
                   }}
                   isMaintenanceActive={isMaintenanceActive}
                   onOpenMaintenanceModal={() => setShowMaintenanceModal(true)}
+                  onPreviewAsVisitor={() => setIsPreviewingAsVisitor(true)}
                 />
               </motion.div>
             )}

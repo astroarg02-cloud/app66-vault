@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Moon, Sun, Palette, Shield, Sparkles, AlertCircle,
   Edit3, Camera, Phone, Heart, FileText, Crown, Users, Check,
   ChevronRight, ArrowRight, ExternalLink, RefreshCw, Upload, Image as ImageIcon,
-  Instagram, Settings, Copy, Wrench
+  Instagram, Settings, Copy, Wrench, Eye
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { VerifiedBadge } from '../VerifiedBadge';
@@ -38,6 +38,7 @@ interface ProfileScreenProps {
   onNavigateToVault?: () => void;
   isMaintenanceActive?: boolean;
   onOpenMaintenanceModal?: () => void;
+  onPreviewAsVisitor?: () => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ 
@@ -51,6 +52,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onNavigateToVault,
   isMaintenanceActive = false,
   onOpenMaintenanceModal,
+  onPreviewAsVisitor,
 }) => {
   const { setTheme, isDark } = useTheme();
   const hasPurchasedMembership = Boolean(
@@ -865,20 +867,35 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </span>
               </div>
 
-              <motion.button
-                type="button"
-                onClick={onOpenMaintenanceModal}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
-                  isMaintenanceActive
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/20'
-                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#15151D] dark:hover:bg-[#1E1E28] text-slate-800 dark:text-white border border-slate-200 dark:border-[#252533]'
-                }`}
-              >
-                <Wrench className="w-3.5 h-3.5" />
-                <span>Configurar Modo Mantenimiento</span>
-              </motion.button>
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <motion.button
+                  type="button"
+                  onClick={onOpenMaintenanceModal}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`w-full sm:flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
+                    isMaintenanceActive
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-500/20'
+                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#15151D] dark:hover:bg-[#1E1E28] text-slate-800 dark:text-white border border-slate-200 dark:border-[#252533]'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Configurar Modo Mantenimiento</span>
+                </motion.button>
+                {isMaintenanceActive && onPreviewAsVisitor && (
+                  <motion.button
+                    type="button"
+                    onClick={onPreviewAsVisitor}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full sm:w-auto py-2.5 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-500 dark:text-amber-400 shrink-0 shadow-xs"
+                    title="Ver pantalla de bloqueo de mantenimiento"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Probar Vista Visitante</span>
+                  </motion.button>
+                )}
+              </div>
             </div>
           )}
 
