@@ -1,4 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.seis6.seis6_vault_native">
-    <uses-permission android:name="android.permission.INTERNET"/>
-</manifest>

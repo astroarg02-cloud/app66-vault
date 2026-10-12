@@ -352,7 +352,7 @@ Este paquete contiene el código fuente nativo en **Flutter (Dart)** conectado a
 
 \`\`\`bash
 cd flutter_app
-flutter create --platforms=android --org com.seis6 --project-name seis6_vault_native .
+flutter create --platforms=android --org com.seis6 .
 flutter pub get
 flutter build apk --release
 \`\`\`

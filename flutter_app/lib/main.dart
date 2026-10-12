@@ -1023,7 +1023,7 @@ class VerifiedBadgeWidget extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: kPrimaryBlue.withValues(alpha: 0.6),
+            color: kPrimaryBlue.withOpacity(0.6),
             blurRadius: 6,
           ),
         ],
@@ -1241,7 +1241,7 @@ class _Seis6VaultNativeAppState extends State<Seis6VaultNativeApp> {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: kPrimaryBlue.withValues(alpha: 0.4),
+                            color: kPrimaryBlue.withOpacity(0.4),
                             blurRadius: 20,
                           ),
                         ],
@@ -1444,10 +1444,10 @@ class _NativeMaintenanceScreenState extends State<NativeMaintenanceScreen> {
                         width: 34,
                         height: 34,
                         decoration: BoxDecoration(
-                          color: kAmber.withValues(alpha: 0.2),
+                          color: kAmber.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: kAmber.withValues(alpha: 0.35)),
+                              color: kAmber.withOpacity(0.35)),
                         ),
                         child: const Icon(Icons.build_outlined,
                             color: kAmber, size: 18),
@@ -1473,10 +1473,10 @@ class _NativeMaintenanceScreenState extends State<NativeMaintenanceScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: kAmber.withValues(alpha: 0.15),
+                                  color: kAmber.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(99),
                                   border: Border.all(
-                                      color: kAmber.withValues(alpha: 0.3)),
+                                      color: kAmber.withOpacity(0.3)),
                                 ),
                                 child: const Text(
                                   'SISTEMA EN MANTENIMIENTO',
@@ -1523,10 +1523,10 @@ class _NativeMaintenanceScreenState extends State<NativeMaintenanceScreen> {
                           : Colors.white,
                       borderRadius: BorderRadius.circular(28),
                       border:
-                          Border.all(color: kAmber.withValues(alpha: 0.3)),
+                          Border.all(color: kAmber.withOpacity(0.3)),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.5),
+                          color: Colors.black.withOpacity(0.5),
                           blurRadius: 30,
                         ),
                       ],
@@ -1541,10 +1541,10 @@ class _NativeMaintenanceScreenState extends State<NativeMaintenanceScreen> {
                               width: 78,
                               height: 78,
                               decoration: BoxDecoration(
-                                color: kAmber.withValues(alpha: 0.15),
+                                color: kAmber.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(24),
                                 border: Border.all(
-                                    color: kAmber.withValues(alpha: 0.35),
+                                    color: kAmber.withOpacity(0.35),
                                     width: 2),
                               ),
                               child: const Icon(Icons.build_rounded,
@@ -1573,10 +1573,10 @@ class _NativeMaintenanceScreenState extends State<NativeMaintenanceScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
-                            color: kAmber.withValues(alpha: 0.12),
+                            color: kAmber.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(99),
                             border: Border.all(
-                                color: kAmber.withValues(alpha: 0.3)),
+                                color: kAmber.withOpacity(0.3)),
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1875,7 +1875,7 @@ class _NativeAuthScreenState extends State<NativeAuthScreen> {
                               color: isDark ? kDarkBorder : Colors.blue.shade100),
                           boxShadow: [
                             BoxShadow(
-                              color: kPrimaryBlue.withValues(alpha: 0.4),
+                              color: kPrimaryBlue.withOpacity(0.4),
                               blurRadius: 36,
                               spreadRadius: -4,
                             ),
@@ -1949,10 +1949,10 @@ class _NativeAuthScreenState extends State<NativeAuthScreen> {
                       margin: const EdgeInsets.only(bottom: 14),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.1),
+                        color: Colors.redAccent.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                            color: Colors.redAccent.withValues(alpha: 0.35)),
+                            color: Colors.redAccent.withOpacity(0.35)),
                       ),
                       child: Row(
                         children: [
@@ -1976,12 +1976,12 @@ class _NativeAuthScreenState extends State<NativeAuthScreen> {
                         horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: _isAdminMode
-                          ? kPrimaryBlue.withValues(alpha: 0.1)
+                          ? kPrimaryBlue.withOpacity(0.1)
                           : (isDark ? kDarkCard : Colors.white),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
                         color: _isAdminMode
-                            ? kPrimaryBlue.withValues(alpha: 0.45)
+                            ? kPrimaryBlue.withOpacity(0.45)
                             : (isDark ? kDarkBorder : Colors.black12),
                       ),
                     ),
@@ -2500,7 +2500,7 @@ class _NativeAppShellState extends State<NativeAppShell> {
                             borderRadius: BorderRadius.circular(11),
                             boxShadow: [
                               BoxShadow(
-                                color: kPrimaryBlue.withValues(alpha: 0.35),
+                                color: kPrimaryBlue.withOpacity(0.35),
                                 blurRadius: 8,
                               ),
                             ],
@@ -2523,10 +2523,10 @@ class _NativeAppShellState extends State<NativeAppShell> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: kPrimaryBlue.withValues(alpha: 0.15),
+                            color: kPrimaryBlue.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(99),
                             border: Border.all(
-                                color: kPrimaryBlue.withValues(alpha: 0.3)),
+                                color: kPrimaryBlue.withOpacity(0.3)),
                           ),
                           child: const Text(
                             'SERVIDOR PRIVADO',
@@ -2550,14 +2550,14 @@ class _NativeAppShellState extends State<NativeAppShell> {
                             horizontal: 8, vertical: 5),
                         decoration: BoxDecoration(
                           color: widget.isMaintenance
-                              ? kAmber.withValues(alpha: 0.2)
+                              ? kAmber.withOpacity(0.2)
                               : (isDark
-                                  ? Colors.white.withValues(alpha: 0.05)
-                                  : Colors.black.withValues(alpha: 0.05)),
+                                  ? Colors.white.withOpacity(0.05)
+                                  : Colors.black.withOpacity(0.05)),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: widget.isMaintenance
-                                ? kAmber.withValues(alpha: 0.4)
+                                ? kAmber.withOpacity(0.4)
                                 : (isDark ? kDarkBorder : Colors.black12),
                           ),
                         ),
@@ -2593,7 +2593,7 @@ class _NativeAppShellState extends State<NativeAppShell> {
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: _currentTab == 'profile'
-                            ? kPrimaryBlue.withValues(alpha: 0.15)
+                            ? kPrimaryBlue.withOpacity(0.15)
                             : (isDark ? kDarkCard : Colors.white),
                         borderRadius: BorderRadius.circular(99),
                         border: Border.all(
@@ -2654,7 +2654,7 @@ class _NativeAppShellState extends State<NativeAppShell> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 5, vertical: 1),
                               decoration: BoxDecoration(
-                                color: kPrimaryBlue.withValues(alpha: 0.15),
+                                color: kPrimaryBlue.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(99),
                               ),
                               child: const Text(
@@ -2718,10 +2718,10 @@ class _NativeAppShellState extends State<NativeAppShell> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 decoration: BoxDecoration(
-                  color: kAmber.withValues(alpha: 0.15),
+                  color: kAmber.withOpacity(0.15),
                   border: Border(
                     bottom:
-                        BorderSide(color: kAmber.withValues(alpha: 0.35)),
+                        BorderSide(color: kAmber.withOpacity(0.35)),
                   ),
                 ),
                 child: Row(
@@ -2745,10 +2745,10 @@ class _NativeAppShellState extends State<NativeAppShell> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: kAmber.withValues(alpha: 0.2),
+                          color: kAmber.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                              color: kAmber.withValues(alpha: 0.4)),
+                              color: kAmber.withOpacity(0.4)),
                         ),
                         child: const Text(
                           'Probar Visitante',
@@ -2768,10 +2768,10 @@ class _NativeAppShellState extends State<NativeAppShell> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: kEmerald.withValues(alpha: 0.2),
+                          color: kEmerald.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                              color: kEmerald.withValues(alpha: 0.4)),
+                              color: kEmerald.withOpacity(0.4)),
                         ),
                         child: const Text(
                           'Desactivar',
@@ -2933,7 +2933,7 @@ class _NativeAppShellState extends State<NativeAppShell> {
           boxShadow: active
               ? [
                   BoxShadow(
-                    color: kPrimaryBlue.withValues(alpha: 0.35),
+                    color: kPrimaryBlue.withOpacity(0.35),
                     blurRadius: 10,
                   )
                 ]
@@ -3474,7 +3474,7 @@ ${item.description}
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.8),
+                              color: Colors.black.withOpacity(0.8),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
@@ -3782,11 +3782,11 @@ ${item.description}
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 1),
                               decoration: BoxDecoration(
-                                color: kPrimaryBlue.withValues(alpha: 0.15),
+                                color: kPrimaryBlue.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(99),
                                 border: Border.all(
                                     color:
-                                        kPrimaryBlue.withValues(alpha: 0.3)),
+                                        kPrimaryBlue.withOpacity(0.3)),
                               ),
                               child: Text(
                                 '${widget.lists.length} COLECCIONES',
@@ -4039,13 +4039,11 @@ ${item.description}
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: kPrimaryBlue.withValues(
-                                                alpha: 0.15),
+                                            color: kPrimaryBlue.withOpacity(0.15),
                                             borderRadius:
                                                 BorderRadius.circular(8),
                                             border: Border.all(
-                                                color: kPrimaryBlue.withValues(
-                                                    alpha: 0.3)),
+                                                color: kPrimaryBlue.withOpacity(0.3)),
                                           ),
                                           child: Text(
                                             '$count ${count == 1 ? "publicación" : "publicaciones"}',
@@ -4211,8 +4209,7 @@ ${item.description}
                                               horizontal: 7, vertical: 2),
                                           decoration: BoxDecoration(
                                             color: item.fileType.isNotEmpty
-                                                ? kPrimaryBlue.withValues(
-                                                    alpha: 0.15)
+                                                ? kPrimaryBlue.withOpacity(0.15)
                                                 : Colors.white10,
                                             borderRadius:
                                                 BorderRadius.circular(6),
@@ -4409,9 +4406,9 @@ class _NativeMembershipScreenState extends State<NativeMembershipScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
-              color: kEmerald.withValues(alpha: 0.12),
+              color: kEmerald.withOpacity(0.12),
               borderRadius: BorderRadius.circular(99),
-              border: Border.all(color: kEmerald.withValues(alpha: 0.35)),
+              border: Border.all(color: kEmerald.withOpacity(0.35)),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -4456,10 +4453,10 @@ class _NativeMembershipScreenState extends State<NativeMembershipScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               decoration: BoxDecoration(
-                color: kWhatsAppGreen.withValues(alpha: 0.15),
+                color: kWhatsAppGreen.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(16),
                 border:
-                    Border.all(color: kWhatsAppGreen.withValues(alpha: 0.45)),
+                    Border.all(color: kWhatsAppGreen.withOpacity(0.45)),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
@@ -4583,12 +4580,12 @@ class _NativeMembershipScreenState extends State<NativeMembershipScreen> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  kEmerald.withValues(alpha: 0.2),
+                  kEmerald.withOpacity(0.2),
                   isDark ? kDarkCard : Colors.white,
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: kEmerald.withValues(alpha: 0.4)),
+              border: Border.all(color: kEmerald.withOpacity(0.4)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4651,7 +4648,7 @@ class _NativeMembershipScreenState extends State<NativeMembershipScreen> {
               color: isDark ? kDarkCard : Colors.white,
               borderRadius: BorderRadius.circular(22),
               border:
-                  Border.all(color: kPrimaryBlue.withValues(alpha: 0.35)),
+                  Border.all(color: kPrimaryBlue.withOpacity(0.35)),
             ),
             child: Row(
               children: [
@@ -4659,7 +4656,7 @@ class _NativeMembershipScreenState extends State<NativeMembershipScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: kPrimaryBlue.withValues(alpha: 0.15),
+                    color: kPrimaryBlue.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Icon(Icons.schedule, color: kPrimaryBlue),
@@ -4699,8 +4696,8 @@ class _NativeMembershipScreenState extends State<NativeMembershipScreen> {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: _selectedBillingTab == 'annual'
-                  ? kAmber.withValues(alpha: 0.5)
-                  : kPrimaryBlue.withValues(alpha: 0.5),
+                  ? kAmber.withOpacity(0.5)
+                  : kPrimaryBlue.withOpacity(0.5),
               width: 1.5,
             ),
           ),
@@ -5026,7 +5023,7 @@ class _NativeReceiptsScreenState extends State<NativeReceiptsScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: _selectedPlan == 'monthly'
-                                ? kPrimaryBlue.withValues(alpha: 0.15)
+                                ? kPrimaryBlue.withOpacity(0.15)
                                 : kDarkSurface,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
@@ -5063,7 +5060,7 @@ class _NativeReceiptsScreenState extends State<NativeReceiptsScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: _selectedPlan == 'annual'
-                                ? kAmber.withValues(alpha: 0.15)
+                                ? kAmber.withOpacity(0.15)
                                 : kDarkSurface,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
@@ -5141,7 +5138,7 @@ class _NativeReceiptsScreenState extends State<NativeReceiptsScreen> {
                       border: Border.all(
                         color: _imageBase64 != null
                             ? kEmerald
-                            : kPrimaryBlue.withValues(alpha: 0.4),
+                            : kPrimaryBlue.withOpacity(0.4),
                       ),
                     ),
                     child: Column(
@@ -5260,10 +5257,10 @@ class _NativeReceiptsScreenState extends State<NativeReceiptsScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.15),
+                      color: statusColor.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(99),
                       border: Border.all(
-                          color: statusColor.withValues(alpha: 0.35)),
+                          color: statusColor.withOpacity(0.35)),
                     ),
                     child: Text(
                       statusText,
@@ -5613,7 +5610,7 @@ class _NativeProfileScreenState extends State<NativeProfileScreen> {
                   width: 34,
                   height: 34,
                   decoration: BoxDecoration(
-                    color: kPrimaryBlue.withValues(alpha: 0.15),
+                    color: kPrimaryBlue.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(11),
                   ),
                   child: const Icon(Icons.settings_outlined,
@@ -5781,7 +5778,7 @@ class _NativeProfileScreenState extends State<NativeProfileScreen> {
                                     horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
                                   color:
-                                      kPrimaryBlue.withValues(alpha: 0.15),
+                                      kPrimaryBlue.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(99),
                                 ),
                                 child: const Text(
@@ -5798,7 +5795,7 @@ class _NativeProfileScreenState extends State<NativeProfileScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: kEmerald.withValues(alpha: 0.15),
+                                  color: kEmerald.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(99),
                                 ),
                                 child: const Text(
@@ -5924,7 +5921,7 @@ class _NativeProfileScreenState extends State<NativeProfileScreen> {
                           width: 30,
                           height: 30,
                           decoration: BoxDecoration(
-                            color: kPrimaryBlue.withValues(alpha: 0.15),
+                            color: kPrimaryBlue.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(9),
                           ),
                           child: const Icon(Icons.palette_outlined,
@@ -5955,7 +5952,7 @@ class _NativeProfileScreenState extends State<NativeProfileScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: kPrimaryBlue.withValues(alpha: 0.15),
+                        color: kPrimaryBlue.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(99),
                       ),
                       child: Text(
@@ -6048,7 +6045,7 @@ class _NativeProfileScreenState extends State<NativeProfileScreen> {
                             horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: (widget.isMaintenance ? kAmber : kEmerald)
-                              .withValues(alpha: 0.15),
+                              .withOpacity(0.15),
                           borderRadius: BorderRadius.circular(99),
                         ),
                         child: Text(
@@ -6291,8 +6288,8 @@ class _NativeProfileScreenState extends State<NativeProfileScreen> {
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.redAccent,
-            backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
-            side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.35)),
+            backgroundColor: Colors.redAccent.withOpacity(0.1),
+            side: BorderSide(color: Colors.redAccent.withOpacity(0.35)),
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),

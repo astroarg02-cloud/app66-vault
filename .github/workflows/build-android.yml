@@ -31,17 +31,35 @@ jobs:
         run: |
           yes | flutter doctor --android-licenses || true
 
-      - name: 5. Instalar dependencias Flutter
+      - name: 5. Generar plataforma Android oficial y configurar permisos
+        working-directory: ./flutter_app
+        run: |
+          echo "Generando plataforma Android oficial..."
+          flutter create --platforms=android --org com.seis6 .
+
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+              sed -i 's/<manifest[^>]*>/&\n    <uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>/' "$MANIFEST"
+            fi
+            sed -i 's/android:label="[^"]*"/android:label="Seis6 Vault"/' "$MANIFEST"
+          fi
+
+          if [ -f "android/gradlew" ]; then
+            chmod +x android/gradlew
+          fi
+
+      - name: 6. Instalar dependencias
         working-directory: ./flutter_app
         run: |
           flutter pub get
 
-      - name: 6. Compilar APK Nativa Release
+      - name: 7. Compilar APK Nativa Release
         working-directory: ./flutter_app
         run: |
           flutter build apk --release --no-tree-shake-icons
 
-      - name: 7. Subir APK Nativa lista para instalar
+      - name: 8. Subir APK Nativa lista para instalar
         uses: actions/upload-artifact@v4
         with:
           name: Seis6-App-APK
@@ -49,10 +67,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: 8. Resumen de compilación
+      - name: 9. Resumen de compilación
         run: |
           echo "### 🎉 ¡APK Compilada con Éxito!" >> $GITHUB_STEP_SUMMARY
-          echo "- **Motor:** 100% Flutter Nativo (ARM64 & ARMv7)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Motor:** 100% Flutter Nativo ARM64 (sin WebView)" >> $GITHUB_STEP_SUMMARY
           echo "- **Diseño:** Idéntico a Vite con Modo Oscuro AMOLED (#000000)" >> $GITHUB_STEP_SUMMARY
           echo "- **Base de Datos:** Firebase Firestore sincronizado" >> $GITHUB_STEP_SUMMARY
           echo "- **Archivo:** \`app-release.apk\` disponible en la sección de Artifacts arriba." >> $GITHUB_STEP_SUMMARY
