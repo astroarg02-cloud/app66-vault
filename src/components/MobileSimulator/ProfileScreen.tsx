@@ -14,6 +14,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { isAuthorizedAdminKey, ADMIN_SECURITY_KEY } from '../../data/initialVaultData';
 import { firebaseService, getStoredRegisteredAccounts } from '../../services/firebaseService';
 import { receiptService } from '../../services/receiptService';
+import { exportFlutterNativeProjectZip } from '../../services/zipExporter';
 
 // Galería de avatares predeterminados para elegir
 const AVATAR_PRESETS = [
@@ -1002,6 +1003,48 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </span>
               </div>
             </div>
+          </div>
+
+          {/* Motor APK Nativo en Flutter */}
+          <div
+            className={`p-4 rounded-2xl border transition-colors ${
+              isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#0066FF]/15 flex items-center justify-center text-[#0066FF]">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
+                    Motor Android APK 100% Nativo (Flutter)
+                  </span>
+                  <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
+                    Compilación binaria ARM64 real en /flutter_app + GitHub Actions
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                NATIVO
+              </span>
+            </div>
+
+            <motion.button
+              type="button"
+              onClick={async () => {
+                setSaveToast('Generando paquete Flutter Nativo (.zip)...');
+                await exportFlutterNativeProjectZip();
+                setSaveToast('¡Proyecto Flutter Nativo descargado!');
+                setTimeout(() => setSaveToast(null), 3500);
+              }}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full mt-2 py-2.5 px-3 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-[#0066FF]/25"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Descargar Código Fuente Flutter Nativo (.ZIP)</span>
+            </motion.button>
           </div>
         </div>
       )}

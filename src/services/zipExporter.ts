@@ -299,3 +299,68 @@ ${item.description}
     return false;
   }
 }
+
+/**
+ * Exports the complete 100% Native Flutter project (Dart + pubspec.yaml + GitHub Actions APK builder) as a ZIP
+ */
+export async function exportFlutterNativeProjectZip(): Promise<boolean> {
+  try {
+    const zip = new JSZip();
+    let pubspec = '';
+    let mainDart = '';
+    let workflowYml = '';
+
+    try {
+      const res = await fetch(resolveApiUrl('/api/flutter/source'));
+      if (res.ok) {
+        const data = await res.json();
+        pubspec = data.pubspec || '';
+        mainDart = data.mainDart || '';
+        workflowYml = data.workflowYml || '';
+      }
+    } catch {}
+
+    if (pubspec) {
+      zip.file('flutter_app/pubspec.yaml', pubspec);
+    }
+    if (mainDart) {
+      zip.file('flutter_app/lib/main.dart', mainDart);
+    }
+    if (workflowYml) {
+      zip.file('.github/workflows/build-android.yml', workflowYml);
+    }
+
+    const readme = `# Seis6 Vault - Proyecto 100% Nativo en Flutter (Android APK)
+
+Este paquete contiene el código fuente nativo en **Flutter (Dart)** conectado a tu base de datos de **Firebase Firestore** (\`gen-lang-client-0680329207\`).
+
+## 🚀 Cómo compilar tu APK 100% Nativa automáticamente en GitHub
+
+1. Sube los cambios de este repositorio a tu cuenta de GitHub (\`astroarg02-cloud/app66-vault\`).
+2. Entra a la pestaña **Actions** en tu repositorio de GitHub.
+3. Selecciona el flujo **"Generar APK Nativa de Android (Flutter)"** y pulsa **Run workflow**.
+4. Al finalizar, descarga el archivo **Seis6-App-APK** (\`app-release.apk\`) compilado directamente a código máquina ARM64 (sin WebView ni navegador).
+
+## 💻 Compilación Manual en PC (Opcional)
+
+\`\`\`bash
+cd flutter_app
+flutter create --platforms=android --org com.seis6 --project-name seis6_vault_native .
+flutter pub get
+flutter build apk --release
+\`\`\`
+`;
+    zip.file('README_FLUTTER_NATIVO.md', readme);
+
+    const blob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+    saveAs(blob, 'Seis6_Vault_Flutter_Nativo.zip');
+    return true;
+  } catch (err) {
+    console.error('Error exportando proyecto Flutter:', err);
+    return false;
+  }
+}

@@ -599,6 +599,22 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+app.get('/api/flutter/source', (_req, res) => {
+  try {
+    const pubspecPath = path.join(process.cwd(), 'flutter_app', 'pubspec.yaml');
+    const mainDartPath = path.join(process.cwd(), 'flutter_app', 'lib', 'main.dart');
+    const workflowPath = path.join(process.cwd(), '.github', 'workflows', 'build-android.yml');
+    res.json({
+      success: true,
+      pubspec: fs.existsSync(pubspecPath) ? fs.readFileSync(pubspecPath, 'utf-8') : '',
+      mainDart: fs.existsSync(mainDartPath) ? fs.readFileSync(mainDartPath, 'utf-8') : '',
+      workflowYml: fs.existsSync(workflowPath) ? fs.readFileSync(workflowPath, 'utf-8') : '',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/maintenance & /api/maintenance/status - Fetch current maintenance mode status
 const handleGetMaintenance = async (req: express.Request, res: express.Response) => {
   let state = readMaintenanceState();

@@ -1,0 +1,26 @@
+name: seis6_vault_native
+description: Boveda privada y servidor exclusivo compilado 100% nativo en Flutter para Android e iOS con conexion a Firebase Firestore.
+publish_to: 'none'
+version: 2.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  path_provider: ^2.1.4
+  url_launcher: ^6.3.0
+  share_plus: ^10.0.2
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
