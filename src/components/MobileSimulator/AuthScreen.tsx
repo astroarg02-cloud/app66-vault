@@ -139,11 +139,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.25 }}
-      className={`h-full flex flex-col justify-between p-6 select-none overflow-y-auto custom-scrollbar transition-colors duration-300 ${
+      className={`h-full w-full min-h-[100dvh] flex flex-col justify-between p-4 sm:p-6 select-none overflow-y-auto custom-scrollbar transition-colors duration-300 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] ${
         isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
       }`}
     >
-      <div className="my-auto space-y-4">
+      <div className="w-full max-w-sm sm:max-w-md mx-auto my-auto space-y-4">
         {/* Animated Vault Emblem */}
         <div className="flex flex-col items-center text-center space-y-2.5">
           <motion.div 
@@ -475,7 +475,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       </div>
 
       {/* Footer */}
-      <div className={`pt-3 text-center border-t ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
+      <div className={`w-full max-w-sm sm:max-w-md mx-auto pt-3 text-center border-t ${isDark ? 'border-[#1E1E24]' : 'border-[#E2E8F0]'}`}>
         <span
           className={`text-[10px] uppercase tracking-widest font-mono flex items-center justify-center gap-1.5 ${
             isDark ? 'text-[#5A5A62]' : 'text-[#94A3B8]'

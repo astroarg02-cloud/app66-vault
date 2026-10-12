@@ -881,27 +881,11 @@ function AppContent() {
     );
   }
 
-  // Priority 2: Unauthenticated view -> Mandatory AuthScreen
+  // Priority 2: Unauthenticated view -> Mandatory AuthScreen (100% pantalla completa Edge-to-Edge)
   if (!currentUser) {
-    const isStandalone = isStandaloneApp();
     return (
-      <div className={`min-h-[100dvh] h-[100dvh] w-full flex items-center justify-center p-0 ${isStandalone ? 'sm:p-0' : 'sm:p-4 md:p-6'} overflow-y-auto transition-colors duration-300 ${
-        isDark ? 'bg-black text-white' : 'bg-black text-white'
-      }`}>
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.98, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-          className={`w-full h-full ${
-            isStandalone
-              ? 'max-w-none max-h-none rounded-none border-0'
-              : 'sm:h-auto sm:max-w-[440px] sm:max-h-[92dvh] sm:rounded-3xl sm:border'
-          } rounded-none border-0 shadow-2xl overflow-hidden flex flex-col ${
-            isDark ? 'bg-[#0A0A0C] sm:border-[#1E1E24]' : 'bg-[#0A0A0C] sm:border-[#1E1E24]'
-          }`}
-        >
-          <AuthScreen onLogin={handleLogin} />
-        </motion.div>
+      <div className="w-full h-full min-h-[100dvh] max-h-[100dvh] flex flex-col p-0 m-0 overflow-hidden bg-black text-white select-none">
+        <AuthScreen onLogin={handleLogin} />
       </div>
     );
   }
@@ -924,7 +908,7 @@ function AppContent() {
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
-        <div className={`${isStandalone ? 'w-full' : 'max-w-7xl'} mx-auto flex items-center justify-between gap-2 sm:gap-4`}>
+        <div className="w-full flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand & Logo */}
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <motion.div 
@@ -1063,12 +1047,10 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Main Content Area: Full-bleed on mobile and standalone APK, framed container on PC */}
-      <main className={`flex-1 w-full ${isStandalone ? 'max-w-none p-0' : 'max-w-7xl mx-auto p-0 md:p-3 lg:p-4'} overflow-hidden flex flex-col min-h-0`}>
-        <div className={`w-full h-full flex-1 ${
-          isStandalone ? 'rounded-none border-0 shadow-none' : 'rounded-none md:rounded-2xl border-0 md:border md:shadow-xl'
-        } overflow-hidden flex flex-col min-h-0 relative ${
-          isDark ? 'bg-[#0A0A0C] md:border-[#1E1E24]' : 'bg-white md:border-[#E2E8F0]'
+      {/* Main Content Area: Always 100% full-bleed edge-to-edge */}
+      <main className="flex-1 w-full p-0 m-0 overflow-hidden flex flex-col min-h-0">
+        <div className={`w-full h-full flex-1 rounded-none border-0 shadow-none overflow-hidden flex flex-col min-h-0 relative ${
+          isDark ? 'bg-black text-white' : 'bg-[#F8FAFC] text-[#0F172A]'
         }`}>
           <AnimatePresence mode="wait">
             {currentTab === 'vault' && (
@@ -1201,7 +1183,7 @@ function AppContent() {
             : 'bg-white/95 border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
         }`}
       >
-        <div className={`w-full ${isStandalone ? 'max-w-lg' : 'max-w-md'} flex items-center justify-around sm:justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border shadow-inner ${
+        <div className={`w-full max-w-lg flex items-center justify-around sm:justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border shadow-inner ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-[#F1F5F9] border-slate-200'
         }`}>
           {/* Publicaciones (SOLO ICONO, SOLO ADMINISTRADORES) */}

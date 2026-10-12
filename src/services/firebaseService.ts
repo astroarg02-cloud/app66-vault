@@ -53,18 +53,19 @@ export const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects
 
 // Helper to detect if running inside Capacitor, Cordova, or standalone Android APK
 export function isStandaloneApp(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined') return true;
   try {
     const { protocol, hostname, port, origin } = window.location;
     const isCapacitorBridge = (window as any).Capacitor !== undefined || (window as any).androidBridge !== undefined;
-    const isWebviewUA = typeof navigator !== 'undefined' && /wv|Capacitor/i.test(navigator.userAgent);
-    const isLocalScheme = protocol === 'capacitor:' || protocol === 'file:' || protocol === 'ionic:';
+    const isWebviewUA = typeof navigator !== 'undefined' && /wv|Capacitor|Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+    const isLocalScheme = protocol === 'capacitor:' || protocol === 'file:' || protocol === 'ionic:' || protocol === 'content:';
     const isLocalhostDomain = (hostname === 'localhost' || hostname === '127.0.0.1') && (!port || port === '80' || port === '443');
     const isLocalOrigin = origin === 'https://localhost' || origin === 'http://localhost' || origin === 'capacitor://localhost';
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 
-    return isCapacitorBridge || isWebviewUA || isLocalScheme || isLocalhostDomain || isLocalOrigin;
+    return isCapacitorBridge || isWebviewUA || isLocalScheme || isLocalhostDomain || isLocalOrigin || isPWA;
   } catch {
-    return false;
+    return true;
   }
 }
 
