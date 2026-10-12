@@ -904,7 +904,7 @@ function AppContent() {
       <header
         className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 pt-[max(0.6rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] border-b backdrop-blur-xl ${
           isDark
-            ? 'border-[#1E1E24] bg-black/95 shadow-black/80'
+            ? 'border-[#1E1E24] bg-black shadow-black/80'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
@@ -1179,7 +1179,7 @@ function AppContent() {
         aria-label="Barra de Navegación Inferior"
         className={`shrink-0 z-40 px-3 sm:px-6 py-1.5 sm:py-2 border-t flex justify-center pb-[max(0.6rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] ${
           isDark 
-            ? 'bg-black/95 border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
+            ? 'bg-black border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
             : 'bg-white/95 border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
         }`}
       >
