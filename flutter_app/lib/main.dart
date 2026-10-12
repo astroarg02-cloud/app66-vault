@@ -2922,101 +2922,131 @@ class _NativeAppShellState extends State<NativeAppShell> {
     int badgeCount = 0,
   }) {
     return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: active ? kPrimaryBlue : Colors.transparent,
-          shape: BoxShape.circle,
-          boxShadow: active
-              ? [
-                  BoxShadow(
-                    color: kPrimaryBlue.withOpacity(0.35),
-                    blurRadius: 10,
-                  )
-                ]
-              : null,
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 19,
-              color: iconColor ??
-                  (active
-                      ? Colors.white
-                      : (isDark ? Colors.grey.shade400 : Colors.blueGrey)),
-            ),
-            if (showDot)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(
-                    color: kEmerald,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: AnimatedScale(
+        scale: active ? 1.08 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutBack,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: active ? kPrimaryBlue : Colors.transparent,
+            shape: BoxShape.circle,
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                      color: kPrimaryBlue.withOpacity(0.45),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                    )
+                  ]
+                : null,
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 19,
+                color: iconColor ??
+                    (active
+                        ? Colors.white
+                        : (isDark ? Colors.grey.shade400 : Colors.blueGrey)),
               ),
-            if (badgeCount > 0)
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.amber,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    '$badgeCount',
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 8.5,
-                      fontWeight: FontWeight.w900,
+              if (showDot)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: kEmerald,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: kEmerald.withOpacity(0.6),
+                          blurRadius: 6,
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-          ],
+              if (badgeCount > 0)
+                Positioned(
+                  top: 3,
+                  right: 3,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.amber,
+                      borderRadius: BorderRadius.circular(99),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      '$badgeCount',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildCurrentTabContent() {
+    Widget content;
     switch (_currentTab) {
       case 'membership':
-        return NativeMembershipScreen(
+        content = NativeMembershipScreen(
+          key: const ValueKey('membership'),
           currentUser: widget.currentUser,
           isDark: widget.isDark,
           onUpdateUser: widget.onUpdateUser,
           onGoToReceipts: () => setState(() => _currentTab = 'receipts'),
           onGoToVault: () => setState(() => _currentTab = 'vault'),
         );
+        break;
       case 'receipts':
-        return NativeReceiptsScreen(
+        content = NativeReceiptsScreen(
+          key: const ValueKey('receipts'),
           currentUser: widget.currentUser,
           isDark: widget.isDark,
           receipts: widget.receipts,
           onReceiptsChanged: widget.onReceiptsChanged,
         );
+        break;
       case 'approvals':
-        return NativeAdminApprovalsScreen(
+        content = NativeAdminApprovalsScreen(
+          key: const ValueKey('approvals'),
           currentUser: widget.currentUser,
           isDark: widget.isDark,
           receipts: widget.receipts,
           onReceiptsChanged: widget.onReceiptsChanged,
           onUpdateUser: widget.onUpdateUser,
         );
+        break;
       case 'profile':
-        return NativeProfileScreen(
+        content = NativeProfileScreen(
+          key: const ValueKey('profile'),
           currentUser: widget.currentUser,
           isDark: widget.isDark,
           items: widget.items,
@@ -3031,9 +3061,11 @@ class _NativeAppShellState extends State<NativeAppShell> {
           onGoToReceipts: () => setState(() => _currentTab = 'receipts'),
           onGoToVault: () => setState(() => _currentTab = 'vault'),
         );
+        break;
       case 'vault':
       default:
-        return NativeVaultScreen(
+        content = NativeVaultScreen(
+          key: const ValueKey('vault'),
           currentUser: widget.currentUser,
           isDark: widget.isDark,
           items: widget.items,
@@ -3047,6 +3079,24 @@ class _NativeAppShellState extends State<NativeAppShell> {
           onRefreshCloud: widget.onRefreshCloud,
         );
     }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.02),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: content,
+    );
   }
 }
 

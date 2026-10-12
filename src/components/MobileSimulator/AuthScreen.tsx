@@ -340,38 +340,48 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           <div className="space-y-3">
             {/* Tab Toggle: Iniciar Sesión / Registrarse */}
             <div className={`p-1 rounded-2xl flex border relative ${isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-slate-100 border-slate-200'}`}>
-              <motion.button
+              <button
                 type="button"
                 onClick={() => {
                   setIsSignUp(false);
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
-                whileTap={{ scale: 0.96 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  !isSignUp
-                    ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-                    : 'text-slate-400 hover:text-white'
+                className={`relative flex-1 py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer select-none ${
+                  !isSignUp ? 'text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <LogIn className="w-3.5 h-3.5" /> Iniciar Sesión
-              </motion.button>
-              <motion.button
+                {!isSignUp && (
+                  <motion.div
+                    layoutId="active-auth-tab-pill"
+                    className="absolute inset-0 rounded-xl bg-[#0066FF] shadow-[0_0_15px_rgba(0,102,255,0.4)]"
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                  />
+                )}
+                <LogIn className="relative z-10 w-3.5 h-3.5" />
+                <span className="relative z-10">Iniciar Sesión</span>
+              </button>
+              <button
                 type="button"
                 onClick={() => {
                   setIsSignUp(true);
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
-                whileTap={{ scale: 0.96 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  isSignUp
-                    ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-                    : 'text-slate-400 hover:text-white'
+                className={`relative flex-1 py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer select-none ${
+                  isSignUp ? 'text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <UserPlus className="w-3.5 h-3.5" /> Registrarse
-              </motion.button>
+                {isSignUp && (
+                  <motion.div
+                    layoutId="active-auth-tab-pill"
+                    className="absolute inset-0 rounded-xl bg-[#0066FF] shadow-[0_0_15px_rgba(0,102,255,0.4)]"
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                  />
+                )}
+                <UserPlus className="relative z-10 w-3.5 h-3.5" />
+                <span className="relative z-10">Registrarse</span>
+              </button>
             </div>
 
             {/* Formulario de Login & Register */}

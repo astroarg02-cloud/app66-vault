@@ -1332,149 +1332,205 @@ function AppContent() {
             : 'bg-white/95 border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
         }`}
       >
-        <div className={`w-full max-w-lg flex items-center justify-around sm:justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border shadow-inner ${
-          isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-[#F1F5F9] border-slate-200'
+        <div className={`w-full max-w-lg flex items-center justify-around sm:justify-center gap-1.5 sm:gap-3 px-3 sm:px-4 py-1.5 rounded-full border shadow-inner backdrop-blur-2xl transition-colors ${
+          isDark ? 'bg-[#0A0A0C]/90 border-[#1E1E24]/80' : 'bg-[#F1F5F9]/90 border-slate-200'
         }`}>
           {/* Publicaciones (SOLO ICONO, SOLO ADMINISTRADORES) */}
-          {currentUser?.role === 'admin' && (
-            <button
-              id="home-bar-tab-publicaciones"
-              type="button"
-              title={`Publicaciones (${items.length})`}
-              aria-label="Publicaciones"
-              onClick={() => {
-                setCurrentTab('vault');
-                setVaultTabMode('items');
-                setSelectedVaultListId(null);
-              }}
-              className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
-                currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId
-                  ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
-                  : isDark
-                  ? 'text-zinc-400 hover:text-white active:text-white'
-                  : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
-              }`}
-            >
-              <FolderClosed className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
-            </button>
-          )}
+          {currentUser?.role === 'admin' && (() => {
+            const isActive = currentTab === 'vault' && vaultTabMode === 'items' && !selectedVaultListId;
+            return (
+              <motion.button
+                id="home-bar-tab-publicaciones"
+                type="button"
+                title={`Publicaciones (${items.length})`}
+                aria-label="Publicaciones"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => {
+                  setCurrentTab('vault');
+                  setVaultTabMode('items');
+                  setSelectedVaultListId(null);
+                }}
+                className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none transition-colors ${
+                  isActive ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="active-bottom-nav-pill"
+                    className="absolute inset-0 rounded-full bg-[#0066FF] shadow-[0_0_20px_rgba(0,102,255,0.55)]"
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                  />
+                )}
+                <FolderClosed className="relative z-10 w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
+              </motion.button>
+            );
+          })()}
 
           {/* Colecciones (SOLO ICONO) */}
-          <button
-            id="home-bar-tab-colecciones"
-            type="button"
-            title={`Colecciones (${lists.length})`}
-            aria-label="Colecciones"
-            onClick={() => {
-              setCurrentTab('vault');
-              setVaultTabMode('collections');
-              setSelectedVaultListId(null);
-            }}
-            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
-              currentTab === 'vault' && (vaultTabMode === 'collections' || selectedVaultListId !== null)
-                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
-                : isDark
-                ? 'text-zinc-400 hover:text-white active:text-white'
-                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
-            }`}
-          >
-            <Layers className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
-          </button>
+          {(() => {
+            const isActive = currentTab === 'vault' && (vaultTabMode === 'collections' || selectedVaultListId !== null);
+            return (
+              <motion.button
+                id="home-bar-tab-colecciones"
+                type="button"
+                title={`Colecciones (${lists.length})`}
+                aria-label="Colecciones"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => {
+                  setCurrentTab('vault');
+                  setVaultTabMode('collections');
+                  setSelectedVaultListId(null);
+                }}
+                className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none transition-colors ${
+                  isActive ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="active-bottom-nav-pill"
+                    className="absolute inset-0 rounded-full bg-[#0066FF] shadow-[0_0_20px_rgba(0,102,255,0.55)]"
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                  />
+                )}
+                <Layers className="relative z-10 w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
+              </motion.button>
+            );
+          })()}
 
           {/* Separador vertical sutil */}
           <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
           {/* Membresía VIP (SOLO ICONO) */}
-          <button
-            id="home-bar-tab-membresia"
-            type="button"
-            title="Membresía VIP"
-            aria-label="Membresía VIP"
-            onClick={() => setCurrentTab('membership')}
-            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
-              currentTab === 'membership'
-                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
-                : isDark
-                ? 'text-zinc-400 hover:text-white active:text-white'
-                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
-            }`}
-          >
-            <Crown className={`w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0 ${currentTab === 'membership' ? 'text-amber-300' : 'text-amber-400'}`} />
-          </button>
-
-          {/* Apartado de Comprobación (SOLO ICONO) */}
-          <button
-            id="home-bar-tab-comprobantes"
-            type="button"
-            title="Comprobación de Pago"
-            aria-label="Comprobación de Pago"
-            onClick={() => setCurrentTab('receipts')}
-            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
-              currentTab === 'receipts'
-                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
-                : isDark
-                ? 'text-zinc-400 hover:text-white active:text-white'
-                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
-            }`}
-          >
-            <div className="relative flex items-center justify-center">
-              <FileText className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
-              {currentTab !== 'receipts' && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400" />
-              )}
-            </div>
-          </button>
-
-          {/* Apartado de Aprobación en Home Bar (SOLO ICONO, SOLO ADMINISTRADORES) */}
-          {currentUser?.role === 'admin' && (
-            <>
-              <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
-              <button
-                id="home-bar-tab-aprobaciones"
+          {(() => {
+            const isActive = currentTab === 'membership';
+            return (
+              <motion.button
+                id="home-bar-tab-membresia"
                 type="button"
-                title={`Aprobación de Membresías (${pendingApprovalsCount} pendientes)`}
-                aria-label="Aprobación de Membresías"
-                onClick={() => setCurrentTab('approvals')}
-                className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
-                  currentTab === 'approvals'
-                    ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
-                    : isDark
-                    ? 'text-zinc-400 hover:text-white active:text-white'
-                    : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
+                title="Membresía VIP"
+                aria-label="Membresía VIP"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => setCurrentTab('membership')}
+                className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none transition-colors ${
+                  isActive ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                <div className="relative flex items-center justify-center">
-                  <ShieldCheck className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
-                  {pendingApprovalsCount > 0 && (
-                    <span className="absolute -top-1.5 -right-2 px-1 py-0.2 min-w-[14px] text-[9px] font-black rounded-full bg-amber-400 text-black border border-black flex items-center justify-center">
-                      {pendingApprovalsCount}
-                    </span>
+                {isActive && (
+                  <motion.div
+                    layoutId="active-bottom-nav-pill"
+                    className="absolute inset-0 rounded-full bg-[#0066FF] shadow-[0_0_20px_rgba(0,102,255,0.55)]"
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                  />
+                )}
+                <Crown className={`relative z-10 w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0 ${isActive ? 'text-amber-200' : 'text-amber-400'}`} />
+              </motion.button>
+            );
+          })()}
+
+          {/* Apartado de Comprobación (SOLO ICONO) */}
+          {(() => {
+            const isActive = currentTab === 'receipts';
+            return (
+              <motion.button
+                id="home-bar-tab-comprobantes"
+                type="button"
+                title="Comprobación de Pago"
+                aria-label="Comprobación de Pago"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => setCurrentTab('receipts')}
+                className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none transition-colors ${
+                  isActive ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="active-bottom-nav-pill"
+                    className="absolute inset-0 rounded-full bg-[#0066FF] shadow-[0_0_20px_rgba(0,102,255,0.55)]"
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                  />
+                )}
+                <div className="relative z-10 flex items-center justify-center">
+                  <FileText className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
+                  {!isActive && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
                   )}
                 </div>
-              </button>
-            </>
-          )}
+              </motion.button>
+            );
+          })()}
+
+          {/* Apartado de Aprobación en Home Bar (SOLO ICONO, SOLO ADMINISTRADORES) */}
+          {currentUser?.role === 'admin' && (() => {
+            const isActive = currentTab === 'approvals';
+            return (
+              <>
+                <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
+                <motion.button
+                  id="home-bar-tab-aprobaciones"
+                  type="button"
+                  title={`Aprobación de Membresías (${pendingApprovalsCount} pendientes)`}
+                  aria-label="Aprobación de Membresías"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.88 }}
+                  onClick={() => setCurrentTab('approvals')}
+                  className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none transition-colors ${
+                    isActive ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="active-bottom-nav-pill"
+                      className="absolute inset-0 rounded-full bg-[#0066FF] shadow-[0_0_20px_rgba(0,102,255,0.55)]"
+                      transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                    />
+                  )}
+                  <div className="relative z-10 flex items-center justify-center">
+                    <ShieldCheck className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
+                    {pendingApprovalsCount > 0 && (
+                      <span className="absolute -top-1.5 -right-2 px-1 py-0.2 min-w-[14px] text-[9px] font-black rounded-full bg-amber-400 text-black border border-black flex items-center justify-center shadow-xs">
+                        {pendingApprovalsCount}
+                      </span>
+                    )}
+                  </div>
+                </motion.button>
+              </>
+            );
+          })()}
 
           {/* Separador vertical sutil */}
           <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
           {/* Ajustes y Sistema (SOLO ICONO) */}
-          <button
-            id="home-bar-tab-ajustes"
-            type="button"
-            title="Ajustes y Sistema"
-            aria-label="Ajustes y Sistema"
-            onClick={() => setCurrentTab('profile')}
-            className={`relative flex items-center justify-center w-9.5 h-9.5 sm:w-10 sm:h-10 rounded-full z-10 cursor-pointer select-none outline-none focus:outline-none active:scale-95 transition-all ${
-              currentTab === 'profile'
-                ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/35'
-                : isDark
-                ? 'text-zinc-400 hover:text-white active:text-white'
-                : 'text-slate-500 hover:text-slate-900 active:text-slate-900'
-            }`}
-          >
-            <Settings className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
-          </button>
+          {(() => {
+            const isActive = currentTab === 'profile';
+            return (
+              <motion.button
+                id="home-bar-tab-ajustes"
+                type="button"
+                title="Ajustes y Sistema"
+                aria-label="Ajustes y Sistema"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => setCurrentTab('profile')}
+                className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none transition-colors ${
+                  isActive ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="active-bottom-nav-pill"
+                    className="absolute inset-0 rounded-full bg-[#0066FF] shadow-[0_0_20px_rgba(0,102,255,0.55)]"
+                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                  />
+                )}
+                <Settings className="relative z-10 w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
+              </motion.button>
+            );
+          })()}
         </div>
       </nav>
 
