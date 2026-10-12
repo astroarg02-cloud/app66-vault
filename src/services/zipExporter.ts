@@ -348,7 +348,7 @@ Este repositorio contiene la arquitectura completa para compilar el **APK de And
 4. En 2-3 minutos se compila tu APK y la descargas desde la sección **Artifacts** con el nombre **Seis6-Vault-Vite-APK** (\`Seis6_Vault_v1.0.apk\`).
 
 ## 💻 Opción 2: Compilación en tu Computadora (Local)
-Requisitos: Node.js 18+ y Java JDK 17 / Android SDK.
+Requisitos: Node.js 22+ y Java JDK 21 / Android SDK (API 36).
 
 \`\`\`bash
 # 1. Instalar paquetes

@@ -293,4 +293,71 @@ if (fs.existsSync(manifestPath)) {
   console.log('✓ Updated AndroidManifest.xml');
 }
 
+// 7. Auto-heal android/variables.gradle (compileSdkVersion 36, targetSdkVersion 36, Java 21 compatible)
+const androidRootDir = path.resolve(mainDir, '../../..');
+const variablesGradlePath = path.join(androidRootDir, 'variables.gradle');
+if (fs.existsSync(variablesGradlePath)) {
+  let vGradle = fs.readFileSync(variablesGradlePath, 'utf8');
+  vGradle = vGradle.replace(/compileSdkVersion\s*=\s*\d+/, 'compileSdkVersion = 36');
+  vGradle = vGradle.replace(/targetSdkVersion\s*=\s*\d+/, 'targetSdkVersion = 36');
+  vGradle = vGradle.replace(/cordovaAndroidVersion\s*=\s*['"][^'"]+['"]/, "cordovaAndroidVersion = '14.0.1'");
+  fs.writeFileSync(variablesGradlePath, vGradle, 'utf8');
+  console.log('✓ Ensured compileSdkVersion 36 in variables.gradle');
+}
+
+// 8. Auto-heal android/gradle.properties
+const gradlePropsPath = path.join(androidRootDir, 'gradle.properties');
+if (fs.existsSync(gradlePropsPath)) {
+  let gProps = fs.readFileSync(gradlePropsPath, 'utf8');
+  if (!gProps.includes('android.builder.sdkDownload')) {
+    gProps += '\nandroid.builder.sdkDownload=true\n';
+  }
+  if (!gProps.includes('android.enableJetifier')) {
+    gProps += '\nandroid.enableJetifier=true\n';
+  }
+  gProps = gProps.replace(/org\.gradle\.jvmargs=-Xmx\d+m/, 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8');
+  fs.writeFileSync(gradlePropsPath, gProps, 'utf8');
+  console.log('✓ Ensured auto sdkDownload and 2048m memory in gradle.properties');
+}
+
+// 9. Auto-heal android/build.gradle (google-services 4.4.2 and layout.buildDirectory)
+const rootBuildGradlePath = path.join(androidRootDir, 'build.gradle');
+if (fs.existsSync(rootBuildGradlePath)) {
+  let rootGradle = fs.readFileSync(rootBuildGradlePath, 'utf8');
+  rootGradle = rootGradle.replace(/classpath\s+['"]com\.google\.gms:google-services:[^'"]+['"]/, "classpath 'com.google.gms:google-services:4.4.2'");
+  if (rootGradle.includes('delete rootProject.buildDir')) {
+    rootGradle = rootGradle.replace('delete rootProject.buildDir', 'delete rootProject.layout.buildDirectory');
+  }
+  fs.writeFileSync(rootBuildGradlePath, rootGradle, 'utf8');
+  console.log('✓ Ensured google-services 4.4.2 in root build.gradle');
+}
+
+// 10. Auto-heal android/app/build.gradle (Java 21 compileOptions, assignment operator = and safe google-services)
+const appBuildGradlePath = path.join(androidRootDir, 'app/build.gradle');
+if (fs.existsSync(appBuildGradlePath)) {
+  let appGradle = fs.readFileSync(appBuildGradlePath, 'utf8');
+  // Ensure compileOptions
+  if (!appGradle.includes('compileOptions')) {
+    appGradle = appGradle.replace(
+      'buildTypes {',
+      'compileOptions {\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21\n    }\n    buildTypes {'
+    );
+  }
+  // Ensure = operator for defaultConfig
+  appGradle = appGradle.replace(/applicationId\s+"([^"]+)"/, 'applicationId = "$1"');
+  appGradle = appGradle.replace(/minSdkVersion\s+rootProject/, 'minSdkVersion = rootProject');
+  appGradle = appGradle.replace(/targetSdkVersion\s+rootProject/, 'targetSdkVersion = rootProject');
+  appGradle = appGradle.replace(/versionCode\s+(\d+)/, 'versionCode = $1');
+  appGradle = appGradle.replace(/versionName\s+"([^"]+)"/, 'versionName = "$1"');
+  appGradle = appGradle.replace(/testInstrumentationRunner\s+"([^"]+)"/, 'testInstrumentationRunner = "$1"');
+  appGradle = appGradle.replace(/minifyEnabled\s+false/, 'minifyEnabled = false');
+
+  // Safe google-services check
+  if (appGradle.includes('if (servicesJSON.text)')) {
+    appGradle = appGradle.replace('if (servicesJSON.text)', 'if (servicesJSON.exists() && servicesJSON.text)');
+  }
+  fs.writeFileSync(appBuildGradlePath, appGradle, 'utf8');
+  console.log('✓ Ensured Java 21 compileOptions and property assignment syntax in app/build.gradle');
+}
+
 console.log('All Android configuration applied successfully!');
