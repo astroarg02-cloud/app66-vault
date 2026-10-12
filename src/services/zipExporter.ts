@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { VaultItem } from '../types';
 import { getFileFromIndexedDB } from './indexedDBStorage';
-import { resolveApiUrl } from './firebaseService';
+import { resolveApiUrl, isStandaloneApp, getRemoteServerBaseUrl } from './firebaseService';
 
 /**
  * Helper to determine clean file extension and MIME type from item data
@@ -100,13 +100,52 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
       console.warn('IndexedDB retrieval error:', idbErr);
     }
 
-    // Case 3: Server disk permanent storage endpoint (/api/vault/download/:id)
-    if (item.id) {
+    // Case 3: Embedded base64 or text data (available anywhere, works 100% offline in standalone APK)
+    if (item.fileData) {
+      if (item.fileData.startsWith('data:')) {
+        const response = await fetch(item.fileData);
+        const blob = await response.blob();
+        saveAs(blob, targetFilename);
+        return true;
+      } else {
+        const blob = new Blob([item.fileData], { type: mimeType });
+        saveAs(blob, targetFilename);
+        return true;
+      }
+    }
+
+    // Case 4: Explicit external cloud storage link (S3, Firebase Storage, Supabase Storage, CDN)
+    if (
+      item.downloadUrl &&
+      (item.downloadUrl.startsWith('http://') || item.downloadUrl.startsWith('https://')) &&
+      !item.downloadUrl.includes('vercel.app') &&
+      !item.downloadUrl.includes('localhost') &&
+      !item.downloadUrl.startsWith('blob:http')
+    ) {
+      try {
+        const response = await fetch(item.downloadUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          saveAs(blob, targetFilename);
+          return true;
+        }
+      } catch (err) {
+        console.warn('Could not download directly from external cloud URL:', err);
+      }
+    }
+
+    // Case 5: Dedicated backend server download endpoint (/api/vault/download/:id)
+    // Only attempted if running in full-stack web mode or a remote backend server URL is configured
+    if (item.id && (!isStandaloneApp() || getRemoteServerBaseUrl())) {
       try {
         const serverUrl = resolveApiUrl(`/api/vault/download/${encodeURIComponent(item.id)}`);
-        const headCheck = await fetch(serverUrl, { method: 'HEAD' });
-        if (headCheck.ok) {
-          // Trigger native browser download stream
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const headCheck = await fetch(serverUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
+        const contentType = headCheck.headers.get('content-type') || '';
+        // Only trigger download if response is not the HTML SPA fallback
+        if (headCheck.ok && !contentType.includes('text/html')) {
           const link = document.createElement('a');
           link.href = serverUrl;
           link.download = targetFilename;
@@ -121,63 +160,7 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
           return true;
         }
       } catch (srvErr) {
-        console.warn('Server endpoint download check failed:', srvErr);
-      }
-    }
-
-    // Case 4: Explicit downloadUrl (Cloud storage, S3, or API link)
-    if (item.downloadUrl) {
-      if (item.downloadUrl.startsWith('/api/vault/download/')) {
-        try {
-          const resolvedDownloadUrl = resolveApiUrl(item.downloadUrl);
-          const headCheck = await fetch(resolvedDownloadUrl, { method: 'HEAD' });
-          if (headCheck.ok) {
-            const link = document.createElement('a');
-            link.href = resolvedDownloadUrl;
-            link.download = targetFilename;
-            link.target = '_blank';
-            document.body.appendChild(link);
-            link.click();
-            setTimeout(() => {
-              if (document.body.contains(link)) {
-                document.body.removeChild(link);
-              }
-            }, 400);
-            return true;
-          }
-        } catch (e) {
-          console.warn('Could not download from downloadUrl endpoint:', e);
-        }
-      } else if (
-        item.downloadUrl.startsWith('blob:') ||
-        item.downloadUrl.startsWith('data:') ||
-        item.downloadUrl.startsWith('http://') ||
-        item.downloadUrl.startsWith('https://')
-      ) {
-        try {
-          const response = await fetch(item.downloadUrl);
-          if (response.ok) {
-            const blob = await response.blob();
-            saveAs(blob, targetFilename);
-            return true;
-          }
-        } catch (err) {
-          console.warn('Could not download directly from downloadUrl:', err);
-        }
-      }
-    }
-
-    // Case 5: Embedded base64 or text data
-    if (item.fileData) {
-      if (item.fileData.startsWith('data:')) {
-        const response = await fetch(item.fileData);
-        const blob = await response.blob();
-        saveAs(blob, targetFilename);
-        return true;
-      } else {
-        const blob = new Blob([item.fileData], { type: mimeType });
-        saveAs(blob, targetFilename);
-        return true;
+        console.warn('Server endpoint download check notice:', srvErr);
       }
     }
 

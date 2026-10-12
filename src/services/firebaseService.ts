@@ -51,24 +51,101 @@ export const firestoreDatabaseId: string =
 
 export const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents`;
 
-// Remote API fallback when running inside a standalone Android APK (Capacitor localhost without Vercel)
-const REMOTE_SERVER_FALLBACK = 'https://ais-pre-s5gyisr6yqswynkhardtpz-658789640952.us-east1.run.app';
+// Helper to detect if running inside Capacitor, Cordova, or standalone Android APK
+export function isStandaloneApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const { protocol, hostname, port, origin } = window.location;
+    const isCapacitorBridge = (window as any).Capacitor !== undefined || (window as any).androidBridge !== undefined;
+    const isWebviewUA = typeof navigator !== 'undefined' && /wv|Capacitor/i.test(navigator.userAgent);
+    const isLocalScheme = protocol === 'capacitor:' || protocol === 'file:' || protocol === 'ionic:';
+    const isLocalhostDomain = (hostname === 'localhost' || hostname === '127.0.0.1') && (!port || port === '80' || port === '443');
+    const isLocalOrigin = origin === 'https://localhost' || origin === 'http://localhost' || origin === 'capacitor://localhost';
 
+    return isCapacitorBridge || isWebviewUA || isLocalScheme || isLocalhostDomain || isLocalOrigin;
+  } catch {
+    return false;
+  }
+}
+
+// Configurable remote server URL (optional, if user runs a custom dedicated backend)
+export function getRemoteServerBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('vault_remote_server_url');
+      if (saved && saved.startsWith('http')) return saved.replace(/\/+$/, '');
+    } catch {}
+  }
+  const envUrl = (
+    (import.meta.env as any).VITE_SERVER_URL ||
+    (import.meta.env as any).VITE_API_URL ||
+    ''
+  ).trim();
+  if (envUrl && envUrl.startsWith('http')) {
+    return envUrl.replace(/\/+$/, '');
+  }
+  return '';
+}
+
+// Resolves API URLs without hardcoded obsolete domains or Vercel dependencies
 export function resolveApiUrl(path: string): string {
   if (!path.startsWith('/')) return path;
   try {
     if (typeof window !== 'undefined') {
-      const { protocol, hostname, port } = window.location;
-      const isCapacitorLocal =
-        protocol === 'capacitor:' ||
-        protocol === 'file:' ||
-        (hostname === 'localhost' && (!port || port === '80' || port === '443'));
-      if (isCapacitorLocal) {
-        return `${REMOTE_SERVER_FALLBACK}${path}`;
+      const remoteBase = getRemoteServerBaseUrl();
+      if (remoteBase) {
+        return `${remoteBase}${path}`;
       }
+      // In standalone APK mode without a custom remote backend server, return path directly
+      return path;
     }
   } catch {}
   return path;
+}
+
+// Safe API fetch with timeout that skips local Express calls when running as a standalone mobile APK
+export async function safeFetchApi(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs = 2500
+): Promise<Response | null> {
+  // When running inside an APK with no remote server URL configured, skip trying to hit missing local endpoint
+  if (isStandaloneApp() && !getRemoteServerBaseUrl()) {
+    return null;
+  }
+  const fullUrl = resolveApiUrl(path);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(fullUrl, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res;
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+// Safe JSON fetch that ensures response is actually JSON and not HTML (e.g. index.html SPA fallback)
+export async function safeFetchJson<T = any>(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs = 2500
+): Promise<T | null> {
+  const res = await safeFetchApi(path, options, timeoutMs);
+  if (!res || !res.ok) return null;
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    return null;
+  }
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 // Initialize Firebase SDK connected to the provisioned named Firestore database
@@ -794,14 +871,14 @@ export const firebaseService = {
 
     let saved = false;
 
-    // 2. Guardar en servidor central (/api/vault/users -> server_data/users.json + Firestore REST)
+    // 2. Guardar en servidor central si está disponible (/api/vault/users)
     try {
-      const res = await fetch(resolveApiUrl('/api/vault/users'), {
+      const res = await safeFetchApi('/api/vault/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(normalizedRecord),
-      });
-      if (res.ok) saved = true;
+      }, 2000);
+      if (res && res.ok) saved = true;
     } catch (e) {
       console.warn('Server /api/vault/users save fallback:', e);
     }
@@ -852,10 +929,10 @@ export const firebaseService = {
       };
     };
 
-    // 1. Consultar Servidor Central (/api/vault/users)
+    // 1. Consultar Servidor Central si está disponible (/api/vault/users)
     try {
-      const res = await fetch(resolveApiUrl('/api/vault/users'));
-      if (res.ok) {
+      const res = await safeFetchApi('/api/vault/users', {}, 2000);
+      if (res && res.ok) {
         const json = await res.json();
         if (json && json.accounts && typeof json.accounts === 'object') {
           for (const rec of Object.values(json.accounts) as RegisteredAccountRecord[]) {
@@ -938,14 +1015,14 @@ export const firebaseService = {
       }
     } catch {}
 
-    // 1. Enviar todas las cuentas locales al servidor central (/api/vault/users/sync)
+    // 1. Enviar todas las cuentas locales al servidor central si está disponible (/api/vault/users/sync)
     try {
-      const res = await fetch(resolveApiUrl('/api/vault/users/sync'), {
+      const res = await safeFetchApi('/api/vault/users/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accounts: localAccounts }),
-      });
-      if (res.ok) {
+      }, 2000);
+      if (res && res.ok) {
         const json = await res.json();
         if (json && json.accounts && typeof json.accounts === 'object') {
           for (const [emailKey, serverRec] of Object.entries(json.accounts) as [string, RegisteredAccountRecord][]) {
@@ -974,7 +1051,7 @@ export const firebaseService = {
     // 2. Traer también cualquier cuenta directamente desde Firestore y fusionar
     try {
       const remoteAccounts = await this.fetchUsersFromDatabase();
-      for (const [emailKey, remoteRec] of Object.entries(remoteAccounts)) {
+      for (const [emailKey, remoteRec] of Object.entries(remoteAccounts) as [string, RegisteredAccountRecord][]) {
         const existing = localAccounts[emailKey];
         const isAdmin = isAuthorizedAdminEmail(emailKey);
         if (!existing) {

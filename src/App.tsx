@@ -16,7 +16,7 @@ import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { AdminMaintenanceModal } from './components/AdminMaintenanceModal';
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { firebaseService, resolveApiUrl } from './services/firebaseService';
+import { firebaseService, resolveApiUrl, safeFetchApi, safeFetchJson, isStandaloneApp, getRemoteServerBaseUrl } from './services/firebaseService';
 import { supabaseService, isSupabaseConfigured } from './services/supabaseClient';
 import { 
   FolderClosed, 
@@ -275,77 +275,77 @@ function AppContent() {
           firebaseService.reconcileApprovedReceiptsWithUsers(syncedReceipts);
         }).catch(() => {});
 
-        // 0. Fetch permanently deleted list IDs from server so deleted lists NEVER resurrect on reload
-        try {
-          const resDeleted = await fetch(resolveApiUrl('/api/vault/deleted-lists'));
-          if (resDeleted.ok) {
-            const jsonDel = await resDeleted.json();
-            if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
-              const currentDeleted = getDeletedListIds();
-              jsonDel.deletedIds.forEach((id: string) => currentDeleted.add(id));
-              localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(currentDeleted)));
-              
-              // Purge deleted lists from local cache
-              try {
-                const cached = localStorage.getItem('vault_lists_cache');
-                if (cached) {
-                  const parsed = JSON.parse(cached);
-                  if (Array.isArray(parsed)) {
-                    const filtered = parsed.filter((l: any) => !currentDeleted.has(l.id));
-                    localStorage.setItem('vault_lists_cache', JSON.stringify(filtered));
-                  }
-                }
-              } catch (e) {}
+        // 1. Fetch Items and Lists from Cloud Firestore IMMEDIATELY (primary cloud source for standalone APK & web)
+        const [firestoreItems, firestoreLists] = await Promise.all([
+          firebaseService.fetchVaultItems().catch(() => null),
+          firebaseService.fetchVaultLists().catch(() => null),
+        ]);
 
-              // Purge immediately from state
-              setLists((prev) => prev.filter((l) => !currentDeleted.has(l.id)));
-            }
-          }
-        } catch (delErr) {
-          console.warn('Error syncing deleted list IDs from server:', delErr);
-        }
-
-        // 1. Fetch Items from Central Express Server API
-        try {
-          const resItems = await fetch(resolveApiUrl('/api/vault/items'));
-          if (resItems.ok) {
-            const json = await resItems.json();
-            if (json.items && Array.isArray(json.items) && json.items.length > 0) {
-              mergeVaultItems(json.items);
-            }
-          }
-        } catch {}
-
-        // 2. Fetch Lists from Central Express Server API
-        try {
-          const resLists = await fetch(resolveApiUrl('/api/vault/lists'));
-          if (resLists.ok) {
-            const jsonLists = await resLists.json();
-            if (jsonLists.lists && Array.isArray(jsonLists.lists) && jsonLists.lists.length > 0) {
-              mergeVaultLists(jsonLists.lists);
-            }
-          }
-        } catch {}
-
-        // 3. Fetch Items from Firestore
-        const firestoreItems = await firebaseService.fetchVaultItems();
         if (firestoreItems && firestoreItems.length > 0) {
           mergeVaultItems(firestoreItems);
         }
-
-        // 4. Fetch Lists from Firestore
-        const firestoreLists = await firebaseService.fetchVaultLists();
         if (firestoreLists && firestoreLists.length > 0) {
           mergeVaultLists(firestoreLists);
         }
 
-        // 5. Check items stored in user's browser localStorage
+        // 2. Check items stored in user's browser localStorage
         const localItems = supabaseService.getLocalVaultItems();
         if (localItems && localItems.length > 0) {
           mergeVaultItems(localItems);
         }
 
-        // 6. Ensure maintenance mode is off so users are not locked out
+        // 3. Optional: If a dedicated backend server is available, sync server-stored items and deleted list IDs
+        if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+          try {
+            const resDeleted = await safeFetchApi('/api/vault/deleted-lists', {}, 1500);
+            if (resDeleted && resDeleted.ok) {
+              const jsonDel = await resDeleted.json();
+              if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
+                const currentDeleted = getDeletedListIds();
+                jsonDel.deletedIds.forEach((id: string) => currentDeleted.add(id));
+                localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(currentDeleted)));
+                
+                // Purge deleted lists from local cache and state
+                try {
+                  const cached = localStorage.getItem('vault_lists_cache');
+                  if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (Array.isArray(parsed)) {
+                      const filtered = parsed.filter((l: any) => !currentDeleted.has(l.id));
+                      localStorage.setItem('vault_lists_cache', JSON.stringify(filtered));
+                    }
+                  }
+                } catch (e) {}
+
+                setLists((prev) => prev.filter((l) => !currentDeleted.has(l.id)));
+              }
+            }
+          } catch (delErr) {
+            console.warn('Notice: Server deleted lists not reachable, using local/Firestore state:', delErr);
+          }
+
+          try {
+            const resItems = await safeFetchApi('/api/vault/items', {}, 2000);
+            if (resItems && resItems.ok) {
+              const json = await resItems.json();
+              if (json.items && Array.isArray(json.items) && json.items.length > 0) {
+                mergeVaultItems(json.items);
+              }
+            }
+          } catch {}
+
+          try {
+            const resLists = await safeFetchApi('/api/vault/lists', {}, 2000);
+            if (resLists && resLists.ok) {
+              const jsonLists = await resLists.json();
+              if (jsonLists.lists && Array.isArray(jsonLists.lists) && jsonLists.lists.length > 0) {
+                mergeVaultLists(jsonLists.lists);
+              }
+            }
+          } catch {}
+        }
+
+        // 4. Ensure maintenance mode is off so users are not locked out
         setIsMaintenanceActive(false);
         localStorage.setItem('vault_maintenance_active', 'false');
       } catch (err) {
@@ -375,37 +375,39 @@ function AppContent() {
           firebaseService.reconcileApprovedReceiptsWithUsers(syncedReceipts);
         }).catch(() => {});
 
-        // Sync deleted lists first
-        try {
-          const resDel = await fetch(resolveApiUrl('/api/vault/deleted-lists'));
-          if (resDel.ok) {
-            const jsonDel = await resDel.json();
-            if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
-              const currentDeleted = getDeletedListIds();
-              jsonDel.deletedIds.forEach((id: string) => currentDeleted.add(id));
-              localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(currentDeleted)));
-              setLists((prev) => prev.filter((l) => !currentDeleted.has(l.id)));
+        // Optional server poll if server is active
+        if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+          try {
+            const resDel = await safeFetchApi('/api/vault/deleted-lists', {}, 1500);
+            if (resDel && resDel.ok) {
+              const jsonDel = await resDel.json();
+              if (jsonDel.deletedIds && Array.isArray(jsonDel.deletedIds)) {
+                const currentDeleted = getDeletedListIds();
+                jsonDel.deletedIds.forEach((id: string) => currentDeleted.add(id));
+                localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(currentDeleted)));
+                setLists((prev) => prev.filter((l) => !currentDeleted.has(l.id)));
+              }
             }
-          }
-        } catch (e) {}
+          } catch (e) {}
 
-        try {
-          const resItems = await fetch(resolveApiUrl('/api/vault/items'));
-          if (resItems.ok) {
-            const json = await resItems.json();
-            if (json.items && Array.isArray(json.items)) mergeVaultItems(json.items);
-          }
-        } catch (e) {}
+          try {
+            const resItems = await safeFetchApi('/api/vault/items', {}, 2000);
+            if (resItems && resItems.ok) {
+              const json = await resItems.json();
+              if (json.items && Array.isArray(json.items)) mergeVaultItems(json.items);
+            }
+          } catch (e) {}
 
-        try {
-          const resLists = await fetch(resolveApiUrl('/api/vault/lists'));
-          if (resLists.ok) {
-            const jsonLists = await resLists.json();
-            if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
-          }
-        } catch (e) {}
+          try {
+            const resLists = await safeFetchApi('/api/vault/lists', {}, 2000);
+            if (resLists && resLists.ok) {
+              const jsonLists = await resLists.json();
+              if (jsonLists.lists && Array.isArray(jsonLists.lists)) mergeVaultLists(jsonLists.lists);
+            }
+          } catch (e) {}
+        }
 
-        // Also poll Firestore lists & items so standalone APK always stays in sync
+        // Also poll Firestore lists so standalone APK always stays in sync
         try {
           const fsLists = await firebaseService.fetchVaultLists();
           if (fsLists && fsLists.length > 0) mergeVaultLists(fsLists);
@@ -459,25 +461,24 @@ function AppContent() {
       console.warn('Firebase saveMaintenance warning:', fbErr);
     }
 
-    // 2. Save to Express server endpoint
-    try {
-      const res = await fetch(resolveApiUrl('/api/maintenance'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          isMaintenance: newStatus,
-          message: cleanMsg,
-          adminKey: ADMIN_SECURITY_KEY,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
+    // 2. Save to Express server endpoint if available
+    if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+      try {
+        const data = await safeFetchJson<{ success?: boolean }>('/api/maintenance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            isMaintenance: newStatus,
+            message: cleanMsg,
+            adminKey: ADMIN_SECURITY_KEY,
+          }),
+        }, 2000);
         if (data && data.success) {
           serverSaved = true;
         }
+      } catch (err) {
+        console.warn('Server API maintenance update warning:', err);
       }
-    } catch (err) {
-      console.warn('Server API maintenance update warning:', err);
     }
 
     // 3. Update local state and localStorage immediately
@@ -597,21 +598,21 @@ function AppContent() {
 
     let itemToPersist = { ...newItem };
 
-    // 1. Persist to Central Server API
+    // 1. Persist to Central Server API (if server is available)
     try {
-      const res = await fetch(resolveApiUrl('/api/vault/upload'), {
+      const res = await safeFetchApi('/api/vault/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItem),
-      });
-      if (res.ok) {
+      }, 2500);
+      if (res && res.ok) {
         const data = await res.json();
         if (data && data.item) {
           itemToPersist = { ...itemToPersist, ...data.item };
         }
       }
     } catch (e) {
-      console.warn('Central API upload error:', e);
+      console.warn('Central API upload notice:', e);
     }
 
     // 2. Persist to Firestore
@@ -648,11 +649,11 @@ function AppContent() {
           );
 
           try {
-            await fetch(resolveApiUrl('/api/vault/lists'), {
+            await safeFetchApi('/api/vault/lists', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(updatedList),
-            });
+            }, 2000);
             await firebaseService.saveVaultListToFirestore(updatedList);
           } catch (e) {
             console.warn('Error updating list with new item:', e);
@@ -691,9 +692,9 @@ function AppContent() {
       }))
     );
 
-    // 1. Delete on Central Server
+    // 1. Delete on Central Server (if available)
     try {
-      await fetch(resolveApiUrl(`/api/vault/items/${itemId}`), { method: 'DELETE' });
+      await safeFetchApi(`/api/vault/items/${itemId}`, { method: 'DELETE' }, 2000);
     } catch (e) {}
 
     // 2. Delete on Firestore
@@ -737,15 +738,15 @@ function AppContent() {
       return next;
     });
 
-    // 1. Server API
+    // 1. Server API (if available)
     try {
-      await fetch(resolveApiUrl('/api/vault/lists'), {
+      await safeFetchApi('/api/vault/lists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fullList),
-      });
+      }, 2000);
     } catch (e) {
-      console.warn('Error saving list to central server:', e);
+      console.warn('Notice: Central server list update:', e);
     }
 
     // 2. Firestore
@@ -781,11 +782,11 @@ function AppContent() {
       return next;
     });
 
-    // 3. Server API
+    // 3. Server API (if available)
     try {
-      await fetch(resolveApiUrl(`/api/vault/lists/${encodeURIComponent(listId)}`), { method: 'DELETE' });
+      await safeFetchApi(`/api/vault/lists/${encodeURIComponent(listId)}`, { method: 'DELETE' }, 2000);
     } catch (e) {
-      console.warn('Error deleting list from server:', e);
+      console.warn('Notice: Server list delete:', e);
     }
 
     // 4. Firestore
@@ -827,11 +828,11 @@ function AppContent() {
 
     if (updatedList) {
       try {
-        await fetch(resolveApiUrl(`/api/vault/lists/${listId}/toggle-item`), {
+        await safeFetchApi(`/api/vault/lists/${listId}/toggle-item`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ itemId }),
-        });
+        }, 2000);
         await firebaseService.saveVaultListToFirestore(
           updatedList,
           nextListsSnapshot.length > 0 ? nextListsSnapshot : undefined,
@@ -882,16 +883,21 @@ function AppContent() {
 
   // Priority 2: Unauthenticated view -> Mandatory AuthScreen
   if (!currentUser) {
+    const isStandalone = isStandaloneApp();
     return (
-      <div className={`min-h-[100dvh] h-[100dvh] w-full flex items-center justify-center p-0 sm:p-4 md:p-6 overflow-y-auto transition-colors duration-300 ${
-        isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
+      <div className={`min-h-[100dvh] h-[100dvh] w-full flex items-center justify-center p-0 ${isStandalone ? 'sm:p-0' : 'sm:p-4 md:p-6'} overflow-y-auto transition-colors duration-300 ${
+        isDark ? 'bg-black text-white' : 'bg-black text-white'
       }`}>
         <motion.div 
-          initial={{ opacity: 0, scale: 0.96, y: 12 }}
+          initial={{ opacity: 0, scale: 0.98, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-          className={`w-full h-full sm:h-auto sm:max-w-[440px] sm:max-h-[92dvh] rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl overflow-hidden flex flex-col ${
-            isDark ? 'bg-[#0A0A0C] sm:border-[#1E1E24]' : 'bg-white sm:border-[#E2E8F0]'
+          className={`w-full h-full ${
+            isStandalone
+              ? 'max-w-none max-h-none rounded-none border-0'
+              : 'sm:h-auto sm:max-w-[440px] sm:max-h-[92dvh] sm:rounded-3xl sm:border'
+          } rounded-none border-0 shadow-2xl overflow-hidden flex flex-col ${
+            isDark ? 'bg-[#0A0A0C] sm:border-[#1E1E24]' : 'bg-[#0A0A0C] sm:border-[#1E1E24]'
           }`}
         >
           <AuthScreen onLogin={handleLogin} />
@@ -900,23 +906,25 @@ function AppContent() {
     );
   }
 
+  const isStandalone = isStandaloneApp();
+
   return (
     <div
       className={`h-[100dvh] max-h-[100dvh] w-full flex flex-col font-sans overflow-hidden select-none ${
         isDark
           ? 'bg-black text-white selection:bg-[#0066FF] selection:text-white'
-          : 'bg-[#F1F4F9] text-[#0F172A] selection:bg-[#0066FF] selection:text-white'
+          : 'bg-[#F8FAFC] text-[#0F172A] selection:bg-[#0066FF] selection:text-white'
       }`}
     >
       {/* Top Header Bar for Private Server */}
       <header
-        className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 border-b backdrop-blur-xl ${
+        className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 pt-[max(0.6rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] border-b backdrop-blur-xl ${
           isDark
             ? 'border-[#1E1E24] bg-black/95 shadow-black/80'
             : 'border-[#E2E8F0] bg-white/95 shadow-sm'
         }`}
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
+        <div className={`${isStandalone ? 'w-full' : 'max-w-7xl'} mx-auto flex items-center justify-between gap-2 sm:gap-4`}>
           {/* Brand & Logo */}
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <motion.div 
@@ -1055,10 +1063,12 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Main Content Area: Full-bleed on mobile, framed container on PC */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-0 sm:p-3 lg:p-5 overflow-hidden flex flex-col min-h-0">
-        <div className={`w-full h-full flex-1 rounded-none sm:rounded-2xl border-0 sm:border sm:shadow-xl overflow-hidden flex flex-col min-h-0 relative ${
-          isDark ? 'bg-[#0A0A0C] sm:border-[#1E1E24]' : 'bg-white sm:border-[#E2E8F0]'
+      {/* Main Content Area: Full-bleed on mobile and standalone APK, framed container on PC */}
+      <main className={`flex-1 w-full ${isStandalone ? 'max-w-none p-0' : 'max-w-7xl mx-auto p-0 md:p-3 lg:p-4'} overflow-hidden flex flex-col min-h-0`}>
+        <div className={`w-full h-full flex-1 ${
+          isStandalone ? 'rounded-none border-0 shadow-none' : 'rounded-none md:rounded-2xl border-0 md:border md:shadow-xl'
+        } overflow-hidden flex flex-col min-h-0 relative ${
+          isDark ? 'bg-[#0A0A0C] md:border-[#1E1E24]' : 'bg-white md:border-[#E2E8F0]'
         }`}>
           <AnimatePresence mode="wait">
             {currentTab === 'vault' && (
@@ -1185,13 +1195,13 @@ function AppContent() {
       <nav 
         id="global-bottom-home-bar"
         aria-label="Barra de Navegación Inferior"
-        className={`shrink-0 z-40 px-3 sm:px-6 py-1.5 sm:py-2 border-t flex justify-center pb-[max(0.375rem,env(safe-area-inset-bottom))] ${
+        className={`shrink-0 z-40 px-3 sm:px-6 py-1.5 sm:py-2 border-t flex justify-center pb-[max(0.6rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] ${
           isDark 
             ? 'bg-black/95 border-[#1E1E24] shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.8)]' 
             : 'bg-white/95 border-slate-200 shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.08)]'
         }`}
       >
-        <div className={`w-full max-w-md flex items-center justify-around sm:justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border shadow-inner ${
+        <div className={`w-full ${isStandalone ? 'max-w-lg' : 'max-w-md'} flex items-center justify-around sm:justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border shadow-inner ${
           isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-[#F1F5F9] border-slate-200'
         }`}>
           {/* Publicaciones (SOLO ICONO, SOLO ADMINISTRADORES) */}

@@ -2,7 +2,7 @@ import { createClient, SupabaseClient, User as SupabaseAuthUser } from '@supabas
 import { VaultItem, UserProfile } from '../types';
 import { INITIAL_VAULT_ITEMS, isAuthorizedAdminEmail, isAuthorizedAdminKey, ADMIN_AUTHORIZED_EMAIL, ADMIN_SECURITY_KEY } from '../data/initialVaultData';
 import { generateUniqueUserId } from '../utils/vaultHelpers';
-import { resolveApiUrl } from './firebaseService';
+import { resolveApiUrl, safeFetchApi, safeFetchJson, isStandaloneApp, getRemoteServerBaseUrl } from './firebaseService';
 
 // Vite environment accessor safe for TypeScript
 const env = (import.meta as any).env || {};
@@ -288,17 +288,16 @@ export const supabaseService = {
   async fetchVaultItems(): Promise<VaultItem[]> {
     let serverItems: VaultItem[] = [];
 
-    // 1. Fetch from Central Express Server (/api/vault/items)
-    try {
-      const res = await fetch(resolveApiUrl('/api/vault/items'));
-      if (res.ok) {
-        const json = await res.json();
+    // 1. Fetch from Central Express Server (/api/vault/items) if server is available
+    if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+      try {
+        const json = await safeFetchJson<{ items?: VaultItem[] }>('/api/vault/items', {}, 2000);
         if (json && Array.isArray(json.items) && json.items.length > 0) {
           serverItems = json.items;
         }
+      } catch (e) {
+        console.warn('Backend server items fetch notice:', e);
       }
-    } catch (e) {
-      console.warn('Backend server items fetch notice:', e);
     }
 
     // 2. Try fetching from Supabase if configured
@@ -354,13 +353,13 @@ export const supabaseService = {
       const serverIds = new Set(serverItems.map(i => i.id));
       const unsyncedLocals = localItems.filter(i => !serverIds.has(i.id));
       if (unsyncedLocals.length > 0) {
-        try {
-          fetch(resolveApiUrl('/api/vault/sync'), {
+        if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+          safeFetchApi('/api/vault/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items: unsyncedLocals }),
           }).catch(() => {});
-        } catch {}
+        }
         serverItems = [...unsyncedLocals, ...serverItems];
       }
       this.saveLocalVaultItems(serverItems);
@@ -369,13 +368,13 @@ export const supabaseService = {
 
     // 4. If server was empty but local has items, upload local items to server!
     if (localItems && localItems.length > 0) {
-      try {
-        fetch(resolveApiUrl('/api/vault/sync'), {
+      if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+        safeFetchApi('/api/vault/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ items: localItems }),
         }).catch(() => {});
-      } catch {}
+      }
       return localItems;
     }
 
@@ -394,15 +393,17 @@ export const supabaseService = {
       console.warn('Error persisting item locally:', e);
     }
 
-    // 2. Persist to Central Express Server API
-    try {
-      await fetch(resolveApiUrl('/api/vault/upload'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(item),
-      });
-    } catch (e) {
-      console.warn('Could not post to server API:', e);
+    // 2. Persist to Central Express Server API if available
+    if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+      try {
+        await safeFetchApi('/api/vault/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item),
+        }, 2000);
+      } catch (e) {
+        console.warn('Could not post to server API:', e);
+      }
     }
 
     // 3. Sync to Supabase if configured
@@ -448,14 +449,14 @@ export const supabaseService = {
       console.warn('Error updating likes locally:', e);
     }
 
-    // 2. Update on central server
-    try {
-      fetch(resolveApiUrl(`/api/vault/items/${itemId}/like`), {
+    // 2. Update on central server if available
+    if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+      safeFetchApi(`/api/vault/items/${itemId}/like`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ likesCount, likedBy }),
-      }).catch(() => {});
-    } catch {}
+      }, 2000).catch(() => {});
+    }
 
     // 3. Update in Supabase
     if (supabase) {
@@ -489,14 +490,14 @@ export const supabaseService = {
       console.warn('Error updating comments locally:', e);
     }
 
-    // 2. Update on central server
-    try {
-      fetch(resolveApiUrl(`/api/vault/items/${itemId}/comment`), {
+    // 2. Update on central server if available
+    if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+      safeFetchApi(`/api/vault/items/${itemId}/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comments }),
-      }).catch(() => {});
-    } catch {}
+      }, 2000).catch(() => {});
+    }
 
     // 3. Update in Supabase
     if (supabase) {
@@ -521,9 +522,9 @@ export const supabaseService = {
       }
     } catch {}
 
-    try {
-      fetch(resolveApiUrl(`/api/vault/items/${itemId}`), { method: 'DELETE' }).catch(() => {});
-    } catch {}
+    if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+      safeFetchApi(`/api/vault/items/${itemId}`, { method: 'DELETE' }, 2000).catch(() => {});
+    }
 
     if (supabase) {
       try {

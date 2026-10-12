@@ -2,6 +2,13 @@
   "appId": "com.seis6.app",
   "appName": "Seis6 App",
   "webDir": "dist",
+  "backgroundColor": "#000000",
+  "android": {
+    "backgroundColor": "#000000",
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
   "server": {
     "cleartext": true,
     "androidScheme": "https"

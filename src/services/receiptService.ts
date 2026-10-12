@@ -16,6 +16,9 @@ import {
   withFirestoreTimeout,
   firestoreRestFetch,
   resolveApiUrl,
+  safeFetchApi,
+  isStandaloneApp,
+  getRemoteServerBaseUrl,
 } from './firebaseService';
 
 const STORAGE_KEY = 'vault_payment_receipts_v1';
@@ -621,74 +624,7 @@ export const receiptService = {
       }
     }
 
-    // 1. Primary Two-Way Sync with Central Server (/api/vault/receipts/sync & /api/vault/receipts) FIRST so Admin never waits on Firestore
-    try {
-      const currentCandidates = Array.from(map.values());
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-      const syncRes = await fetch(resolveApiUrl(`/api/vault/receipts/sync?t=${Date.now()}`), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-        },
-        body: JSON.stringify({ receipts: currentCandidates }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (syncRes.ok) {
-        const data = await syncRes.json();
-        if (data && Array.isArray(data.deletedIds)) {
-          for (const delId of data.deletedIds) {
-            deletedSet.add(String(delId));
-            markDeletedReceiptId(String(delId));
-            map.delete(String(delId));
-          }
-        }
-        if (data && Array.isArray(data.receipts)) {
-          for (const r of data.receipts) {
-            if (isValidRealReceipt(r, deletedSet)) {
-              map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
-            }
-          }
-        }
-      } else {
-        const getRes = await fetch(resolveApiUrl(`/api/vault/receipts?t=${Date.now()}`), {
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (getRes.ok) {
-          const getData = await getRes.json();
-          if (getData && Array.isArray(getData.receipts)) {
-            for (const r of getData.receipts) {
-              if (isValidRealReceipt(r, deletedSet)) {
-                map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // Fallback to fast GET if POST failed or timed out
-      try {
-        const getRes = await fetch(resolveApiUrl(`/api/vault/receipts?t=${Date.now()}`), {
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (getRes.ok) {
-          const getData = await getRes.json();
-          if (getData && Array.isArray(getData.receipts)) {
-            for (const r of getData.receipts) {
-              if (isValidRealReceipt(r, deletedSet)) {
-                map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
-              }
-            }
-          }
-        }
-      } catch {}
-    }
-
-    // 2. Firestore single-document registry fetch (works even on static/Vercel/APK without Express server)
+    // 1. Primary: Firestore single-document registry fetch (works 100% on standalone APK, web and without Express server)
     let fsReceiptIds = new Set<string>();
     if (!isFirestoreReadQuotaExhausted()) {
       try {
@@ -700,6 +636,53 @@ export const receiptService = {
           }
         }
       } catch {}
+    }
+
+    // 2. Secondary: If a central backend server is available, perform two-way sync
+    if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+      try {
+        const currentCandidates = Array.from(map.values());
+        const syncRes = await safeFetchApi(`/api/vault/receipts/sync?t=${Date.now()}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+          },
+          body: JSON.stringify({ receipts: currentCandidates }),
+        }, 2000);
+
+        if (syncRes && syncRes.ok) {
+          const data = await syncRes.json();
+          if (data && Array.isArray(data.deletedIds)) {
+            for (const delId of data.deletedIds) {
+              deletedSet.add(String(delId));
+              markDeletedReceiptId(String(delId));
+              map.delete(String(delId));
+            }
+          }
+          if (data && Array.isArray(data.receipts)) {
+            for (const r of data.receipts) {
+              if (isValidRealReceipt(r, deletedSet)) {
+                map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
+              }
+            }
+          }
+        } else {
+          const getRes = await safeFetchApi(`/api/vault/receipts?t=${Date.now()}`, {
+            headers: { 'Cache-Control': 'no-cache' },
+          }, 1500);
+          if (getRes && getRes.ok) {
+            const getData = await getRes.json();
+            if (getData && Array.isArray(getData.receipts)) {
+              for (const r of getData.receipts) {
+                if (isValidRealReceipt(r, deletedSet)) {
+                  map.set(r.id, mergeTwoReceipts(map.get(r.id), r));
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {}
     }
 
     const merged = Array.from(map.values())
@@ -832,11 +815,11 @@ export const receiptService = {
         saveReceiptsToLocalStore(latestAll);
 
         await Promise.allSettled([
-          fetch(resolveApiUrl('/api/vault/receipts'), {
+          safeFetchApi('/api/vault/receipts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(receiptToPersist),
-          }),
+          }, 2000),
           saveReceiptToFirestoreSDK(receiptToPersist),
         ]);
 
@@ -900,16 +883,12 @@ export const receiptService = {
     // 1. Persist to Central Server API and Firestore Registry in parallel, bounded by a 1.6s max UI wait so submission never hangs on "Confirmando envío..."
     const serverUploadPromise = (async () => {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(resolveApiUrl('/api/vault/receipts'), {
+        const res = await safeFetchApi('/api/vault/receipts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newReceipt),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (res.ok) {
+        }, 2500);
+        if (res && res.ok) {
           const json = await res.json();
           if (json && Array.isArray(json.receipts)) {
             const deletedSet = getDeletedReceiptIds();
@@ -995,7 +974,7 @@ export const receiptService = {
 
     // Persist to Server API and Firebase Firestore
     Promise.allSettled([
-      fetch(resolveApiUrl(`/api/vault/receipts/${encodeURIComponent(receiptId)}/status`), {
+      safeFetchApi(`/api/vault/receipts/${encodeURIComponent(receiptId)}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1006,7 +985,7 @@ export const receiptService = {
           reviewerName: updatedReceipt.reviewedBy,
           receipt: updatedReceipt,
         }),
-      }),
+      }, 2000),
       saveReceiptToFirestoreSDK(updatedReceipt, all),
     ]).catch(() => {});
 
@@ -1023,9 +1002,9 @@ export const receiptService = {
     );
 
     Promise.allSettled([
-      fetch(resolveApiUrl(`/api/vault/receipts/${encodeURIComponent(receiptId)}`), {
+      safeFetchApi(`/api/vault/receipts/${encodeURIComponent(receiptId)}`, {
         method: 'DELETE',
-      }),
+      }, 2000),
       !isFirestoreQuotaExhausted()
         ? firestoreRestFetch(`/${RECEIPTS_COLLECTION}/${encodeURIComponent(receiptId)}`, {
             method: 'DELETE',

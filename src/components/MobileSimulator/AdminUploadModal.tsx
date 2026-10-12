@@ -8,7 +8,7 @@ import { VaultItem, ResourceCategory, UserProfile, VaultList } from '../../types
 import { VerifiedBadge } from '../VerifiedBadge';
 import { useTheme } from '../../context/ThemeContext';
 import { saveFileToIndexedDB } from '../../services/indexedDBStorage';
-import { resolveApiUrl } from '../../services/firebaseService';
+import { resolveApiUrl, isStandaloneApp, getRemoteServerBaseUrl } from '../../services/firebaseService';
 
 interface AdminUploadModalProps {
   isOpen: boolean;
@@ -132,8 +132,8 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
     const fileBlobUrl = URL.createObjectURL(file);
     setDownloadUrl(fileBlobUrl);
 
-    // Si el archivo pesa menos de 350KB, guardar también en base64 para que esté embebido en Firestore y disponible en cualquier APK
-    if (file.size <= 350 * 1024) {
+    // Si el archivo pesa menos de 650KB, guardar también en base64 para que esté embebido en Firestore y disponible en cualquier APK sin servidor
+    if (file.size <= 650 * 1024) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         if (typeof ev.target?.result === 'string') {
@@ -253,72 +253,82 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
           console.warn('IndexedDB backup notice:', idbErr);
         }
 
-        setUploadStatusText('Subiendo archivo real al servidor central...');
-        setUploadProgress(20);
+        if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+          setUploadStatusText('Subiendo archivo real al servidor central...');
+          setUploadProgress(20);
 
-        try {
-          const uploadRes = await new Promise<{
-            success: boolean;
-            downloadUrl?: string;
-            fileName?: string;
-            fileSize?: string;
-            fileMimeType?: string;
-          }>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            const formData = new FormData();
-            formData.append('itemId', tempItemId);
-            formData.append('file', rawFile, rawFile.name);
+          try {
+            const uploadRes = await new Promise<{
+              success: boolean;
+              downloadUrl?: string;
+              fileName?: string;
+              fileSize?: string;
+              fileMimeType?: string;
+            }>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              const formData = new FormData();
+              formData.append('itemId', tempItemId);
+              formData.append('file', rawFile, rawFile.name);
 
-            xhr.upload.onprogress = (event) => {
-              if (event.lengthComputable && event.total > 0) {
-                const percent = Math.round((event.loaded / event.total) * 75) + 20;
-                setUploadProgress(Math.min(95, percent));
-                setUploadStatusText(
-                  `Subiendo: ${formatBytes(event.loaded)} / ${formatBytes(event.total)} (${Math.round((event.loaded / event.total) * 100)}%)`
-                );
-              }
-            };
-
-            xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) {
-                try {
-                  const data = JSON.parse(xhr.responseText);
-                  resolve(data);
-                } catch {
-                  resolve({
-                    success: true,
-                    downloadUrl: `/api/vault/download/${encodeURIComponent(tempItemId)}`,
-                  });
+              xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable && event.total > 0) {
+                  const percent = Math.round((event.loaded / event.total) * 75) + 20;
+                  setUploadProgress(Math.min(95, percent));
+                  setUploadStatusText(
+                    `Subiendo: ${formatBytes(event.loaded)} / ${formatBytes(event.total)} (${Math.round((event.loaded / event.total) * 100)}%)`
+                  );
                 }
-              } else {
-                reject(new Error(`Error del servidor (${xhr.status})`));
-              }
-            };
+              };
 
-            xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
-            xhr.open('POST', resolveApiUrl(`/api/vault/upload-file?itemId=${encodeURIComponent(tempItemId)}`), true);
-            xhr.send(formData);
-          });
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  try {
+                    const data = JSON.parse(xhr.responseText);
+                    resolve(data);
+                  } catch {
+                    resolve({
+                      success: true,
+                      downloadUrl: `/api/vault/download/${encodeURIComponent(tempItemId)}`,
+                    });
+                  }
+                } else {
+                  reject(new Error(`Error del servidor (${xhr.status})`));
+                }
+              };
 
+              xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
+              xhr.open('POST', resolveApiUrl(`/api/vault/upload-file?itemId=${encodeURIComponent(tempItemId)}`), true);
+              xhr.send(formData);
+            });
+
+            setUploadProgress(98);
+            setUploadStatusText('¡Archivo real subido exitosamente!');
+
+            if (uploadRes && uploadRes.downloadUrl) {
+              finalDownloadUrl = uploadRes.downloadUrl;
+            }
+            if (uploadRes && uploadRes.fileName) {
+              finalFileName = uploadRes.fileName;
+            }
+            if (uploadRes && uploadRes.fileSize) {
+              finalFileSize = uploadRes.fileSize;
+            }
+            if (uploadRes && uploadRes.fileMimeType) {
+              finalMime = uploadRes.fileMimeType;
+            }
+          } catch (uploadError) {
+            console.warn('Network upload exception, falling back to cached persistence:', uploadError);
+            finalDownloadUrl = `/api/vault/download/${encodeURIComponent(tempItemId)}`;
+          }
+        } else {
+          // Modo APK standalone sin servidor central: el archivo ya está en IndexedDB y/o base64 en Firestore
           setUploadProgress(98);
-          setUploadStatusText('¡Archivo real subido exitosamente!');
-
-          if (uploadRes && uploadRes.downloadUrl) {
-            finalDownloadUrl = uploadRes.downloadUrl;
-          }
-          if (uploadRes && uploadRes.fileName) {
-            finalFileName = uploadRes.fileName;
-          }
-          if (uploadRes && uploadRes.fileSize) {
-            finalFileSize = uploadRes.fileSize;
-          }
-          if (uploadRes && uploadRes.fileMimeType) {
-            finalMime = uploadRes.fileMimeType;
-          }
-        } catch (uploadError) {
-          console.warn('Network upload exception, falling back to cached persistence:', uploadError);
-          finalDownloadUrl = `/api/vault/download/${encodeURIComponent(tempItemId)}`;
+          setUploadStatusText('¡Archivo guardado en almacenamiento seguro!');
         }
+      }
+
+      if (finalDownloadUrl.startsWith('blob:') || finalDownloadUrl.includes('vercel.app')) {
+        finalDownloadUrl = `/api/vault/download/${encodeURIComponent(tempItemId)}`;
       }
 
       setUploadProgress(100);

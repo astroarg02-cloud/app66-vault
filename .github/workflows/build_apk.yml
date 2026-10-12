@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: 3. Compilar aplicación web e integrar en Capacitor (Sin depender de Vercel)
+      - name: 3. Compilar aplicación web e integrar en Capacitor (Edge-to-Edge Sin Bordes Grises)
         run: |
           npm install
           npm run build
@@ -32,6 +32,13 @@ jobs:
             "appId": "com.seis6.app",
             "appName": "Seis6 App",
             "webDir": "dist",
+            "backgroundColor": "#000000",
+            "android": {
+              "backgroundColor": "#000000",
+              "allowMixedContent": true,
+              "captureInput": true,
+              "webContentsDebuggingEnabled": false
+            },
             "server": {
               "cleartext": true,
               "androidScheme": "https"
@@ -41,8 +48,119 @@ jobs:
           npx cap add android
           npx cap sync android
 
+          # 1. Configurar styles.xml base (Pantalla completa sin barras grises ni marcos)
+          cat << 'EOF' > android/app/src/main/res/values/styles.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+                  <item name="colorPrimary">#0066FF</item>
+                  <item name="colorPrimaryDark">#000000</item>
+                  <item name="colorAccent">#0066FF</item>
+              </style>
+
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:colorBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+              </style>
+          </resources>
+          EOF
+
+          # 2. Configurar cutout notch en Android 9+ (API 28+) para eliminar bandas grises superiores/inferiores
+          mkdir -p android/app/src/main/res/values-v28
+          cat << 'EOF' > android/app/src/main/res/values-v28/styles.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:colorBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+                  <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+              </style>
+          </resources>
+          EOF
+
+          # 3. Configurar values-v27 para barras de navegación oscuras
+          mkdir -p android/app/src/main/res/values-v27
+          cat << 'EOF' > android/app/src/main/res/values-v27/styles.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">#000000</item>
+                  <item name="android:windowBackground">#000000</item>
+                  <item name="android:colorBackground">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+              </style>
+          </resources>
+          EOF
+
+          # 4. Configurar MainActivity.java para forzar WebView negro y sin scroll gris
+          cat << 'EOF' > android/app/src/main/java/com/seis6/app/MainActivity.java
+          package com.seis6.app;
+
+          import android.os.Bundle;
+          import android.os.Build;
+          import android.graphics.Color;
+          import android.webkit.WebView;
+          import android.view.WindowManager;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  try {
+                      if (getWindow() != null) {
+                          getWindow().getDecorView().setBackgroundColor(Color.BLACK);
+                          getWindow().setStatusBarColor(Color.BLACK);
+                          getWindow().setNavigationBarColor(Color.BLACK);
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                              getWindow().getAttributes().layoutInDisplayCutoutMode =
+                                  WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                          }
+                      }
+                      WebView webView = getBridge().getWebView();
+                      if (webView != null) {
+                          webView.setBackgroundColor(Color.BLACK);
+                          webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
+                      }
+                  } catch (Exception ignored) {}
+              }
+          }
+          EOF
+
+          # 5. Habilitar max_aspect y resizeableActivity en AndroidManifest.xml
+          node -e "
+          const fs = require('fs');
+          const p = 'android/app/src/main/AndroidManifest.xml';
+          if (fs.existsSync(p)) {
+            let m = fs.readFileSync(p, 'utf8');
+            if (!m.includes('android.max_aspect')) {
+              m = m.replace('</application>', '    <meta-data android:name=\"android.max_aspect\" android:value=\"2.5\" />\n    </application>');
+            }
+            if (!m.includes('android:resizeableActivity')) {
+              m = m.replace('<activity', '<activity android:resizeableActivity=\"true\"');
+            }
+            fs.writeFileSync(p, m);
+          }
+          "
+
       - name: 4. Configurar Java JDK 21 (Requerido por Android Gradle)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'

@@ -12,7 +12,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { downloadVaultItemResource } from '../../services/zipExporter';
 import { hasVaultItemFile } from '../../utils/vaultHelpers';
 import { getListIcon } from '../../utils/listIcons';
-import { resolveApiUrl } from '../../services/firebaseService';
+import { resolveApiUrl, safeFetchApi, firebaseService, isStandaloneApp, getRemoteServerBaseUrl } from '../../services/firebaseService';
 
 interface VaultDetailModalProps {
   item: VaultItem;
@@ -112,42 +112,52 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
     setReuploadSuccess(false);
 
     try {
-      const formData = new FormData();
-      formData.append('itemId', item.id);
-      formData.append('file', file, file.name);
-
-      const uploadRes = await new Promise<{
+      let uploadRes: {
         success: boolean;
         downloadUrl?: string;
         fileName?: string;
         fileSize?: string;
         fileMimeType?: string;
-      }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable && event.total > 0) {
-            const percent = Math.round((event.loaded / event.total) * 75) + 20;
-            setReuploadProgress(percent);
-          }
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.responseText));
-            } catch {
-              resolve({
-                success: true,
-                downloadUrl: `/api/vault/download/${encodeURIComponent(item.id)}`,
-              });
+      } = { success: true };
+
+      if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
+        const formData = new FormData();
+        formData.append('itemId', item.id);
+        formData.append('file', file, file.name);
+
+        uploadRes = await new Promise<{
+          success: boolean;
+          downloadUrl?: string;
+          fileName?: string;
+          fileSize?: string;
+          fileMimeType?: string;
+        }>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = Math.round((event.loaded / event.total) * 75) + 20;
+              setReuploadProgress(percent);
             }
-          } else {
-            reject(new Error(`Error del servidor (${xhr.status})`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
-        xhr.open('POST', resolveApiUrl(`/api/vault/upload-file?itemId=${encodeURIComponent(item.id)}`), true);
-        xhr.send(formData);
-      });
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch {
+                resolve({
+                  success: true,
+                  downloadUrl: `/api/vault/download/${encodeURIComponent(item.id)}`,
+                });
+              }
+            } else {
+              reject(new Error(`Error del servidor (${xhr.status})`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Fallo de red en la subida'));
+          xhr.open('POST', resolveApiUrl(`/api/vault/upload-file?itemId=${encodeURIComponent(item.id)}`), true);
+          xhr.send(formData);
+        });
+      }
 
       setReuploadProgress(100);
 
@@ -165,13 +175,17 @@ export const VaultDetailModal: React.FC<VaultDetailModalProps> = ({
         onUpdateItem(updatedItem);
       }
 
-      // Persist to server
+      // Persist to server (if available) and Firestore directly
       try {
-        await fetch(resolveApiUrl('/api/vault/upload'), {
+        await safeFetchApi('/api/vault/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedItem),
-        });
+        }, 2000);
+      } catch (e) {}
+
+      try {
+        await firebaseService.saveVaultItemToFirestore(updatedItem);
       } catch (e) {}
 
       setIsReuploading(false);

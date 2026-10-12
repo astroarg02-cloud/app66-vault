@@ -804,10 +804,8 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
                             const target = e.currentTarget;
-                            const fallbackUrl = resolveApiUrl(`/api/vault/receipts/${encodeURIComponent(receipt.id)}/image`);
-                            if (!target.src.endsWith(fallbackUrl)) {
-                              target.src = fallbackUrl;
-                            }
+                            target.onerror = null;
+                            target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 24 24" fill="none" stroke="%233b82f6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
                           }}
                         />
                         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-lg bg-black/75 text-white text-[10px] font-bold backdrop-blur-xs flex items-center gap-1">
