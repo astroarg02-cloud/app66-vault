@@ -1,0 +1,56 @@
+name: Compilar App Web con Vite (Node 22)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-web:
+    name: Compilar App Web con Vite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Descargar código del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 3. Instalar dependencias npm
+        run: |
+          npm install --legacy-peer-deps
+
+      - name: 4. Compilar App Web con Vite
+        run: |
+          npm run build
+
+      - name: 5. Preparar paquete ZIP de producción
+        run: |
+          mkdir -p build-output
+          cd dist
+          zip -r ../build-output/Seis6_App_Web_Production.zip .
+          cd ..
+          echo "Archivos generados en dist/:"
+          ls -lh dist/
+          ls -lh build-output/
+
+      - name: 6. Subir artefactos web compilados
+        uses: actions/upload-artifact@v4
+        with:
+          name: Seis6-App-Web-Vite
+          path: |
+            dist/
+            build-output/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 7. Resumen de compilación
+        run: |
+          echo "### 🎉 ¡App Web Compilada con Éxito con Vite!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Motor:** Vite + React + TypeScript + Tailwind CSS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Entorno:** Node.js 22" >> $GITHUB_STEP_SUMMARY
+          echo "- **Modo Móvil / PWA:** Standalone AMOLED (#000000) Edge-to-Edge" >> $GITHUB_STEP_SUMMARY
+          echo "- **Salida:** \`dist/\` y \`Seis6_App_Web_Production.zip\` listos para despliegue." >> $GITHUB_STEP_SUMMARY

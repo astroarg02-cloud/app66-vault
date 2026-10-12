@@ -299,10 +299,10 @@ const variablesGradlePath = path.join(androidRootDir, 'variables.gradle');
 if (fs.existsSync(variablesGradlePath)) {
   let vGradle = fs.readFileSync(variablesGradlePath, 'utf8');
   vGradle = vGradle.replace(/compileSdkVersion\s*=\s*\d+/, 'compileSdkVersion = 36');
-  vGradle = vGradle.replace(/targetSdkVersion\s*=\s*\d+/, 'targetSdkVersion = 36');
+  vGradle = vGradle.replace(/targetSdkVersion\s*=\s*\d+/, 'targetSdkVersion = 34');
   vGradle = vGradle.replace(/cordovaAndroidVersion\s*=\s*['"][^'"]+['"]/, "cordovaAndroidVersion = '14.0.1'");
   fs.writeFileSync(variablesGradlePath, vGradle, 'utf8');
-  console.log('✓ Ensured compileSdkVersion 36 in variables.gradle');
+  console.log('✓ Ensured compileSdkVersion 36 and targetSdkVersion 34 (Android 14) in variables.gradle');
 }
 
 // 8. Auto-heal android/gradle.properties
