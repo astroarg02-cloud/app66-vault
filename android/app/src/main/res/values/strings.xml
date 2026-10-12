@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Seis6 App</string>
+    <string name="title_activity_main">Seis6 App</string>
+    <string name="package_name">com.seis6.app</string>
+    <string name="custom_url_scheme">com.seis6.app</string>
+</resources>

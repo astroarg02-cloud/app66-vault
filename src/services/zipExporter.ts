@@ -300,73 +300,93 @@ ${item.description}
 }
 
 /**
- * Exports the complete 100% Native Flutter project (Dart + pubspec.yaml + GitHub Actions APK builder) as a ZIP
+ * Exports the complete Vite + Capacitor Android project configuration and instructions as a ZIP
  */
-export async function exportFlutterNativeProjectZip(): Promise<boolean> {
+export async function exportViteAndroidProjectZip(): Promise<boolean> {
   try {
     const zip = new JSZip();
-    let pubspec = '';
-    let mainDart = '';
+    let capacitorConfig = '';
+    let packageJson = '';
     let workflowYml = '';
-    let androidFiles: Record<string, string> = {};
+    let configureScript = '';
+    let viteConfig = '';
 
     try {
-      const res = await fetch(resolveApiUrl('/api/flutter/source'));
+      const res = await fetch(resolveApiUrl('/api/android/vite-source'));
       if (res.ok) {
         const data = await res.json();
-        pubspec = data.pubspec || '';
-        mainDart = data.mainDart || '';
+        capacitorConfig = data.capacitorConfig || '';
+        packageJson = data.packageJson || '';
         workflowYml = data.workflowYml || '';
-        androidFiles = data.androidFiles || {};
+        configureScript = data.configureScript || '';
+        viteConfig = data.viteConfig || '';
       }
     } catch {}
 
-    if (pubspec) {
-      zip.file('flutter_app/pubspec.yaml', pubspec);
-    }
-    if (mainDart) {
-      zip.file('flutter_app/lib/main.dart', mainDart);
-    }
-    if (workflowYml) {
-      zip.file('.github/workflows/build-android.yml', workflowYml);
-    }
-    for (const [filePath, fileContent] of Object.entries(androidFiles)) {
-      if (fileContent) {
-        zip.file(`flutter_app/${filePath}`, fileContent);
-      }
-    }
+    if (capacitorConfig) zip.file('capacitor.config.json', capacitorConfig);
+    if (packageJson) zip.file('package.json', packageJson);
+    if (workflowYml) zip.file('.github/workflows/build-android.yml', workflowYml);
+    if (configureScript) zip.file('scripts/configure-android.cjs', configureScript);
+    if (viteConfig) zip.file('vite.config.ts', viteConfig);
 
-    const readme = `# Seis6 Vault - Proyecto 100% Nativo en Flutter (Android APK)
+    const readme = `# Seis6 Vault - Compilación de APK de Android con Vite + Capacitor
 
-Este paquete contiene el código fuente nativo en **Flutter (Dart)** conectado a tu base de datos de **Firebase Firestore** (\`gen-lang-client-0680329207\`).
+Este repositorio contiene la arquitectura completa para compilar el **APK de Android** usando **Vite** y **Capacitor**, con modo oscuro AMOLED (#000000) Edge-to-Edge y Firebase Firestore sincronizado.
 
-## 🚀 Cómo compilar tu APK 100% Nativa automáticamente en GitHub
+## 🚀 Opción 1: Compilación Automática en GitHub Actions (Más fácil y rápida)
+1. Sube tu código a GitHub:
+   \`\`\`bash
+   git add .
+   git commit -m "Compilar APK con Vite y Capacitor"
+   git push origin main
+   \`\`\`
+2. En GitHub, haz clic en la pestaña **Actions**.
+3. Selecciona el flujo **"Generar APK de Android (Vite + Capacitor)"** y pulsa **Run workflow**.
+4. En 2-3 minutos se compila tu APK y la descargas desde la sección **Artifacts** con el nombre **Seis6-Vault-Vite-APK** (\`Seis6_Vault_v1.0.apk\`).
 
-1. Sube los cambios de este repositorio a tu cuenta de GitHub (\`astroarg02-cloud/app66-vault\`).
-2. Entra a la pestaña **Actions** en tu repositorio de GitHub.
-3. Selecciona el flujo **"Generar APK Nativa de Android (Flutter)"** y pulsa **Run workflow**.
-4. Al finalizar, descarga el archivo **Seis6-App-APK** (\`app-release.apk\`) compilado directamente a código máquina ARM64 (sin WebView ni navegador).
-
-## 💻 Compilación Manual en PC (Opcional)
+## 💻 Opción 2: Compilación en tu Computadora (Local)
+Requisitos: Node.js 18+ y Java JDK 17 / Android SDK.
 
 \`\`\`bash
-cd flutter_app
-flutter create --platforms=android --org com.seis6 .
-flutter pub get
-flutter build apk --release
+# 1. Instalar paquetes
+npm install
+
+# 2. Compilar el sitio web con Vite
+npm run build
+
+# 3. Sincronizar la plataforma Android nativa
+npx cap sync android
+
+# 4. Aplicar configuración AMOLED #000000 y estilos
+node scripts/configure-android.cjs
+
+# 5. Compilar el APK
+cd android
+./gradlew assembleDebug
 \`\`\`
+
+Tu APK estará lista en:
+\`android/app/build/outputs/apk/debug/app-debug.apk\`
 `;
-    zip.file('README_FLUTTER_NATIVO.md', readme);
+
+    zip.file('README_COMPILAR_APK_VITE.md', readme);
 
     const blob = await zip.generateAsync({
       type: 'blob',
       compression: 'DEFLATE',
       compressionOptions: { level: 6 },
     });
-    saveAs(blob, 'Seis6_Vault_Flutter_Nativo.zip');
+    saveAs(blob, 'Seis6_Vault_Vite_Android_Project.zip');
     return true;
   } catch (err) {
-    console.error('Error exportando proyecto Flutter:', err);
+    console.error('Error exportando proyecto Android Vite:', err);
     return false;
   }
+}
+
+/**
+ * Exports the complete 100% Native Flutter project (Dart + pubspec.yaml + GitHub Actions APK builder) as a ZIP
+ */
+export async function exportFlutterNativeProjectZip(): Promise<boolean> {
+  return exportViteAndroidProjectZip();
 }

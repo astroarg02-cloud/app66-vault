@@ -1005,7 +1005,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </div>
           </div>
 
-          {/* Motor APK Nativo en Flutter */}
+          {/* Motor APK de Android con Vite */}
           <div
             className={`p-4 rounded-2xl border transition-colors ${
               isDark ? 'bg-[#0A0A0C] border-[#1E1E24]' : 'bg-white border-[#E2E8F0] shadow-sm'
@@ -1018,15 +1018,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </div>
                 <div>
                   <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-[#0F172A]'}`}>
-                    Compilación APK Nativa (Nuevo Diseño Flutter)
+                    Compilación APK de Android (Vite + Capacitor)
                   </span>
                   <p className={`text-[10px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                    100% Nativo ARM64 (sin WebView) + Firebase Firestore integrado
+                    Motor Vite Nativo + Modo AMOLED Puro (#000000) + Firebase Firestore
                   </p>
                 </div>
               </div>
               <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
-                LISTO
+                ACTIVO
               </span>
             </div>
 
@@ -1035,22 +1035,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               isDark ? 'bg-black/50 border-white/5 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
             }`}>
               <div className="font-bold text-[#0066FF] flex items-center gap-1.5 text-xs">
-                <CheckCircle2 className="w-3.5 h-3.5" /> 2 Formas de Generar tu APK Nueva:
+                <CheckCircle2 className="w-3.5 h-3.5" /> 2 Formas de Generar tu APK con Vite:
               </div>
               <div>
-                <strong className={isDark ? 'text-white' : 'text-slate-900'}>Opción 1 (Automática en GitHub):</strong> Sube tus cambios con <code className="px-1 py-0.5 rounded bg-[#0066FF]/10 text-[#0066FF] font-mono">git push</code>, ve a la pestaña <strong>Actions</strong> en tu repo y pulsa <strong>Run workflow</strong> en <em>"Generar APK Nativa de Android (Flutter)"</em>. En 3 minutos descargas tu APK desde <strong>Artifacts</strong>.
+                <strong className={isDark ? 'text-white' : 'text-slate-900'}>Opción 1 (Automática en GitHub):</strong> Sube tus cambios con <code className="px-1 py-0.5 rounded bg-[#0066FF]/10 text-[#0066FF] font-mono">git push</code>, ve a la pestaña <strong>Actions</strong> en tu repo y pulsa <strong>Run workflow</strong> en <em>"Generar APK de Android (Vite + Capacitor)"</em>. En 2 minutos descargas tu archivo <strong className="text-emerald-400">Seis6_Vault_v1.0.apk</strong> listo desde <strong>Artifacts</strong>.
               </div>
               <div>
-                <strong className={isDark ? 'text-white' : 'text-slate-900'}>Opción 2 (En tu PC):</strong> Descarga el ZIP con el botón de abajo y ejecuta <code className="px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono">flutter build apk --release</code>.
+                <strong className={isDark ? 'text-white' : 'text-slate-900'}>Opción 2 (En tu PC):</strong> Ejecuta <code className="px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono">npm run build && npx cap sync android && cd android && ./gradlew assembleDebug</code>.
               </div>
             </div>
 
             <motion.button
               type="button"
               onClick={async () => {
-                setSaveToast('Generando paquete Flutter Nativo completo con Android y Gradle (.zip)...');
+                setSaveToast('Generando paquete Android + Vite completo (.zip)...');
                 await exportFlutterNativeProjectZip();
-                setSaveToast('¡Proyecto Flutter descargado con éxito!');
+                setSaveToast('¡Proyecto Android Vite descargado con éxito!');
                 setTimeout(() => setSaveToast(null), 3500);
               }}
               whileHover={{ scale: 1.01 }}
@@ -1058,7 +1058,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               className="w-full mt-1 py-2.5 px-3 rounded-xl bg-[#0066FF] hover:bg-[#0052FF] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-[#0066FF]/25"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span>Descargar Código Fuente Flutter Completo (.ZIP)</span>
+              <span>Descargar Archivos de Configuración Android (.ZIP)</span>
             </motion.button>
           </div>
         </div>

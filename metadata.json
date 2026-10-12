@@ -1,6 +1,6 @@
 {
   "name": "Vault Private Server - Flutter & Firebase Hub",
-  "description": "Bóveda de contenido exclusivo y servidor privado para Flutter, Firebase y Supabase en Android e iPhone (iOS) con arquitectura limpia, Riverpod y UI adaptativa.",
+  "description": "Bóveda de contenido exclusivo y servidor privado para Vite, Capacitor y Firebase en Android e iPhone (iOS) con diseño AMOLED y compilación directa de APK.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

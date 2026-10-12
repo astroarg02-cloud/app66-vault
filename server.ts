@@ -599,6 +599,22 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+app.get('/api/android/vite-source', (_req, res) => {
+  try {
+    const readSafe = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '';
+    res.json({
+      success: true,
+      capacitorConfig: readSafe(path.join(process.cwd(), 'capacitor.config.json')),
+      packageJson: readSafe(path.join(process.cwd(), 'package.json')),
+      workflowYml: readSafe(path.join(process.cwd(), '.github', 'workflows', 'build-android.yml')),
+      configureScript: readSafe(path.join(process.cwd(), 'scripts', 'configure-android.cjs')),
+      viteConfig: readSafe(path.join(process.cwd(), 'vite.config.ts')),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/flutter/source', (_req, res) => {
   try {
     const pubspecPath = path.join(process.cwd(), 'flutter_app', 'pubspec.yaml');

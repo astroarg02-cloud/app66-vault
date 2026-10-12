@@ -1,4 +1,4 @@
-name: Generar APK Nativa de Android (Flutter)
+name: Generar APK de Android (Vite + Capacitor)
 
 on:
   push:
@@ -7,69 +7,72 @@ on:
 
 jobs:
   build-apk:
-    name: Compilar APK Flutter (Diseño Nuevo Nativo)
+    name: Compilar APK Android desde Vite
     runs-on: ubuntu-latest
 
     steps:
       - name: 1. Descargar código del repositorio
         uses: actions/checkout@v4
 
-      - name: 2. Configurar Java JDK 17
-        uses: actions/setup-java@v5
+      - name: 2. Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 3. Configurar Java JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
+          cache: 'gradle'
 
-      - name: 3. Configurar Flutter SDK (Stable)
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      - name: 4. Aceptar licencias de Android SDK
+      - name: 4. Instalar dependencias npm
         run: |
-          yes | flutter doctor --android-licenses || true
+          npm install
 
-      - name: 5. Generar plataforma Android oficial y configurar permisos
-        working-directory: ./flutter_app
+      - name: 5. Compilar Frontend Web con Vite
         run: |
-          echo "Generando plataforma Android oficial..."
-          flutter create --platforms=android --org com.seis6 .
+          npm run build
 
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-              sed -i 's/<manifest[^>]*>/&\n    <uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>/' "$MANIFEST"
-            fi
-            sed -i 's/android:label="[^"]*"/android:label="Seis6 Vault"/' "$MANIFEST"
+      - name: 6. Sincronizar plataforma Android con Capacitor
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          else
+            npx cap sync android
           fi
 
-          if [ -f "android/gradlew" ]; then
-            chmod +x android/gradlew
-          fi
-
-      - name: 6. Instalar dependencias
-        working-directory: ./flutter_app
+      - name: 7. Aplicar configuración AMOLED #000000 y estilos nativos
         run: |
-          flutter pub get
+          node scripts/configure-android.cjs
 
-      - name: 7. Compilar APK Nativa Release
-        working-directory: ./flutter_app
+      - name: 8. Compilar APK Nativa (Debug / Release)
         run: |
-          flutter build apk --release --no-tree-shake-icons
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
-      - name: 8. Subir APK Nativa lista para instalar
+      - name: 9. Preparar archivo APK final
+        run: |
+          mkdir -p build-output
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/Seis6_Vault_v1.0.apk
+          echo "APK generada exitosamente en build-output/Seis6_Vault_v1.0.apk"
+          ls -lh build-output/Seis6_Vault_v1.0.apk
+
+      - name: 10. Subir APK lista para instalar en cualquier Android
         uses: actions/upload-artifact@v4
         with:
-          name: Seis6-App-APK
-          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          name: Seis6-Vault-Vite-APK
+          path: build-output/Seis6_Vault_v1.0.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: 9. Resumen de compilación
+      - name: 11. Resumen de compilación
         run: |
-          echo "### 🎉 ¡APK Compilada con Éxito!" >> $GITHUB_STEP_SUMMARY
-          echo "- **Motor:** 100% Flutter Nativo ARM64 (sin WebView)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Diseño:** Idéntico a Vite con Modo Oscuro AMOLED (#000000)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Base de Datos:** Firebase Firestore sincronizado" >> $GITHUB_STEP_SUMMARY
-          echo "- **Archivo:** \`app-release.apk\` disponible en la sección de Artifacts arriba." >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 ¡APK Compilada con Éxito desde Vite!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Motor:** Vite + React + Capacitor Nativo" >> $GITHUB_STEP_SUMMARY
+          echo "- **Diseño:** 100% AMOLED Dark (#000000) Edge-to-Edge" >> $GITHUB_STEP_SUMMARY
+          echo "- **Base de Datos:** Firebase Firestore + Cloud Sync" >> $GITHUB_STEP_SUMMARY
+          echo "- **Archivo:** \`Seis6_Vault_v1.0.apk\` disponible para descarga en Artifacts." >> $GITHUB_STEP_SUMMARY
+
