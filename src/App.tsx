@@ -109,10 +109,7 @@ function AppContent() {
   const [isCheckingSession, setIsCheckingSession] = useState(false);
   const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'receipts' | 'approvals' | 'profile'>('vault');
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(() => receiptService.getPendingCount());
-  const [vaultTabMode, setVaultTabMode] = useState<'items' | 'collections'>(() => {
-    const initialUser = sanitizeUserRole(firebaseService.getLocalSession());
-    return initialUser?.role === 'admin' ? 'items' : 'collections';
-  });
+  const [vaultTabMode, setVaultTabMode] = useState<'items' | 'collections'>('items');
   const [selectedVaultListId, setSelectedVaultListId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [showAdminUpload, setShowAdminUpload] = useState(false);

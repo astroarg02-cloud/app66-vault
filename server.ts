@@ -189,7 +189,7 @@ function readMaintenanceState(): MaintenanceState {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
         return {
-          isMaintenance: typeof parsed.isMaintenance === 'boolean' ? parsed.isMaintenance : true,
+          isMaintenance: typeof parsed.isMaintenance === 'boolean' ? parsed.isMaintenance : false,
           message:
             parsed.message ||
             'El sistema se encuentra en labores de mantenimiento programado. El acceso está temporalmente restringido únicamente a administradores con Key.',
@@ -201,7 +201,7 @@ function readMaintenanceState(): MaintenanceState {
     console.error('Error reading maintenance file:', err);
   }
   const defaultState: MaintenanceState = {
-    isMaintenance: true,
+    isMaintenance: false,
     message:
       'El sistema se encuentra en labores de mantenimiento programado. El acceso está temporalmente restringido únicamente a administradores con Key.',
     updatedAt: new Date().toISOString(),

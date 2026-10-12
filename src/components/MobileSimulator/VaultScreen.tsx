@@ -61,15 +61,12 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
   };
 
   const activeTabMode =
-    !isAdmin && !selectedListId
-      ? 'collections'
-      : externalActiveTabMode !== undefined
+    externalActiveTabMode !== undefined
       ? externalActiveTabMode
       : internalActiveTabMode;
   const setActiveTabMode = (mode: 'items' | 'collections') => {
-    const safeMode = !isAdmin && mode === 'items' && !selectedListId ? 'collections' : mode;
-    setInternalActiveTabMode(safeMode);
-    onTabModeChange?.(safeMode);
+    setInternalActiveTabMode(mode);
+    onTabModeChange?.(mode);
   };
   const [itemToDelete, setItemToDelete] = useState<VaultItem | null>(null);
   const [listToDelete, setListToDelete] = useState<VaultList | null>(null);
@@ -88,9 +85,6 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
         (Array.isArray(activeList.itemIds) && activeList.itemIds.includes(item.id)) ||
         (Array.isArray(item.listIds) && item.listIds.includes(selectedListId));
       if (!isInsideList) return false;
-    } else if (!isAdmin) {
-      // Non-admins can NEVER view the general Publicaciones section — only inside an explicitly selected collection
-      return false;
     }
 
     // 2. Check Search Query
@@ -343,7 +337,7 @@ export const VaultScreen: React.FC<VaultScreenProps> = ({
       {/* Directory Content List */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-5 lg:p-6 pb-20 sm:pb-28 space-y-3 sm:space-y-4">
         {/* COLLECTIONS / LISTS HUB VIEW */}
-        {activeTabMode === 'collections' || (!isAdmin && !activeList) ? (
+        {activeTabMode === 'collections' && !activeList ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between px-1">
               <div>

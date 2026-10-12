@@ -600,9 +600,9 @@ class PaymentReceipt {
 final List<VaultItem> kInitialVaultItems = [
   const VaultItem(
     id: 'vault-res-1787518251503',
-    title: 'BIENVENIDOS A MI PÁGINA WEB 😍',
+    title: 'BIENVENIDOS A LA APP SEIS6 VAULT 😍',
     description:
-        'En esta página web encontrarás todo tipo de archivos para iOS y Android totalmente gratis',
+        'En esta aplicación oficial encontrarás todo tipo de recursos y archivos para iOS y Android totalmente optimizados',
     category: 'code',
     fileType: '',
     fileSize: '',
@@ -2266,6 +2266,106 @@ class _NativeAuthScreenState extends State<NativeAuthScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Divider(
+                            color: isDark ? kDarkBorder : Colors.black12,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text(
+                            'O INGRESAR CON 1 TOQUE',
+                            style: TextStyle(
+                              color: kMutedText,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Divider(
+                            color: isDark ? kDarkBorder : Colors.black12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: isDark ? Colors.white : Colors.black87,
+                              side: BorderSide(
+                                color: isDark ? kDarkBorder : Colors.black12,
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () {
+                              widget.onAuthenticated(UserProfile(
+                                uid: 'guest_${DateTime.now().millisecondsSinceEpoch}',
+                                email: 'invitado@seis6.vault',
+                                displayName: 'Invitado Free',
+                                role: 'vip_member',
+                                tier: 'Invitado',
+                                joinedAt: DateTime.now().toIso8601String().split('T').first,
+                                avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                                customStatus: 'Explorando Bóveda 🚀',
+                              ));
+                            },
+                            icon: const Icon(Icons.person_outline, size: 16, color: kPrimaryBlue),
+                            label: const Text(
+                              'Invitado Free',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: kEmerald,
+                              backgroundColor: kEmerald.withOpacity(0.08),
+                              side: BorderSide(
+                                color: kEmerald.withOpacity(0.3),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () {
+                              widget.onAuthenticated(UserProfile(
+                                uid: 'vip_demo_user',
+                                email: 'vip.demo@seis6.vault',
+                                displayName: 'Alex Vance (VIP)',
+                                role: 'vip_member',
+                                tier: 'Acceso VIP',
+                                membershipStatus: 'active',
+                                membershipPlan: 'monthly',
+                                subscribedAt: DateTime.now().toIso8601String(),
+                                membershipExpiresAt: DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+                                joinedAt: '2025-02-14',
+                                avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+                                customStatus: '💎 Miembro VIP Activo',
+                              ));
+                            },
+                            icon: const Icon(Icons.workspace_premium, size: 16, color: Colors.amber),
+                            label: const Text(
+                              'Demo VIP 💎',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ],
               ),
@@ -2381,7 +2481,7 @@ class _NativeAppShellState extends State<NativeAppShell> {
   @override
   void initState() {
     super.initState();
-    _vaultTabMode = widget.currentUser.isAdmin ? 'items' : 'collections';
+    _vaultTabMode = 'items';
   }
 
   void _openMaintenanceModal() {
@@ -2488,7 +2588,7 @@ class _NativeAppShellState extends State<NativeAppShell> {
                   GestureDetector(
                     onTap: () => setState(() {
                       _currentTab = 'vault';
-                      if (!isAdmin) _vaultTabMode = 'collections';
+                      _selectedListId = null;
                     }),
                     child: Row(
                       children: [
@@ -2821,20 +2921,19 @@ class _NativeAppShellState extends State<NativeAppShell> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      // 1. Publicaciones (Solo Admin)
-                      if (isAdmin)
-                        _buildHomeBarIcon(
-                          icon: Icons.folder_outlined,
-                          active: _currentTab == 'vault' &&
-                              _vaultTabMode == 'items' &&
-                              _selectedListId == null,
-                          isDark: isDark,
-                          onTap: () => setState(() {
-                            _currentTab = 'vault';
-                            _vaultTabMode = 'items';
-                            _selectedListId = null;
-                          }),
-                        ),
+                      // 1. Publicaciones (Disponible para todos)
+                      _buildHomeBarIcon(
+                        icon: Icons.folder_outlined,
+                        active: _currentTab == 'vault' &&
+                            _vaultTabMode == 'items' &&
+                            _selectedListId == null,
+                        isDark: isDark,
+                        onTap: () => setState(() {
+                          _currentTab = 'vault';
+                          _vaultTabMode = 'items';
+                          _selectedListId = null;
+                        }),
+                      ),
 
                       // 2. Colecciones
                       _buildHomeBarIcon(
@@ -3142,11 +3241,11 @@ class _NativeVaultScreenState extends State<NativeVaultScreen> {
   Future<void> _downloadResourceNatively(VaultItem item) async {
     try {
       if (item.downloadUrl.startsWith('http')) {
-        final uri = Uri.parse(item.downloadUrl);
-        if (await canLaunchUrl(uri)) {
+        try {
+          final uri = Uri.parse(item.downloadUrl);
           await launchUrl(uri, mode: LaunchMode.externalApplication);
           return;
-        }
+        } catch (_) {}
       }
 
       final dir = await getTemporaryDirectory();
@@ -3169,6 +3268,14 @@ Descripción:
 ${item.description}
 ''';
       await file.writeAsString(content);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: kEmerald,
+            content: Text('¡Descarga lista! Guardado: $fileName'),
+          ),
+        );
+      }
       await Share.shareXFiles(
         [XFile(file.path)],
         text: 'Recurso oficial Seis6 Vault: ${item.title}',
@@ -3772,15 +3879,13 @@ ${item.description}
         : null;
 
     final showCollectionsView =
-        widget.vaultTabMode == 'collections' || (!isAdmin && activeList == null);
+        widget.vaultTabMode == 'collections' && activeList == null;
 
     final filteredItems = widget.items.where((item) {
       if (activeList != null) {
         final inList = activeList.itemIds.contains(item.id) ||
             item.listIds.contains(activeList.id);
         if (!inList) return false;
-      } else if (!isAdmin) {
-        return false;
       }
       if (_search.trim().isNotEmpty) {
         final q = _search.toLowerCase();
@@ -4420,8 +4525,23 @@ class _NativeMembershipScreenState extends State<NativeMembershipScreen> {
         '• Email: ${widget.currentUser.email}\n'
         '• ID: #${widget.currentUser.uid}');
     final uri = Uri.parse('https://wa.me/$kWhatsAppPhoneRaw?text=$text');
-    if (await canLaunchUrl(uri)) {
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } catch (_) {
+        await Clipboard.setData(ClipboardData(
+            text: 'https://wa.me/$kWhatsAppPhoneRaw?text=$text'));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Enlace copiado al portapapeles. Abre WhatsApp para enviar.'),
+            ),
+          );
+        }
+      }
     }
   }
 

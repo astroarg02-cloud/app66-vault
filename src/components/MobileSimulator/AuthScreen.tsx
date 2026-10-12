@@ -14,11 +14,13 @@ import {
   EyeOff,
   Key,
   ArrowLeft,
+  Crown,
+  Sparkles,
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { firebaseService } from '../../services/firebaseService';
-import { isAuthorizedAdminKey } from '../../data/initialVaultData';
+import { isAuthorizedAdminKey, INITIAL_ADMIN_USER, INITIAL_MEMBER_USER } from '../../data/initialVaultData';
 
 interface AuthScreenProps {
   onLogin: (user: UserProfile) => void;
@@ -480,6 +482,70 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 )}
               </motion.button>
             </form>
+
+            {/* Accesos Rápidos para Probar y Entrar Directo */}
+            <div className="pt-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className={`flex-1 h-px ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-200'}`} />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  O ingresar con 1 toque
+                </span>
+                <div className={`flex-1 h-px ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-200'}`} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const guestUser: UserProfile = {
+                      uid: `guest_${Date.now()}`,
+                      email: 'invitado@seis6.vault',
+                      displayName: 'Invitado Free',
+                      role: 'vip_member',
+                      tier: 'Invitado',
+                      membershipStatus: 'none',
+                      joinedAt: new Date().toISOString().split('T')[0],
+                      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                    };
+                    firebaseService.saveSession(guestUser);
+                    onLogin(guestUser);
+                  }}
+                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    isDark
+                      ? 'bg-[#0A0A0C] border-[#1E1E24] text-slate-300 hover:text-white hover:border-[#0066FF]/40'
+                      : 'bg-white border-slate-200 text-slate-700 hover:text-black hover:border-slate-300 shadow-xs'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5 text-[#0066FF]" />
+                  <span>Invitado Free</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const vipUser: UserProfile = {
+                      ...INITIAL_MEMBER_USER,
+                      role: 'vip_member',
+                      tier: 'Acceso VIP',
+                      membershipStatus: 'active',
+                      membershipPlan: 'monthly',
+                      subscribedAt: new Date().toISOString(),
+                      membershipExpiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
+                    };
+                    firebaseService.saveSession(vipUser);
+                    onLogin(vipUser);
+                  }}
+                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    isDark
+                      ? 'bg-[#10B981]/10 border-[#10B981]/30 text-emerald-400 hover:bg-[#10B981]/15'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 shadow-xs'
+                  }`}
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Demo VIP 💎</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

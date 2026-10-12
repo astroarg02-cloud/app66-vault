@@ -49,8 +49,8 @@ export const INITIAL_MEMBER_USER: UserProfile = {
 export const INITIAL_VAULT_ITEMS: VaultItem[] = [
   {
     id: 'vault-res-1787518251503',
-    title: 'BIENVENIDOS A MI PÁGINA WEB 😍',
-    description: 'En esta página web encontrarás todo tipo de archivos para iOS y Android totalmente gratis',
+    title: 'BIENVENIDOS A LA APP SEIS6 VAULT 😍',
+    description: 'En esta aplicación oficial encontrarás todo tipo de recursos y archivos para iOS y Android totalmente optimizados',
     category: 'code',
     fileType: '',
     fileSize: '',
