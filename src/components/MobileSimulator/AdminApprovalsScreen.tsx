@@ -167,8 +167,15 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Filtrado por buscador
+  // Filtrado por buscador y método
+  const [filterType, setFilterType] = useState<'all' | 'monthly' | 'annual' | 'mercadopago' | 'crypto'>('all');
+
   const filteredReceipts = receipts.filter((r) => {
+    if (filterType === 'monthly' && r.plan !== 'monthly' && Number(r.amount) >= 12) return false;
+    if (filterType === 'annual' && r.plan !== 'annual' && Number(r.amount) < 12) return false;
+    if (filterType === 'mercadopago' && !r.paymentMethod?.toLowerCase().includes('mercado')) return false;
+    if (filterType === 'crypto' && !r.paymentMethod?.toLowerCase().includes('usdt') && !r.paymentMethod?.toLowerCase().includes('cripto') && !r.paymentMethod?.toLowerCase().includes('binance')) return false;
+
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase().trim();
     return (
@@ -184,6 +191,85 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
     receiptService.deleteReceipt(receipt.id);
     setReceipts((prev) => prev.filter((r) => r.id !== receipt.id));
     showToast(`Comprobante #${receipt.id.slice(-6)} eliminado de la bandeja.`, 'info');
+  };
+
+  // Aprobación rápida directa en 1 clic
+  const handleQuickApprove = (receipt: PaymentReceipt, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const resolved = receiptService.resolveMembershipByAmount(receipt.amount, receipt.plan);
+    const nowIso = new Date().toISOString();
+    const expiresIso = new Date(Date.now() + resolved.durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const upgradedProfile = firebaseService.upgradeUserMembershipByUidOrEmail(
+      receipt.userId,
+      receipt.userEmail,
+      resolved.plan,
+      nowIso,
+      resolved.amount,
+      expiresIso
+    );
+
+    safeFetchApi(`/api/vault/receipts/${encodeURIComponent(receipt.id)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'approved',
+        amount: resolved.amount,
+        plan: resolved.plan,
+        adminNote: `Aprobado por $${resolved.amount} USD (${resolved.planName})`,
+        reviewerName: currentUser.displayName || 'Administrador',
+      }),
+    }, 2500).catch(() => {});
+
+    if (
+      (currentUser.uid === receipt.userId ||
+        (receipt.userEmail && currentUser.email.toLowerCase() === receipt.userEmail.toLowerCase())) &&
+      onUpdateCurrentUser
+    ) {
+      onUpdateCurrentUser(
+        upgradedProfile || {
+          ...currentUser,
+          tier: currentUser.role === 'admin' ? 'Bóveda Diamante' : 'Acceso VIP',
+          membershipPlan: resolved.plan,
+          membershipStatus: 'active',
+          subscribedAt: nowIso,
+          membershipExpiresAt: expiresIso,
+          lastPaymentAmount: resolved.amount,
+        }
+      );
+    }
+
+    // ELIMINAR el comprobante de las aprobaciones inmediatamente
+    receiptService.deleteReceipt(receipt.id);
+    setReceipts((prev) => prev.filter((r) => r.id !== receipt.id));
+
+    try {
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+    } catch {}
+
+    showToast(`¡Comprobante #${receipt.id.slice(-6)} aprobado! VIP activado y retirado de aprobaciones.`, 'success');
+  };
+
+  // Rechazo rápido directo en 1 clic
+  const handleQuickReject = (receipt: PaymentReceipt, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const reason = 'El comprobante no es legible o los datos no coinciden.';
+    firebaseService.denyOrRevokeUserMembershipByUidOrEmail(receipt.userId, receipt.userEmail, reason);
+
+    safeFetchApi(`/api/vault/receipts/${encodeURIComponent(receipt.id)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'rejected',
+        adminNote: reason,
+        reviewerName: currentUser.displayName || 'Administrador',
+      }),
+    }, 2500).catch(() => {});
+
+    receiptService.deleteReceipt(receipt.id);
+    setReceipts((prev) => prev.filter((r) => r.id !== receipt.id));
+
+    showToast(`Comprobante #${receipt.id.slice(-6)} rechazado y retirado de aprobaciones.`, 'info');
   };
 
   // Abrir modal de aprobación
@@ -457,29 +543,57 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className={`p-2.5 rounded-2xl border flex items-center gap-2.5 ${
-          isDark ? 'bg-zinc-950/80 border-white/[0.08]' : 'bg-white border-slate-200 shadow-xs'
-        }`}>
-          <Search className="w-4 h-4 text-zinc-400 ml-2 shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por usuario, correo electrónico, método de pago o código de referencia..."
-            className={`w-full bg-transparent text-xs py-1 focus:outline-none placeholder-zinc-500 ${
-              isDark ? 'text-white' : 'text-slate-900'
-            }`}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="text-xs text-zinc-400 hover:text-white px-2 py-0.5 rounded-lg cursor-pointer"
-            >
-              Limpiar
-            </button>
-          )}
+        {/* Search Bar & Filter Pills */}
+        <div className="space-y-2.5">
+          <div className={`p-2.5 rounded-2xl border flex items-center gap-2.5 ${
+            isDark ? 'bg-zinc-950/80 border-white/[0.08]' : 'bg-white border-slate-200 shadow-xs'
+          }`}>
+            <Search className="w-4 h-4 text-zinc-400 ml-2 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar por usuario, correo electrónico, método de pago o código de referencia..."
+              className={`w-full bg-transparent text-xs py-1 focus:outline-none placeholder-zinc-500 ${
+                isDark ? 'text-white' : 'text-slate-900'
+              }`}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="text-xs text-zinc-400 hover:text-white px-2 py-0.5 rounded-lg cursor-pointer"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+
+          {/* Quick Filter Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { id: 'all', label: `Todos (${receipts.length})` },
+              { id: 'monthly', label: 'Plan Mensual ($1)' },
+              { id: 'annual', label: 'Plan Anual ($12)' },
+              { id: 'mercadopago', label: 'Mercado Pago' },
+              { id: 'crypto', label: 'Cripto / USDT' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setFilterType(tab.id as any)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  filterType === tab.id
+                    ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/25 border border-blue-400/30'
+                    : isDark
+                    ? 'bg-zinc-900/80 text-zinc-400 hover:text-white border border-white/5 hover:border-white/10'
+                    : 'bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* List of Pending Receipts */}
@@ -647,28 +761,57 @@ export const AdminApprovalsScreen: React.FC<AdminApprovalsScreenProps> = ({
                         )}
 
                         {/* Action Buttons Column */}
-                        <div className="flex flex-col gap-2 shrink-0 min-w-[150px]">
+                        <div className="flex flex-col gap-2 shrink-0 min-w-[160px]">
+                          {/* 1-Click Quick Approve */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleQuickApprove(receipt, e)}
+                            className="w-full py-2.5 px-3.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black shadow-lg shadow-emerald-500/25 transition-all cursor-pointer active:scale-95"
+                            title="Aprobar inmediatamente en 1 clic y retirar de la bandeja"
+                          >
+                            <Check className="w-4 h-4 stroke-[3]" />
+                            <span>Aprobar Rápido (1 Clic)</span>
+                          </button>
+
+                          {/* Approve with custom note (Modal) */}
                           <button
                             type="button"
                             onClick={() => openApproveModal(receipt)}
-                            className="w-full py-2.5 px-3.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black shadow-lg shadow-emerald-500/25 transition-all cursor-pointer active:scale-95"
+                            className={`w-full py-1.5 px-2.5 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                              isDark ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+                            }`}
+                            title="Personalizar nota de aprobación"
                           >
-                            <Check className="w-4 h-4 stroke-[3]" />
-                            <span>Aprobar VIP</span>
+                            <span>Aprobar con Nota...</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => openRejectModal(receipt)}
-                            className={`w-full py-2 px-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 border transition-all cursor-pointer active:scale-95 ${
-                              isDark
-                                ? 'border-rose-500/40 text-rose-400 hover:bg-rose-500/10'
-                                : 'border-rose-300 text-rose-600 hover:bg-rose-50'
-                            }`}
-                          >
-                            <X className="w-4 h-4" />
-                            <span>Rechazar</span>
-                          </button>
+                          {/* Quick Reject or Modal Reject */}
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => handleQuickReject(receipt, e)}
+                              className={`py-2 px-2 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1 border transition-all cursor-pointer active:scale-95 ${
+                                isDark
+                                  ? 'border-rose-500/40 text-rose-400 hover:bg-rose-500/10'
+                                  : 'border-rose-300 text-rose-600 hover:bg-rose-50'
+                              }`}
+                              title="Rechazar directamente"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Rechazar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => openRejectModal(receipt)}
+                              className={`py-2 px-2 rounded-xl font-bold text-[10px] border flex items-center justify-center text-zinc-400 hover:text-white transition-all cursor-pointer ${
+                                isDark ? 'border-white/10 hover:bg-white/5' : 'border-slate-300 hover:bg-slate-100'
+                              }`}
+                              title="Elegir motivo específico de rechazo"
+                            >
+                              <span>Con motivo...</span>
+                            </button>
+                          </div>
 
                           <button
                             type="button"

@@ -429,10 +429,10 @@ async function fetchReceiptsFromFirestoreSDK(): Promise<PaymentReceipt[]> {
 
 export const receiptService = {
   // Compress image before saving so it loads fast and never exceeds localStorage (5MB) or Firestore (1MB) limits
-  async compressReceiptImage(dataUrl: string, maxDimension = 1200, quality = 0.8): Promise<string> {
+  async compressReceiptImage(dataUrl: string, maxDimension = 900, quality = 0.72): Promise<string> {
     if (!dataUrl || !dataUrl.startsWith('data:image/')) return dataUrl;
-    // If image is already moderately sized (< 350KB), return immediately to avoid latency
-    if (dataUrl.length < 350000) return dataUrl;
+    // If image is already lightweight (< 140KB), return quickly
+    if (dataUrl.length < 140000) return dataUrl;
 
     return new Promise((resolve) => {
       let settled = false;
@@ -442,7 +442,8 @@ export const receiptService = {
           resolve(result);
         }
       };
-      const safetyTimer = setTimeout(() => done(dataUrl), 450);
+      // Allow up to 4000ms for high-resolution mobile photos to decode and compress
+      const safetyTimer = setTimeout(() => done(dataUrl), 4000);
 
       try {
         const img = new Image();
@@ -459,20 +460,23 @@ export const receiptService = {
               }
             }
             const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
+            canvas.width = Math.max(1, width);
+            canvas.height = Math.max(1, height);
+            const ctx = canvas.getContext('2d', { alpha: false });
             if (!ctx) {
               clearTimeout(safetyTimer);
               done(dataUrl);
               return;
             }
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             let compressed = canvas.toDataURL('image/jpeg', quality);
-            if (compressed.length > 500000) {
-              compressed = canvas.toDataURL('image/jpeg', 0.65);
+            if (compressed.length > 200000) {
+              compressed = canvas.toDataURL('image/jpeg', 0.58);
+            }
+            if (compressed.length > 300000) {
+              compressed = canvas.toDataURL('image/jpeg', 0.45);
             }
             clearTimeout(safetyTimer);
             done(compressed);
@@ -491,6 +495,23 @@ export const receiptService = {
         done(dataUrl);
       }
     });
+  },
+
+  async uploadReceiptImageFile(file: Blob | File, receiptId: string): Promise<string | null> {
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('receiptId', receiptId);
+      const res = await safeFetchApi('/api/vault/receipts/upload-image', {
+        method: 'POST',
+        body: formData,
+      }, 5000);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && data.imageUrl) return data.imageUrl;
+      }
+    } catch {}
+    return null;
   },
 
   getAllReceipts(): PaymentReceipt[] {
@@ -650,7 +671,10 @@ export const receiptService = {
             'Content-Type': 'application/json',
             'Cache-Control': 'no-cache',
           },
-          body: JSON.stringify({ receipts: currentCandidates }),
+          body: JSON.stringify({
+            receipts: currentCandidates,
+            deletedIds: Array.from(deletedSet),
+          }),
         }, 2000);
 
         if (syncRes && syncRes.ok) {
@@ -856,6 +880,14 @@ export const receiptService = {
 
     const resolved = this.resolveMembershipByAmount(data.amount, data.plan);
 
+    // Compress image beforehand so localStorage and Firestore never hit quota limits
+    let finalImage = data.receiptImageUrl;
+    if (finalImage && finalImage.startsWith('data:image/')) {
+      try {
+        finalImage = await this.compressReceiptImage(finalImage);
+      } catch {}
+    }
+
     const newReceipt: PaymentReceipt = {
       id,
       userId: data.userId,
@@ -867,7 +899,7 @@ export const receiptService = {
       currency: 'USD',
       paymentMethod: data.paymentMethod || 'Transferencia',
       referenceCode: data.referenceCode?.trim() || `REF-${Math.floor(100000 + Math.random() * 900000)}`,
-      receiptImageUrl: data.receiptImageUrl,
+      receiptImageUrl: finalImage,
       receiptFileName: data.receiptFileName || 'comprobante.jpg',
       notes: data.notes?.trim() || '',
       whatsappContact: data.whatsappContact || '+54 9 11 6554-6038',
@@ -881,30 +913,19 @@ export const receiptService = {
       new CustomEvent('vault_receipts_changed', { detail: { receipt: newReceipt, receipts: updated } })
     );
 
-    // Asynchronously compress (if needed) and sync with Central Server API and Firestore in background
-    (async () => {
-      try {
-        let finalImage = newReceipt.receiptImageUrl;
-        if (finalImage && finalImage.length > 350000) {
-          finalImage = await this.compressReceiptImage(finalImage);
-        }
-        const finalizedReceipt: PaymentReceipt = {
-          ...newReceipt,
-          receiptImageUrl: finalImage,
-        };
-
-        await Promise.allSettled([
-          safeFetchApi('/api/vault/receipts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(finalizedReceipt),
-          }, 4000),
-          saveReceiptToFirestoreSDK(finalizedReceipt, updated),
-        ]);
-      } catch (err) {
-        console.warn('Background receipt persistence notice:', err);
-      }
-    })();
+    // Direct persistence to Central Server API and Firestore
+    try {
+      await Promise.allSettled([
+        safeFetchApi('/api/vault/receipts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newReceipt),
+        }, 5000),
+        saveReceiptToFirestoreSDK(newReceipt, updated),
+      ]);
+    } catch (err) {
+      console.warn('Receipt persistence warning:', err);
+    }
 
     return newReceipt;
   },
@@ -946,11 +967,16 @@ export const receiptService = {
       membershipExpiresAt: status === 'approved' ? expiresIso : undefined,
     };
 
-    all[idx] = updatedReceipt;
-    saveReceiptsToLocalStore(all);
-    window.dispatchEvent(
-      new CustomEvent('vault_receipts_changed', { detail: { receipt: updatedReceipt, receipts: all } })
-    );
+    // Al aprobar o rechazar, el comprobante DEBE borrarse de las aprobaciones inmediatamente
+    if (status === 'approved' || status === 'rejected') {
+      this.deleteReceipt(receiptId);
+    } else {
+      all[idx] = updatedReceipt;
+      saveReceiptsToLocalStore(all);
+      window.dispatchEvent(
+        new CustomEvent('vault_receipts_changed', { detail: { receipt: updatedReceipt, receipts: all } })
+      );
+    }
 
     // Persist to Server API and Firebase Firestore
     Promise.allSettled([
@@ -965,7 +991,7 @@ export const receiptService = {
           reviewerName: updatedReceipt.reviewedBy,
           receipt: updatedReceipt,
         }),
-      }, 2000),
+      }, 3000),
       saveReceiptToFirestoreSDK(updatedReceipt, all),
     ]).catch(() => {});
 
@@ -984,7 +1010,7 @@ export const receiptService = {
     Promise.allSettled([
       safeFetchApi(`/api/vault/receipts/${encodeURIComponent(receiptId)}`, {
         method: 'DELETE',
-      }, 2000),
+      }, 2500),
       !isFirestoreQuotaExhausted()
         ? firestoreRestFetch(`/${RECEIPTS_COLLECTION}/${encodeURIComponent(receiptId)}`, {
             method: 'DELETE',
@@ -993,6 +1019,11 @@ export const receiptService = {
       saveReceiptsRegistryToFirestore(filtered),
     ]).catch(() => {});
 
+    return true;
+  },
+
+  async deleteReceiptAsync(receiptId: string): Promise<boolean> {
+    this.deleteReceipt(receiptId);
     return true;
   },
 };

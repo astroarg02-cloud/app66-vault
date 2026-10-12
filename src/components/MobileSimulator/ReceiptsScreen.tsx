@@ -10,7 +10,7 @@ import confetti from 'canvas-confetti';
 import { UserProfile, PaymentReceipt, ReceiptStatus, MembershipPlanType } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { receiptService } from '../../services/receiptService';
-import { firebaseService } from '../../services/firebaseService';
+import { firebaseService, safeFetchApi } from '../../services/firebaseService';
 import { WHATSAPP_CONTACT_PHONE, WHATSAPP_PHONE_RAW } from './MembershipScreen';
 
 interface ReceiptsScreenProps {
@@ -62,6 +62,8 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
+  const [fileSizeKb, setFileSizeKb] = useState<number | null>(null);
+  const [isCompressingImage, setIsCompressingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sendWhatsAppAlert, setSendWhatsAppAlert] = useState(false);
 
@@ -153,6 +155,12 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     setTimeout(() => setToast(null), 4500);
   };
 
+  const handleGenerateRefCode = () => {
+    const randomCode = `REF-${Math.floor(100000 + Math.random() * 900000)}`;
+    setReferenceCode(randomCode);
+    showToast(`Código generado: ${randomCode}`, 'info');
+  };
+
   // Handle file selection and read + compress as base64
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -164,18 +172,29 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
     }
 
     setFileName(file.name);
+    setIsCompressingImage(true);
+
     const reader = new FileReader();
     reader.onload = async () => {
       if (typeof reader.result === 'string') {
         const rawDataUrl = reader.result;
-        setPreviewImage(rawDataUrl);
         try {
           const compressed = await receiptService.compressReceiptImage(rawDataUrl);
-          if (compressed) {
-            setPreviewImage(compressed);
-          }
-        } catch {}
+          setPreviewImage(compressed);
+          const kb = Math.round((compressed.length * 3) / 4 / 1024);
+          setFileSizeKb(kb);
+        } catch {
+          setPreviewImage(rawDataUrl);
+          const kb = Math.round(file.size / 1024);
+          setFileSizeKb(kb);
+        } finally {
+          setIsCompressingImage(false);
+        }
       }
+    };
+    reader.onerror = () => {
+      setIsCompressingImage(false);
+      showToast('No se pudo leer la imagen seleccionada.', 'error');
     };
     reader.readAsDataURL(file);
   };
@@ -229,12 +248,14 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
       // Reset form and switch to history view immediately
       setPreviewImage(null);
       setFileName('');
+      setFileSizeKb(null);
       setReferenceCode('');
       setNotes('');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
       setActiveTab('history');
+      refreshReceipts();
     } catch (err) {
       console.error(err);
       showToast('Ocurrió un error al guardar el comprobante.', 'error');
@@ -636,9 +657,18 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
               {/* Reference Number & Contact Phone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 opacity-80">
-                    Nº de Operación / Referencia (Opcional)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider opacity-80">
+                      Nº de Operación / Referencia (Opcional)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleGenerateRefCode}
+                      className="text-[10px] font-bold text-[#0066FF] hover:underline cursor-pointer"
+                    >
+                      + Generar Código
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={referenceCode}
@@ -680,7 +710,15 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
                   className="hidden"
                 />
 
-                {!previewImage ? (
+                {isCompressingImage ? (
+                  <div className={`border-2 border-dashed rounded-3xl p-6 text-center transition-all flex flex-col items-center justify-center gap-2 ${
+                    isDark ? 'border-[#0066FF]/40 bg-[#0066FF]/5' : 'border-blue-300 bg-blue-50/50'
+                  }`}>
+                    <div className="w-10 h-10 border-3 border-[#0066FF] border-t-transparent rounded-full animate-spin" />
+                    <p className="text-xs font-bold text-[#0066FF] mt-1">Optimizando y procesando comprobante...</p>
+                    <p className="text-[11px] text-zinc-400">Comprimiendo imagen en tiempo real para carga instantánea</p>
+                  </div>
+                ) : !previewImage ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group ${
@@ -689,22 +727,22 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
                         : 'border-[#CBD5E1] hover:border-[#0066FF] bg-slate-50 hover:bg-blue-50/50'
                     }`}
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-[#0066FF]/10 text-[#0066FF] flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 rounded-2xl bg-[#0066FF]/10 text-[#0066FF] flex items-center justify-center group-hover:scale-110 transition-transform shadow-xs">
                       <Upload className="w-6 h-6" />
                     </div>
                     <p className="text-xs font-bold mt-1">
                       Haz clic para subir o arrastrar la captura de tu pago
                     </p>
                     <p className={`text-[11px] ${isDark ? 'text-[#8E8E93]' : 'text-[#64748B]'}`}>
-                      Formatos soportados: JPG, PNG, WEBP (hasta 15MB)
+                      Formatos soportados: JPG, PNG, WEBP (optimización automática para móvil y web)
                     </p>
                   </div>
                 ) : (
-                  <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
-                    isDark ? 'bg-black/60 border-[#1E1E24]' : 'bg-slate-50 border-[#E2E8F0]'
+                  <div className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
+                    isDark ? 'bg-black/60 border-white/10' : 'bg-slate-50 border-slate-200'
                   }`}>
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0 border border-white/10">
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-black">
                         <img 
                           src={previewImage} 
                           alt="Previsualización de comprobante" 
@@ -713,8 +751,8 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-bold truncate">{fileName || 'comprobante_captura.jpg'}</p>
-                        <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Imagen cargada correctamente
+                        <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Comprobante listo {fileSizeKb ? `(${fileSizeKb} KB)` : ''}
                         </p>
                       </div>
                     </div>
@@ -723,8 +761,8 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
-                          isDark ? 'border-[#2A2A34] hover:bg-white/10' : 'border-[#CBD5E1] hover:bg-slate-200'
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                          isDark ? 'border-white/10 hover:bg-white/10' : 'border-slate-300 hover:bg-slate-200'
                         }`}
                       >
                         Cambiar
@@ -734,8 +772,9 @@ export const ReceiptsScreen: React.FC<ReceiptsScreenProps> = ({
                         onClick={() => {
                           setPreviewImage(null);
                           setFileName('');
+                          setFileSizeKb(null);
                         }}
-                        className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition-colors"
+                        className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition-colors cursor-pointer"
                         title="Quitar imagen"
                       >
                         <Trash2 className="w-4 h-4" />

@@ -1501,13 +1501,15 @@ async function saveReceiptToFirestoreREST(rec: any, allReceipts?: any[]): Promis
   }
 }
 
-async function deleteReceiptFromFirestoreREST(receiptId: string): Promise<boolean> {
+async function deleteReceiptFromFirestoreREST(receiptId: string, customList?: any[]): Promise<boolean> {
   if (isServerFirestoreQuotaExhausted()) return false;
   try {
+    addDeletedReceiptId(receiptId);
     await serverFirestoreFetch(`/payment_receipts/${encodeURIComponent(String(receiptId))}`, {
       method: 'DELETE',
     });
-    await saveReceiptsRegistryToFirestoreREST(readReceipts());
+    const currentList = customList || readReceipts().filter((r: any) => r.id !== receiptId);
+    await saveReceiptsRegistryToFirestoreREST(currentList, Array.from(readDeletedReceiptIds()));
     return true;
   } catch {
     return false;
@@ -1614,6 +1616,36 @@ app.get('/api/vault/receipts/:id/image', async (req, res) => {
   }
 });
 
+// POST /api/vault/receipts/upload-image - Upload receipt screenshot directly to disk
+app.post('/api/vault/receipts/upload-image', uploadMiddleware.single('image') as any, (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'No se recibió ninguna imagen' });
+    }
+    const rawId = req.body?.receiptId || req.query?.receiptId || `rec-${Date.now()}`;
+    const safeId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, '');
+
+    // Move or save to receipt_${safeId}.bin
+    const binPath = path.join(UPLOADS_DIR, `receipt_${safeId}.bin`);
+    const metaPath = path.join(UPLOADS_DIR, `receipt_${safeId}.meta.json`);
+
+    fs.copyFileSync(file.path, binPath);
+    const mimeType = file.mimetype || 'image/jpeg';
+    fs.writeFileSync(metaPath, JSON.stringify({ mimeType, originalName: file.originalname, size: file.size }), 'utf-8');
+
+    const imageUrl = `/api/vault/receipts/${encodeURIComponent(safeId)}/image`;
+    return res.json({
+      success: true,
+      receiptId: safeId,
+      imageUrl,
+      size: file.size,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/vault/receipts - Fetch all payment receipts (Merged from Server File + Firestore REST)
 app.get('/api/vault/receipts', async (_req, res) => {
   try {
@@ -1639,10 +1671,11 @@ app.get('/api/vault/receipts', async (_req, res) => {
     );
 
     writeReceipts(merged);
-    return res.json({ success: true, receipts: merged, total: merged.length });
+    return res.json({ success: true, receipts: merged, deletedIds: Array.from(deletedSet), total: merged.length });
   } catch (err: any) {
-    const localReceipts = readReceipts();
-    return res.json({ success: true, receipts: localReceipts, total: localReceipts.length });
+    const deletedSet = readDeletedReceiptIds();
+    const localReceipts = readReceipts().filter((r: any) => r && r.id && !deletedSet.has(r.id));
+    return res.json({ success: true, receipts: localReceipts, deletedIds: Array.from(deletedSet), total: localReceipts.length });
   }
 });
 
@@ -1690,7 +1723,14 @@ app.post('/api/vault/receipts', async (req, res) => {
 // POST /api/vault/receipts/sync - Two-way batch sync of receipts between Client, Server, and Firestore
 app.post('/api/vault/receipts/sync', async (req, res) => {
   try {
-    const { receipts: incomingReceipts } = req.body;
+    const { receipts: incomingReceipts, deletedIds: incomingDeletedIds } = req.body;
+    if (Array.isArray(incomingDeletedIds)) {
+      for (const delId of incomingDeletedIds) {
+        if (typeof delId === 'string' && delId.trim()) {
+          addDeletedReceiptId(delId.trim());
+        }
+      }
+    }
     const deletedSet = readDeletedReceiptIds();
     const localReceipts = readReceipts();
     const firestoreReceipts = await fetchAllReceiptsFromFirestoreREST();
@@ -1747,7 +1787,7 @@ app.post('/api/vault/receipts/sync', async (req, res) => {
   }
 });
 
-// PATCH /api/vault/receipts/:id/status - Update approval status (Admin)
+// PATCH /api/vault/receipts/:id/status - Update approval status and immediately delete from approvals queue (Admin)
 app.patch('/api/vault/receipts/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
@@ -1773,11 +1813,7 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
       }
     }
 
-    if (targetIndex < 0) {
-      return res.status(404).json({ success: false, error: 'Comprobante no encontrado' });
-    }
-
-    const target = currentReceipts[targetIndex];
+    const target = targetIndex >= 0 ? currentReceipts[targetIndex] : fullReceipt || { id, amount: 1, plan: 'monthly' };
     const now = new Date();
     const nowIso = now.toISOString();
 
@@ -1807,11 +1843,11 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
       membershipExpiresAt: status === 'approved' ? expiresIso : undefined,
     };
 
-    // Borrar el comprobante de la lista de aprobaciones activas inmediatamente
+    // ELIMINAR el comprobante de la lista de aprobaciones activas inmediatamente como se requiere
     addDeletedReceiptId(id);
     const updatedReceiptsList = currentReceipts.filter((r) => r.id !== id);
     writeReceipts(updatedReceiptsList);
-    deleteReceiptFromFirestoreREST(id).catch(() => {});
+    await deleteReceiptFromFirestoreREST(id, updatedReceiptsList);
 
     // Also update the user's membership in users.json + Firestore immediately according to the receipt amount
     try {
@@ -1876,13 +1912,19 @@ app.patch('/api/vault/receipts/:id/status', async (req, res) => {
       console.warn('Error updating user membership on receipt status change:', userUpdateErr);
     }
 
-    return res.json({ success: true, deletedId: id, receipt: updated, receipts: updatedReceiptsList });
+    return res.json({
+      success: true,
+      deletedId: id,
+      deletedIds: Array.from(readDeletedReceiptIds()),
+      receipt: updated,
+      receipts: updatedReceiptsList,
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// DELETE /api/vault/receipts/:id - Delete receipt
+// DELETE /api/vault/receipts/:id - Delete receipt and purge permanently
 app.delete('/api/vault/receipts/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -1890,8 +1932,13 @@ app.delete('/api/vault/receipts/:id', async (req, res) => {
     const currentReceipts = readReceipts();
     const updated = currentReceipts.filter((r) => r.id !== id);
     writeReceipts(updated);
-    await deleteReceiptFromFirestoreREST(id);
-    return res.json({ success: true, deletedId: id, receipts: updated });
+    await deleteReceiptFromFirestoreREST(id, updated);
+    return res.json({
+      success: true,
+      deletedId: id,
+      deletedIds: Array.from(readDeletedReceiptIds()),
+      receipts: updated,
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -2373,14 +2420,15 @@ async function startServer() {
       }
       writeRegisteredUsersMap(mergedUsers);
 
+      const deletedReceiptSet = readDeletedReceiptIds();
       const localReceipts = readReceipts();
       const cloudReceipts = await fetchAllReceiptsFromFirestoreREST();
       const receiptMap = new Map<string, any>();
       for (const r of localReceipts) {
-        if (r && r.id) receiptMap.set(r.id, r);
+        if (r && r.id && !deletedReceiptSet.has(r.id)) receiptMap.set(r.id, r);
       }
       for (const r of cloudReceipts) {
-        if (r && r.id) receiptMap.set(r.id, mergeReceiptRecords(receiptMap.get(r.id), r));
+        if (r && r.id && !deletedReceiptSet.has(r.id)) receiptMap.set(r.id, mergeReceiptRecords(receiptMap.get(r.id), r));
       }
       const mergedReceipts = Array.from(receiptMap.values());
       writeReceipts(mergedReceipts);

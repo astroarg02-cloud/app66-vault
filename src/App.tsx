@@ -992,21 +992,30 @@ function AppContent() {
 
   return (
     <div
-      className={`h-[100dvh] max-h-[100dvh] w-full flex flex-col font-sans overflow-hidden select-none ${
+      className={`h-[100dvh] max-h-[100dvh] w-full flex flex-col font-sans overflow-hidden select-none relative ${
         isDark
-          ? 'bg-black text-white selection:bg-[#0066FF] selection:text-white'
+          ? 'bg-[#060709] text-white selection:bg-[#0066FF] selection:text-white'
           : 'bg-[#F8FAFC] text-[#0F172A] selection:bg-[#0066FF] selection:text-white'
       }`}
     >
+      {/* Ambient background glows for high-end luxury dark aesthetic */}
+      {isDark && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
+          <div className="absolute -top-40 left-1/4 w-96 h-96 bg-[#0066FF]/10 rounded-full blur-3xl opacity-60" />
+          <div className="absolute top-1/3 -right-24 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl opacity-40" />
+          <div className="absolute -bottom-24 left-1/3 w-96 h-96 bg-indigo-600/8 rounded-full blur-3xl opacity-50" />
+        </div>
+      )}
+
       {/* Top Header Bar for Private Server */}
       <header
-        className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 pt-[max(0.6rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] border-b backdrop-blur-2xl transition-all ${
+        className={`shrink-0 z-40 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 pt-[max(0.6rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] border-b backdrop-blur-2xl transition-all relative ${
           isDark
-            ? 'border-white/[0.08] bg-black/85 shadow-[0_4px_30px_rgba(0,0,0,0.85)]'
-            : 'border-slate-200/90 bg-white/90 shadow-[0_4px_20px_rgba(0,0,0,0.06)]'
+            ? 'border-white/[0.08] bg-[#07080B]/90 shadow-[0_8px_32px_rgba(0,0,0,0.85)] ring-1 ring-inset ring-white/[0.04]'
+            : 'border-slate-200/90 bg-white/95 shadow-[0_4px_24px_rgba(0,0,0,0.06)]'
         }`}
       >
-        <div className="w-full flex items-center justify-between gap-2 sm:gap-4">
+        <div className="w-full flex items-center justify-between gap-2 sm:gap-4 relative z-10">
           {/* Brand & Logo */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <motion.div 
@@ -1018,19 +1027,19 @@ function AppContent() {
                   setVaultTabMode('collections');
                 }
               }}
-              className="relative w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-xl bg-gradient-to-br from-[#0066FF] to-blue-700 flex items-center justify-center shadow-lg shadow-[#0066FF]/35 text-white shrink-0 cursor-pointer border border-white/20"
+              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-[#0066FF] via-[#0055D4] to-blue-900 flex items-center justify-center shadow-lg shadow-[#0066FF]/35 text-white shrink-0 cursor-pointer border border-blue-400/30 ring-1 ring-inset ring-white/20"
             >
-              <ShieldCheck className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
-              <div className="absolute inset-0 rounded-xl bg-white/15 opacity-0 hover:opacity-100 transition-opacity" />
+              <ShieldCheck className="w-5 h-5 text-white" />
+              <div className="absolute inset-0 rounded-2xl bg-white/15 opacity-0 hover:opacity-100 transition-opacity" />
             </motion.div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 sm:gap-2.5">
-                <h1 className="text-sm sm:text-base lg:text-lg font-black tracking-tight leading-none truncate bg-gradient-to-r from-white via-white to-slate-300 dark:from-white dark:to-slate-300 bg-clip-text">
-                  App 66
+                <h1 className="text-sm sm:text-base lg:text-lg font-black tracking-tight leading-none truncate bg-gradient-to-r from-white via-zinc-100 to-zinc-300 dark:from-white dark:to-zinc-300 bg-clip-text">
+                  Vault 66
                 </h1>
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[8.5px] sm:text-[9.5px] font-black uppercase bg-[#0066FF]/15 text-[#0066FF] border border-[#0066FF]/30 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>SERVIDOR PRIVADO</span>
+                <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[8.5px] sm:text-[9.5px] font-black uppercase bg-[#0066FF]/15 text-blue-400 border border-[#0066FF]/30 shrink-0 shadow-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
+                  <span>SERVIDOR EN LÍNEA</span>
                 </div>
                 {isSupabaseConfigured && (
                   <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
@@ -1038,6 +1047,9 @@ function AppContent() {
                   </span>
                 )}
               </div>
+              <p className="text-[10px] text-zinc-400 font-mono tracking-tight hidden sm:block mt-0.5">
+                Nube Privada • Flutter & Firebase Hub
+              </p>
             </div>
           </div>
 
