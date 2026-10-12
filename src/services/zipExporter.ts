@@ -307,6 +307,7 @@ export async function exportViteAndroidProjectZip(): Promise<boolean> {
     const zip = new JSZip();
     let capacitorConfig = '';
     let packageJson = '';
+    let packageLock = '';
     let workflowYml = '';
     let configureScript = '';
     let viteConfig = '';
@@ -317,6 +318,7 @@ export async function exportViteAndroidProjectZip(): Promise<boolean> {
         const data = await res.json();
         capacitorConfig = data.capacitorConfig || '';
         packageJson = data.packageJson || '';
+        packageLock = data.packageLock || '';
         workflowYml = data.workflowYml || '';
         configureScript = data.configureScript || '';
         viteConfig = data.viteConfig || '';
@@ -325,6 +327,7 @@ export async function exportViteAndroidProjectZip(): Promise<boolean> {
 
     if (capacitorConfig) zip.file('capacitor.config.json', capacitorConfig);
     if (packageJson) zip.file('package.json', packageJson);
+    if (packageLock) zip.file('package-lock.json', packageLock);
     if (workflowYml) zip.file('.github/workflows/build-android.yml', workflowYml);
     if (configureScript) zip.file('scripts/configure-android.cjs', configureScript);
     if (viteConfig) zip.file('vite.config.ts', viteConfig);

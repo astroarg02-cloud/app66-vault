@@ -2513,5 +2513,23 @@
       "membershipExpiresAt": "2026-11-11T15:52:06.230Z",
       "lastPaymentAmount": 1
     }
+  },
+  "usuario_prueba@test.com": {
+    "email": "usuario_prueba@test.com",
+    "password": "password123",
+    "registeredAt": "2026-10-12T15:57:33.004Z",
+    "profile": {
+      "uid": "test_user_abc",
+      "email": "usuario_prueba@test.com",
+      "displayName": "Usuario Prueba",
+      "role": "vip_member",
+      "joinedAt": "2026-10-12",
+      "membershipPlan": "monthly",
+      "membershipStatus": "active",
+      "tier": "Acceso VIP",
+      "subscribedAt": "2026-10-12T15:57:33.004Z",
+      "membershipExpiresAt": "2026-11-11T15:57:33.004Z",
+      "lastPaymentAmount": 1
+    }
   }
 }
