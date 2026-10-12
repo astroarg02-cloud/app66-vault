@@ -2651,14 +2651,14 @@ export const firebaseService = {
     const cleanMessage = String(message || '').trim();
     const updatedAt = new Date().toISOString();
 
-    // Cache locally immediately so the app reflects state even offline or if Firestore quota is full
+    // Cache locally immediately with timestamp so the app reflects state reliably even offline or across APK restarts
     try {
       localStorage.setItem('vault_maintenance_active', String(isMaintenance));
       if (cleanMessage) localStorage.setItem('vault_maintenance_message', cleanMessage);
+      localStorage.setItem('vault_maintenance_updated_at', updatedAt);
     } catch {}
 
-    if (isFirestoreQuotaExhausted()) return false;
-
+    // Attempt cloud persistence if quota allows (non-blocking)
     try {
       const fields = {
         isMaintenance: { booleanValue: Boolean(isMaintenance) },
@@ -2678,7 +2678,7 @@ export const firebaseService = {
 
   // Fetch Maintenance Mode state from Firestore
   async fetchMaintenance(): Promise<{ isMaintenance: boolean; message: string; updatedAt?: string } | null> {
-    if (isFirestoreQuotaExhausted()) return null;
+    if (isFirestoreReadQuotaExhausted()) return null;
     try {
       const res = await firestoreRestFetch('/system_config/maintenance');
       if (res && res.ok) {

@@ -134,6 +134,36 @@ function AppContent() {
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
 
+  // Helper to safely apply maintenance state based on timestamp priority
+  // Prevents stale cloud data or quota errors from reverting newer local edits
+  const applyMaintenanceStateIfNewer = (remote: { isMaintenance?: boolean; message?: string; updatedAt?: string }): boolean => {
+    if (typeof remote.isMaintenance !== 'boolean') return false;
+    try {
+      const localUpdatedAtStr = localStorage.getItem('vault_maintenance_updated_at');
+      const localTime = localUpdatedAtStr ? new Date(localUpdatedAtStr).getTime() : 0;
+      const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+
+      // If local state has a newer explicit timestamp than remote, do NOT allow stale remote to overwrite it
+      if (localTime > 0 && remoteTime > 0 && remoteTime < localTime) {
+        return false;
+      }
+
+      setIsMaintenanceActive(remote.isMaintenance);
+      localStorage.setItem('vault_maintenance_active', String(remote.isMaintenance));
+      if (remote.message) {
+        setMaintenanceMessage(remote.message);
+        localStorage.setItem('vault_maintenance_message', remote.message);
+      }
+      if (remote.updatedAt) {
+        localStorage.setItem('vault_maintenance_updated_at', remote.updatedAt);
+      }
+      return true;
+    } catch (err) {
+      console.warn('Error applying maintenance state:', err);
+      return false;
+    }
+  };
+
   // Protective guard: only admins can access 'approvals' or the general 'Publicaciones' ('items' without selected collection) section
   useEffect(() => {
     const isAdmin = currentUser?.role === 'admin';
@@ -261,14 +291,11 @@ function AppContent() {
       firebaseService.reconcileApprovedReceiptsWithUsers(receipts);
     });
 
-    // Real-time Firestore maintenance mode listener
+    // Real-time Firestore maintenance mode listener with timestamp arbitration
     let unsubFirestoreMaintenance = () => {};
     try {
       unsubFirestoreMaintenance = firebaseService.onMaintenanceSnapshot((maint) => {
-        setIsMaintenanceActive(maint.isMaintenance);
-        if (maint.message) setMaintenanceMessage(maint.message);
-        localStorage.setItem('vault_maintenance_active', String(maint.isMaintenance));
-        if (maint.message) localStorage.setItem('vault_maintenance_message', maint.message);
+        applyMaintenanceStateIfNewer(maint);
       });
     } catch (err) {
       console.warn('Notice: Firestore maintenance listener error:', err);
@@ -370,25 +397,14 @@ function AppContent() {
             if (resMaint && resMaint.ok) {
               const maintJson = await resMaint.json();
               if (typeof maintJson.isMaintenance === 'boolean') {
-                setIsMaintenanceActive(maintJson.isMaintenance);
-                localStorage.setItem('vault_maintenance_active', String(maintJson.isMaintenance));
-                if (maintJson.message) {
-                  setMaintenanceMessage(maintJson.message);
-                  localStorage.setItem('vault_maintenance_message', maintJson.message);
-                }
-                syncedMaint = true;
+                syncedMaint = applyMaintenanceStateIfNewer(maintJson);
               }
             }
           }
           if (!syncedMaint) {
             const cloudMaint = await firebaseService.fetchMaintenance().catch(() => null);
             if (cloudMaint && typeof cloudMaint.isMaintenance === 'boolean') {
-              setIsMaintenanceActive(cloudMaint.isMaintenance);
-              localStorage.setItem('vault_maintenance_active', String(cloudMaint.isMaintenance));
-              if (cloudMaint.message) {
-                setMaintenanceMessage(cloudMaint.message);
-                localStorage.setItem('vault_maintenance_message', cloudMaint.message);
-              }
+              applyMaintenanceStateIfNewer(cloudMaint);
             }
           }
         } catch (maintErr) {
@@ -423,25 +439,15 @@ function AppContent() {
 
         // Also poll maintenance state in background
         if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
-          safeFetchJson<{ success?: boolean; isMaintenance?: boolean; message?: string }>('/api/maintenance', {}, 2000).then((maint) => {
+          safeFetchJson<{ success?: boolean; isMaintenance?: boolean; message?: string; updatedAt?: string }>('/api/maintenance', {}, 2000).then((maint) => {
             if (maint && typeof maint.isMaintenance === 'boolean') {
-              setIsMaintenanceActive(maint.isMaintenance);
-              localStorage.setItem('vault_maintenance_active', String(maint.isMaintenance));
-              if (maint.message) {
-                setMaintenanceMessage(maint.message);
-                localStorage.setItem('vault_maintenance_message', maint.message);
-              }
+              applyMaintenanceStateIfNewer(maint);
             }
           }).catch(() => {});
         } else {
           firebaseService.fetchMaintenance().then((cloudMaint) => {
             if (cloudMaint && typeof cloudMaint.isMaintenance === 'boolean') {
-              setIsMaintenanceActive(cloudMaint.isMaintenance);
-              localStorage.setItem('vault_maintenance_active', String(cloudMaint.isMaintenance));
-              if (cloudMaint.message) {
-                setMaintenanceMessage(cloudMaint.message);
-                localStorage.setItem('vault_maintenance_message', cloudMaint.message);
-              }
+              applyMaintenanceStateIfNewer(cloudMaint);
             }
           }).catch(() => {});
         }
@@ -522,12 +528,16 @@ function AppContent() {
 
   const handleSaveMaintenance = async (newStatus: boolean, newMessage: string): Promise<boolean> => {
     const cleanMsg = newMessage.trim();
+    const nowIso = new Date().toISOString();
 
-    // 1. Immediately update local state and localStorage so the UI updates with zero delay
+    // 1. Immediately update local state and localStorage with timestamp so state persists reliably across APK restarts
     setIsMaintenanceActive(newStatus);
     if (cleanMsg) setMaintenanceMessage(cleanMsg);
-    localStorage.setItem('vault_maintenance_active', String(newStatus));
-    if (cleanMsg) localStorage.setItem('vault_maintenance_message', cleanMsg);
+    try {
+      localStorage.setItem('vault_maintenance_active', String(newStatus));
+      if (cleanMsg) localStorage.setItem('vault_maintenance_message', cleanMsg);
+      localStorage.setItem('vault_maintenance_updated_at', nowIso);
+    } catch {}
 
     // 2. Save directly to Firebase Firestore for real-time propagation across browsers/devices
     try {
@@ -546,6 +556,7 @@ function AppContent() {
             isMaintenance: newStatus,
             message: cleanMsg,
             adminKey: ADMIN_SECURITY_KEY,
+            updatedAt: nowIso,
           }),
         }, 2500);
       } catch (err) {
@@ -1017,13 +1028,13 @@ function AppContent() {
                 onClick={() => setShowMaintenanceModal(true)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                   isMaintenanceActive
-                    ? 'bg-amber-500/15 border-amber-500/35 text-amber-500 dark:text-amber-400 hover:bg-amber-500/25 shadow-sm'
+                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-500 dark:text-amber-400 hover:bg-amber-500/30 shadow-sm'
                     : 'bg-black/5 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
                 title="Configurar Modo Mantenimiento"
               >
                 <Wrench className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden md:inline">Mantenimiento:</span>
+                <span className="inline">Mantenimiento:</span>
                 <span className={isMaintenanceActive ? 'font-black text-amber-500 dark:text-amber-400' : 'font-semibold text-slate-400'}>
                   {isMaintenanceActive ? 'ON' : 'OFF'}
                 </span>
@@ -1112,6 +1123,36 @@ function AppContent() {
           </div>
         </div>
       </header>
+
+      {/* Admin Notice Banner when Maintenance Mode is Active */}
+      {isMaintenanceActive && currentUser?.role === 'admin' && (
+        <aside 
+          aria-label="Aviso de Modo Mantenimiento"
+          className="bg-amber-500/15 border-b border-amber-500/30 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 z-30 shadow-inner"
+        >
+          <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-amber-500 dark:text-amber-400">
+            <Wrench className="w-4 h-4 shrink-0 animate-spin [animation-duration:8s]" />
+            <span>
+              <strong>Modo Mantenimiento ACTIVO:</strong> El acceso está bloqueado para visitantes y miembros normales. Como administrador tienes acceso total.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-xs shrink-0 ml-auto">
+            <button
+              onClick={() => setShowMaintenanceModal(true)}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-600 dark:text-amber-300 font-bold transition-all cursor-pointer border border-amber-500/30"
+            >
+              Configurar
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-500 dark:text-red-400 font-bold transition-all cursor-pointer border border-red-500/30"
+              title="Cerrar sesión para ver la pantalla de mantenimiento como visitante"
+            >
+              Ver como visitante
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* Main Content Area: Always 100% full-bleed edge-to-edge */}
       <main className="flex-1 w-full p-0 m-0 overflow-hidden flex flex-col min-h-0">

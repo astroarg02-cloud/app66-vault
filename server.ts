@@ -632,7 +632,7 @@ const handlePostMaintenance = async (req: express.Request, res: express.Response
     const updated: MaintenanceState = {
       isMaintenance: typeof isMaintenance === 'boolean' ? isMaintenance : current.isMaintenance,
       message: typeof message === 'string' && message.trim() ? message.trim() : current.message,
-      updatedAt: new Date().toISOString(),
+      updatedAt: typeof req.body.updatedAt === 'string' && req.body.updatedAt.trim() ? req.body.updatedAt.trim() : new Date().toISOString(),
     };
     writeMaintenanceState(updated);
     
