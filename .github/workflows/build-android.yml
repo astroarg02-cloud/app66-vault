@@ -1,4 +1,4 @@
-name: Compilar App Web con Vite (Node 22)
+name: Generar APK de Android (Vite + Capacitor)
 
 on:
   push:
@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-web:
-    name: Compilar App Web con Vite
+  build-apk:
+    name: Compilar APK Android desde Vite
     runs-on: ubuntu-latest
 
     steps:
@@ -19,38 +19,82 @@ jobs:
         with:
           node-version: 22
 
-      - name: 3. Instalar dependencias npm
+      - name: 3. Configurar Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 4. Instalar dependencias npm
         run: |
           npm install --legacy-peer-deps
 
-      - name: 4. Compilar App Web con Vite
+      - name: 5. Compilar Frontend Web con Vite
         run: |
           npm run build
 
-      - name: 5. Preparar paquete ZIP de producción
+      - name: 6. Sincronizar plataforma Android con Capacitor
+        run: |
+          if [ ! -d "android" ]; then
+            echo "Directorio android no encontrado, agregando plataforma Android..."
+            npx cap add android
+          else
+            echo "Directorio android encontrado, sincronizando assets..."
+            npx cap sync android
+          fi
+
+      - name: 7. Aplicar configuración AMOLED #000000 y correcciones Gradle
+        run: |
+          node scripts/configure-android.cjs
+
+      - name: 8. Aceptar licencias del SDK de Android
+        run: |
+          echo "Aceptando licencias del Android SDK preinstalado en ubuntu-latest..."
+          mkdir -p "$ANDROID_HOME/licenses" || true
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null || true
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null || true
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" >> "$ANDROID_HOME/licenses/android-sdk-preview-license" 2>/dev/null || true
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
+
+      - name: 9. Compilar APK Nativa con Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 10. Preparar archivo APK final
         run: |
           mkdir -p build-output
-          cd dist
-          zip -r ../build-output/Seis6_App_Web_Production.zip .
-          cd ..
-          echo "Archivos generados en dist/:"
-          ls -lh dist/
+          APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          if [ -z "$APK_FOUND" ]; then
+            APK_FOUND=$(find android/ -name "*.apk" -type f | head -n 1)
+          fi
+          if [ -z "$APK_FOUND" ]; then
+            echo "ERROR: No se encontró ningún archivo APK generado por Gradle."
+            exit 1
+          fi
+          echo "APK encontrada en: $APK_FOUND"
+          cp "$APK_FOUND" build-output/Seis6_App_v1.0.apk
+          cp "$APK_FOUND" build-output/Seis6_Vault_v1.0.apk
+          echo "Archivos preparados en build-output/:"
           ls -lh build-output/
 
-      - name: 6. Subir artefactos web compilados
+      - name: 11. Subir APK lista para instalar en cualquier Android
         uses: actions/upload-artifact@v4
         with:
-          name: Seis6-App-Web-Vite
+          name: Seis6-App-APK
           path: |
-            dist/
-            build-output/*.zip
+            build-output/*.apk
+            android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: 7. Resumen de compilación
+      - name: 12. Resumen de compilación
         run: |
-          echo "### 🎉 ¡App Web Compilada con Éxito con Vite!" >> $GITHUB_STEP_SUMMARY
-          echo "- **Motor:** Vite + React + TypeScript + Tailwind CSS" >> $GITHUB_STEP_SUMMARY
-          echo "- **Entorno:** Node.js 22" >> $GITHUB_STEP_SUMMARY
-          echo "- **Modo Móvil / PWA:** Standalone AMOLED (#000000) Edge-to-Edge" >> $GITHUB_STEP_SUMMARY
-          echo "- **Salida:** \`dist/\` y \`Seis6_App_Web_Production.zip\` listos para despliegue." >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 ¡APK Compilada con Éxito desde Vite!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Motor:** Vite + React + Capacitor Nativo" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node.js:** v22" >> $GITHUB_STEP_SUMMARY
+          echo "- **Java:** JDK 21" >> $GITHUB_STEP_SUMMARY
+          echo "- **Android:** Target Android 14 (API 34) / Compile SDK 36" >> $GITHUB_STEP_SUMMARY
+          echo "- **Diseño:** 100% AMOLED Dark (#000000) Edge-to-Edge" >> $GITHUB_STEP_SUMMARY
+          echo "- **Archivos:** \`Seis6_App_v1.0.apk\` y \`Seis6_Vault_v1.0.apk\` disponibles para descarga en Artifacts." >> $GITHUB_STEP_SUMMARY
