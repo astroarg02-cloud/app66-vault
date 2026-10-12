@@ -327,7 +327,7 @@ export const AdminUploadModal: React.FC<AdminUploadModalProps> = ({ isOpen, onCl
         }
       }
 
-      if (finalDownloadUrl.startsWith('blob:') || finalDownloadUrl.includes('vercel.app')) {
+      if (finalDownloadUrl.startsWith('blob:')) {
         finalDownloadUrl = `/api/vault/download/${encodeURIComponent(tempItemId)}`;
       }
 

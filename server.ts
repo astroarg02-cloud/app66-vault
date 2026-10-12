@@ -27,7 +27,7 @@ const FIRESTORE_DB_ID = (rawFirebaseConfig as any).firestoreDatabaseId || '(defa
 const FIRESTORE_API_KEY = (rawFirebaseConfig as any).apiKey || '';
 const FIRESTORE_DOCS_BASE = `https://firestore.googleapis.com/v1/projects/${rawFirebaseConfig.projectId}/databases/${encodeURIComponent(FIRESTORE_DB_ID)}/documents`;
 
-// Allow cross-origin requests from deployed clients (Vercel / APK / Shared URL)
+// Allow cross-origin requests from deployed clients (APK / Web / Shared URL)
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');

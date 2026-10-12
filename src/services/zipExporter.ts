@@ -118,7 +118,6 @@ export async function downloadVaultItemResource(item: VaultItem): Promise<boolea
     if (
       item.downloadUrl &&
       (item.downloadUrl.startsWith('http://') || item.downloadUrl.startsWith('https://')) &&
-      !item.downloadUrl.includes('vercel.app') &&
       !item.downloadUrl.includes('localhost') &&
       !item.downloadUrl.startsWith('blob:http')
     ) {

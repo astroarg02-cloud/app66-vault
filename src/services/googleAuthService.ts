@@ -47,7 +47,7 @@ export interface GoogleUserInfo {
 export const googleAuthService = {
   /**
    * Initializes and triggers Google Authentication.
-   * Handles Google Identity Services (GSI), direct OAuth popups, and safe fallback for unauthorized domains like Vercel.
+   * Handles Google Identity Services (GSI), direct OAuth popups, and safe fallback for unauthorized domains.
    */
   async triggerGoogleLogin(): Promise<UserProfile> {
     return new Promise(async (resolve, reject) => {
@@ -108,12 +108,11 @@ export const googleAuthService = {
   },
 
   /**
-   * Fallback for custom domains (e.g. Vercel deployment) when Google OAuth origin restriction triggers
+   * Fallback for custom domains when Google OAuth origin restriction triggers
    */
   fallbackGoogleLogin(resolve: (user: UserProfile) => void, reject: (reason?: any) => void) {
     try {
-      // In production/Vercel where the client ID might lack the specific preview domain in Google Console,
-      // provide instant Google VIP entry so users never get blocked by "origin_mismatch" or "redirect_uri_mismatch"
+      // Provide instant Google VIP entry so users never get blocked by "origin_mismatch" or "redirect_uri_mismatch"
       const stored = typeof window !== 'undefined' ? localStorage.getItem('app66_last_google_user') : null;
       let existingEmail = 'usuario.vip@gmail.com';
       let existingName = 'Miembro Google VIP';

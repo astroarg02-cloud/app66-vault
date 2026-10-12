@@ -34,7 +34,7 @@ try {
   setLogLevel('silent');
 } catch {}
 
-// Configuración de Firebase que prioriza las variables de Vercel/Vite y usa el config local de respaldo
+// Configuración de Firebase que prioriza las variables de entorno de Vite y usa el config local de respaldo
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || rawFirebaseConfig.apiKey,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || rawFirebaseConfig.authDomain,
@@ -88,7 +88,7 @@ export function getRemoteServerBaseUrl(): string {
   return '';
 }
 
-// Resolves API URLs without hardcoded obsolete domains or Vercel dependencies
+// Resolves API URLs cleanly without hardcoded domains
 export function resolveApiUrl(path: string): string {
   if (!path.startsWith('/')) return path;
   try {
