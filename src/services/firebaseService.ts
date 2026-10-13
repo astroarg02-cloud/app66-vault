@@ -51,15 +51,16 @@ export const firestoreDatabaseId: string =
 
 export const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents`;
 
-// Helper to detect if running inside Capacitor native container or file:// protocol without local HTTP server
+// Helper to detect if running inside Capacitor native container or file:// protocol without external HTTP server
 export function isStandaloneApp(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const { protocol } = window.location;
+    const { protocol, hostname, port } = window.location;
     const isCapacitorNative = (window as any).Capacitor?.isNativePlatform ? (window as any).Capacitor.isNativePlatform() : false;
     const isLocalScheme = protocol === 'capacitor:' || protocol === 'file:' || protocol === 'ionic:' || protocol === 'content:';
+    const isCapacitorLocalHost = (hostname === 'localhost' || hostname === '127.0.0.1') && (!port || port === '80' || port === '443');
 
-    return Boolean(isCapacitorNative || isLocalScheme);
+    return Boolean(isCapacitorNative || isLocalScheme || isCapacitorLocalHost || (window as any).Capacitor);
   } catch {
     return false;
   }

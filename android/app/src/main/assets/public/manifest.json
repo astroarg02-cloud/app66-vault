@@ -1,0 +1,17 @@
+{
+  "short_name": "Seis6 Vault",
+  "name": "Seis6 Vault - Private Mobile Hub",
+  "description": "Bóveda de contenido exclusivo para Android e iOS con diseño AMOLED",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "display": "standalone",
+  "orientation": "portrait"
+}

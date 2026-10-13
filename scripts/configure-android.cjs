@@ -293,16 +293,16 @@ if (fs.existsSync(manifestPath)) {
   console.log('✓ Updated AndroidManifest.xml');
 }
 
-// 7. Auto-heal android/variables.gradle (compileSdkVersion 36, targetSdkVersion 36, Java 21 compatible)
+// 7. Auto-heal android/variables.gradle (compileSdkVersion 34, targetSdkVersion 34, Android 14, Java 21 compatible)
 const androidRootDir = path.resolve(mainDir, '../../..');
 const variablesGradlePath = path.join(androidRootDir, 'variables.gradle');
 if (fs.existsSync(variablesGradlePath)) {
   let vGradle = fs.readFileSync(variablesGradlePath, 'utf8');
-  vGradle = vGradle.replace(/compileSdkVersion\s*=\s*\d+/, 'compileSdkVersion = 36');
+  vGradle = vGradle.replace(/compileSdkVersion\s*=\s*\d+/, 'compileSdkVersion = 34');
   vGradle = vGradle.replace(/targetSdkVersion\s*=\s*\d+/, 'targetSdkVersion = 34');
   vGradle = vGradle.replace(/cordovaAndroidVersion\s*=\s*['"][^'"]+['"]/, "cordovaAndroidVersion = '14.0.1'");
   fs.writeFileSync(variablesGradlePath, vGradle, 'utf8');
-  console.log('✓ Ensured compileSdkVersion 36 and targetSdkVersion 34 (Android 14) in variables.gradle');
+  console.log('✓ Ensured compileSdkVersion 34 and targetSdkVersion 34 (Android 14) in variables.gradle');
 }
 
 // 8. Auto-heal android/gradle.properties
