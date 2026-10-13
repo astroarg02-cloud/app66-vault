@@ -27,12 +27,14 @@ jobs:
 
       - name: 3. Compilar aplicación web e integrar en Capacitor (Sin depender de Vercel)
         run: |
-          npm install
+          npm install --legacy-peer-deps
           npm run build
           mkdir -p cap-app
           cp -r dist cap-app/dist
           cd cap-app
-          npm init -y
+          if [ ! -f "package.json" ]; then
+            npm init -y
+          fi
           npm install @capacitor/core @capacitor/cli @capacitor/android
           cat << 'EOF' > capacitor.config.json
           {
@@ -45,7 +47,9 @@ jobs:
             }
           }
           EOF
-          npx cap add android
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
           npx cap sync android
 
       - name: 4. Aplicar configuración AMOLED #000000 y correcciones Gradle
@@ -62,7 +66,7 @@ jobs:
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null || true
           echo "84831b9409646a918e30573bab4c9c91346d8abd" >> "$ANDROID_HOME/licenses/android-sdk-preview-license" 2>/dev/null || true
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "platforms;android-35" "platforms;android-36" 2>/dev/null || true
 
       - name: 6. Compilar APK Nativa con Gradle
         run: |
