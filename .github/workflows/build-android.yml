@@ -9,6 +9,7 @@ jobs:
   build-apk:
     name: Compilar APK Android desde Vite
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: 1. Descargar código del repositorio
@@ -56,17 +57,18 @@ jobs:
         run: |
           node scripts/configure-android.cjs
 
-      - name: 5. Aceptar licencias y verificar Android SDK 36 (Android 16) y 35 (Android 15)
+      - name: 5. Aceptar licencias de Android SDK sin bloqueos
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          echo "Android SDK ubicado en: $ANDROID_HOME"
-          mkdir -p "$ANDROID_HOME/licenses" || true
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null || true
-          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null || true
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" >> "$ANDROID_HOME/licenses/android-sdk-preview-license" 2>/dev/null || true
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platforms;android-35" "build-tools;35.0.0" "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
+          echo "Android SDK detectado en: $ANDROID_HOME"
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\ne679f4ae0925e0c598285ab3fbe3f6050b1d84a7\n8933bad161af4178b1185d1a37fbf41ea5269c55\n" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf "84831b9409646a918e30573bab4c9c91346d8abd\n799480906511405d0413d57b7e73d97f766d0f38\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          printf "601085b94cd77f6b54b86e0463cc038448940544\n" > "$ANDROID_HOME/licenses/android-googletv-license"
+          printf "33b6aa53a34e79ad150074555804441198f216e0\n" > "$ANDROID_HOME/licenses/google-gdk-license"
+          printf "e9acab583f1529a49c12474666d3c3957e243ce3\n" > "$ANDROID_HOME/licenses/mips-android-sysimage-license"
+          echo "✓ Licencias Android SDK aprobadas exitosamente."
 
       - name: 6. Compilar APK Nativa con Gradle
         run: |
