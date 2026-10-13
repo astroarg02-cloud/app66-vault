@@ -56,7 +56,7 @@ jobs:
         run: |
           node scripts/configure-android.cjs
 
-      - name: 5. Aceptar licencias y verificar Android SDK 35 (Android 15)
+      - name: 5. Aceptar licencias y verificar Android SDK 36 (Android 16) y 35 (Android 15)
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
@@ -66,7 +66,7 @@ jobs:
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null || true
           echo "84831b9409646a918e30573bab4c9c91346d8abd" >> "$ANDROID_HOME/licenses/android-sdk-preview-license" 2>/dev/null || true
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platforms;android-34" 2>/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platforms;android-35" "build-tools;35.0.0" "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
 
       - name: 6. Compilar APK Nativa con Gradle
         run: |
@@ -80,6 +80,7 @@ jobs:
             echo "ERROR: Directorio android no encontrado."
             exit 1
           fi
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
@@ -115,6 +116,6 @@ jobs:
           echo "- **Motor:** Vite + React + Capacitor Nativo" >> $GITHUB_STEP_SUMMARY
           echo "- **Node.js:** v22" >> $GITHUB_STEP_SUMMARY
           echo "- **Java:** JDK 21" >> $GITHUB_STEP_SUMMARY
-          echo "- **Android:** Compile/Target Android 15 (API 35), Min SDK 24" >> $GITHUB_STEP_SUMMARY
+          echo "- **Android:** Compile/Target Android 16/15 (API 36 / API 35), Min SDK 24" >> $GITHUB_STEP_SUMMARY
           echo "- **Diseño:** 100% AMOLED Dark (#000000) Edge-to-Edge" >> $GITHUB_STEP_SUMMARY
           echo "- **Archivos:** \`Seis6_App_v1.0.apk\` y \`Seis6_Vault_v1.0.apk\` disponibles para descarga en Artifacts." >> $GITHUB_STEP_SUMMARY

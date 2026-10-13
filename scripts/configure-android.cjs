@@ -2,29 +2,34 @@
 const fs = require('fs');
 const path = require('path');
 
-// Locate android main directory
-function findAndroidMainDir() {
+// Locate all android main directories
+function findAndroidMainDirs() {
   const candidates = [
     path.resolve(process.cwd(), 'cap-app/android/app/src/main'),
     path.resolve(__dirname, '../cap-app/android/app/src/main'),
     path.resolve(process.cwd(), 'android/app/src/main'),
     path.resolve(__dirname, '../android/app/src/main'),
   ];
+  const found = [];
   for (const c of candidates) {
-    if (fs.existsSync(c)) {
-      return c;
+    if (fs.existsSync(c) && !found.includes(c)) {
+      found.push(c);
     }
   }
-  throw new Error('Android main directory not found. Candidates checked: ' + candidates.join(', '));
+  if (found.length === 0) {
+    throw new Error('Android main directory not found. Candidates checked: ' + candidates.join(', '));
+  }
+  return found;
 }
 
-const mainDir = findAndroidMainDir();
-console.log('Configuring Android styles and MainActivity in:', mainDir);
+const mainDirs = findAndroidMainDirs();
+console.log('Configuring Android styles and MainActivity in:', mainDirs);
 
-const resDir = path.join(mainDir, 'res');
+for (const mainDir of mainDirs) {
+  const resDir = path.join(mainDir, 'res');
 
-// 1. Write colors.xml (Pure black system colors)
-const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
+  // 1. Write colors.xml (Pure black system colors)
+  const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="colorPrimary">#000000</color>
     <color name="colorPrimaryDark">#000000</color>
@@ -32,15 +37,14 @@ const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
 </resources>
 `;
 
-for (const dirName of ['values', 'values-night']) {
-  const dir = path.join(resDir, dirName);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'colors.xml'), colorsXml, 'utf8');
-}
-console.log('✓ Configured colors.xml in values and values-night');
+  for (const dirName of ['values', 'values-night']) {
+    const dir = path.join(resDir, dirName);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'colors.xml'), colorsXml, 'utf8');
+  }
 
-// 2. Base styles.xml
-const baseStylesXml = `<?xml version="1.0" encoding="utf-8"?>
+  // 2. Base styles.xml
+  const baseStylesXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
         <item name="colorPrimary">#000000</item>
@@ -76,15 +80,14 @@ const baseStylesXml = `<?xml version="1.0" encoding="utf-8"?>
 </resources>
 `;
 
-for (const dirName of ['values', 'values-night']) {
-  const dir = path.join(resDir, dirName);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'styles.xml'), baseStylesXml, 'utf8');
-}
-console.log('✓ Configured base styles.xml in values and values-night');
+  for (const dirName of ['values', 'values-night']) {
+    const dir = path.join(resDir, dirName);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'styles.xml'), baseStylesXml, 'utf8');
+  }
 
-// 3. Notch cutout styles for API 28+ (Android 9+)
-const v28StylesXml = `<?xml version="1.0" encoding="utf-8"?>
+  // 3. Notch cutout styles for API 28+ (Android 9+)
+  const v28StylesXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
         <item name="windowActionBar">false</item>
@@ -112,15 +115,14 @@ const v28StylesXml = `<?xml version="1.0" encoding="utf-8"?>
 </resources>
 `;
 
-for (const dirName of ['values-v28', 'values-night-v28']) {
-  const dir = path.join(resDir, dirName);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'styles.xml'), v28StylesXml, 'utf8');
-}
-console.log('✓ Configured cutout notch styles.xml for API 28');
+  for (const dirName of ['values-v28', 'values-night-v28']) {
+    const dir = path.join(resDir, dirName);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'styles.xml'), v28StylesXml, 'utf8');
+  }
 
-// 4. Contrast removal styles for API 29+ (Android 10 - 15+)
-const v29StylesXml = `<?xml version="1.0" encoding="utf-8"?>
+  // 4. Contrast removal styles for API 29+ (Android 10 - 16+)
+  const v29StylesXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
         <item name="windowActionBar">false</item>
@@ -152,15 +154,14 @@ const v29StylesXml = `<?xml version="1.0" encoding="utf-8"?>
 </resources>
 `;
 
-for (const dirName of ['values-v29', 'values-night-v29', 'values-v31', 'values-night-v31']) {
-  const dir = path.join(resDir, dirName);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'styles.xml'), v29StylesXml, 'utf8');
-}
-console.log('✓ Configured contrast-disabled styles.xml for API 29+');
+  for (const dirName of ['values-v29', 'values-night-v29', 'values-v31', 'values-night-v31']) {
+    const dir = path.join(resDir, dirName);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'styles.xml'), v29StylesXml, 'utf8');
+  }
 
-// 5. MainActivity.java
-const mainActivityJava = `package com.seis6.app;
+  // 5. MainActivity.java
+  const mainActivityJava = `package com.seis6.app;
 
 import android.os.Bundle;
 import android.os.Build;
@@ -264,56 +265,56 @@ public class MainActivity extends BridgeActivity {
 }
 `;
 
-const javaDir = path.join(mainDir, 'java/com/seis6/app');
-fs.mkdirSync(javaDir, { recursive: true });
-fs.writeFileSync(path.join(javaDir, 'MainActivity.java'), mainActivityJava, 'utf8');
-console.log('✓ Configured MainActivity.java');
+  const javaDir = path.join(mainDir, 'java/com/seis6/app');
+  fs.mkdirSync(javaDir, { recursive: true });
+  fs.writeFileSync(path.join(javaDir, 'MainActivity.java'), mainActivityJava, 'utf8');
 
-// 6. AndroidManifest.xml
-const manifestPath = path.join(mainDir, 'AndroidManifest.xml');
-if (fs.existsSync(manifestPath)) {
-  let manifest = fs.readFileSync(manifestPath, 'utf8');
-  if (!manifest.includes('android.max_aspect')) {
-    manifest = manifest.replace(
-      '</application>',
-      '    <meta-data android:name="android.max_aspect" android:value="3.0" />\n    </application>'
-    );
+  // 6. AndroidManifest.xml
+  const manifestPath = path.join(mainDir, 'AndroidManifest.xml');
+  if (fs.existsSync(manifestPath)) {
+    let manifest = fs.readFileSync(manifestPath, 'utf8');
+    if (!manifest.includes('android.max_aspect')) {
+      manifest = manifest.replace(
+        '</application>',
+        '    <meta-data android:name="android.max_aspect" android:value="3.0" />\n    </application>'
+      );
+    }
+    if (!manifest.includes('android:resizeableActivity')) {
+      manifest = manifest.replace(
+        '<activity',
+        '<activity android:resizeableActivity="true" android:windowSoftInputMode="adjustResize"'
+      );
+      manifest = manifest.replace(
+        '<application',
+        '<application android:resizeableActivity="true"'
+      );
+    }
+    fs.writeFileSync(manifestPath, manifest, 'utf8');
   }
-  if (!manifest.includes('android:resizeableActivity')) {
-    manifest = manifest.replace(
-      '<activity',
-      '<activity android:resizeableActivity="true" android:windowSoftInputMode="adjustResize"'
-    );
-    manifest = manifest.replace(
-      '<application',
-      '<application android:resizeableActivity="true"'
-    );
-  }
-  fs.writeFileSync(manifestPath, manifest, 'utf8');
-  console.log('✓ Updated AndroidManifest.xml');
 }
 
-// 7. Auto-heal android/variables.gradle (compileSdkVersion 35, targetSdkVersion 35, Android 15, Java 21 compatible)
+// 7. Auto-heal android/variables.gradle (compileSdkVersion 36, targetSdkVersion 36, Android 16/15, Java 21 compatible)
 const candidateRoots = [
-  path.resolve(mainDir, '../../..'),
   path.resolve(process.cwd(), 'android'),
   path.resolve(process.cwd(), 'cap-app/android'),
+  path.resolve(__dirname, '../android'),
+  path.resolve(__dirname, '../cap-app/android'),
 ];
 
 const safeVariables = `ext {
     minSdkVersion = 24
-    compileSdkVersion = 35
-    targetSdkVersion = 35
-    androidxActivityVersion = '1.9.3'
-    androidxAppCompatVersion = '1.7.0'
-    androidxCoordinatorLayoutVersion = '1.2.0'
-    androidxCoreVersion = '1.15.0'
-    androidxFragmentVersion = '1.8.5'
-    coreSplashScreenVersion = '1.0.1'
-    androidxWebkitVersion = '1.12.1'
+    compileSdkVersion = 36
+    targetSdkVersion = 36
+    androidxActivityVersion = '1.11.0'
+    androidxAppCompatVersion = '1.7.1'
+    androidxCoordinatorLayoutVersion = '1.3.0'
+    androidxCoreVersion = '1.17.0'
+    androidxFragmentVersion = '1.8.9'
+    coreSplashScreenVersion = '1.2.0'
+    androidxWebkitVersion = '1.14.0'
     junitVersion = '4.13.2'
-    androidxJunitVersion = '1.2.1'
-    androidxEspressoCoreVersion = '3.6.1'
+    androidxJunitVersion = '1.3.0'
+    androidxEspressoCoreVersion = '3.7.0'
     cordovaAndroidVersion = '14.0.1'
 }
 `;
@@ -322,7 +323,7 @@ for (const aRoot of candidateRoots) {
   const vPath = path.join(aRoot, 'variables.gradle');
   if (fs.existsSync(vPath)) {
     fs.writeFileSync(vPath, safeVariables, 'utf8');
-    console.log('✓ Ensured compileSdkVersion 35 in ' + vPath);
+    console.log('✓ Ensured compileSdkVersion 36 in ' + vPath);
   }
 }
 
@@ -331,10 +332,10 @@ for (const aRoot of candidateRoots) {
   const cordovaPluginsBuildGradle = path.join(aRoot, 'capacitor-cordova-android-plugins/build.gradle');
   if (fs.existsSync(cordovaPluginsBuildGradle)) {
     let cGradle = fs.readFileSync(cordovaPluginsBuildGradle, 'utf8');
-    cGradle = cGradle.replace(/compileSdk\s*=\s*project\.hasProperty\('compileSdkVersion'\)\s*\?\s*rootProject\.ext\.compileSdkVersion\s*:\s*\d+/, "compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35");
-    cGradle = cGradle.replace(/targetSdkVersion\s*=\s*project\.hasProperty\('targetSdkVersion'\)\s*\?\s*rootProject\.ext\.targetSdkVersion\s*:\s*\d+/, "targetSdkVersion = project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 35");
+    cGradle = cGradle.replace(/compileSdk\s*=\s*project\.hasProperty\('compileSdkVersion'\)\s*\?\s*rootProject\.ext\.compileSdkVersion\s*:\s*\d+/, "compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36");
+    cGradle = cGradle.replace(/targetSdkVersion\s*=\s*project\.hasProperty\('targetSdkVersion'\)\s*\?\s*rootProject\.ext\.targetSdkVersion\s*:\s*\d+/, "targetSdkVersion = project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36");
     fs.writeFileSync(cordovaPluginsBuildGradle, cGradle, 'utf8');
-    console.log('✓ Ensured fallback compileSdk 35 in ' + cordovaPluginsBuildGradle);
+    console.log('✓ Ensured fallback compileSdk 36 in ' + cordovaPluginsBuildGradle);
   }
 }
 
@@ -352,6 +353,18 @@ for (const aRoot of candidateRoots) {
     gProps = gProps.replace(/org\.gradle\.jvmargs=-Xmx\d+m/, 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8');
     fs.writeFileSync(gradlePropsPath, gProps, 'utf8');
     console.log('✓ Ensured auto sdkDownload and 2048m memory in ' + gradlePropsPath);
+  }
+}
+
+// 8b. Auto-create local.properties if ANDROID_HOME is set
+for (const aRoot of candidateRoots) {
+  if (fs.existsSync(aRoot)) {
+    const localPropsPath = path.join(aRoot, 'local.properties');
+    const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '/usr/local/lib/android/sdk';
+    if (!fs.existsSync(localPropsPath) && fs.existsSync(androidHome)) {
+      fs.writeFileSync(localPropsPath, `sdk.dir=${androidHome}\n`, 'utf8');
+      console.log('✓ Created local.properties with sdk.dir in ' + aRoot);
+    }
   }
 }
 
@@ -395,17 +408,24 @@ for (const aRoot of candidateRoots) {
       appGradle = appGradle.replace('if (servicesJSON.text)', 'if (servicesJSON.exists() && servicesJSON.text)');
     }
 
-    // Bypass any strict AarMetadata check mismatch
-    if (!appGradle.includes('AarMetadataTask')) {
+    // Clean up any internal class reference AarMetadataTask
+    if (appGradle.includes('tasks.withType(com.android.build.gradle.internal.tasks.AarMetadataTask)')) {
+      appGradle = appGradle.replace(/tasks\.withType\(com\.android\.build\.gradle\.internal\.tasks\.AarMetadataTask\)\.configureEach\s*\{\s*enabled\s*=\s*false\s*\}/g, '');
+    }
+
+    // Bypass any strict AarMetadata check mismatch safely by task name without internal class resolution
+    if (!appGradle.includes('aarmetadata')) {
       appGradle += `
-tasks.withType(com.android.build.gradle.internal.tasks.AarMetadataTask).configureEach {
-    enabled = false
+tasks.configureEach { task ->
+    if (task.name.toLowerCase().contains("aarmetadata")) {
+        task.enabled = false
+    }
 }
 `;
     }
 
     fs.writeFileSync(appBuildGradlePath, appGradle, 'utf8');
-    console.log('✓ Ensured Java 21 compileOptions and disabled AarMetadataTask in ' + appBuildGradlePath);
+    console.log('✓ Ensured Java 21 compileOptions and safe AarMetadataTask bypass in ' + appBuildGradlePath);
   }
 }
 
