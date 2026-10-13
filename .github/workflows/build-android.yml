@@ -14,40 +14,45 @@ jobs:
       - name: 1. Descargar código del repositorio
         uses: actions/checkout@v4
 
-      - name: 2. Configurar Node.js 22
+      - name: 2. Configurar Node.js 22 y Java JDK 21
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: 3. Configurar Java JDK 21
+      - name: Configurar Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 4. Instalar dependencias npm
+      - name: 3. Compilar aplicación web e integrar en Capacitor (Sin depender de Vercel)
         run: |
-          npm install --legacy-peer-deps
-
-      - name: 5. Compilar Frontend Web con Vite
-        run: |
+          npm install
           npm run build
+          mkdir -p cap-app
+          cp -r dist cap-app/dist
+          cd cap-app
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.seis6.app",
+            "appName": "Seis6 App",
+            "webDir": "dist",
+            "server": {
+              "cleartext": true,
+              "androidScheme": "https"
+            }
+          }
+          EOF
+          npx cap add android
+          npx cap sync android
 
-      - name: 6. Sincronizar plataforma Android con Capacitor
-        run: |
-          if [ ! -d "android" ]; then
-            echo "Directorio android no encontrado, agregando plataforma Android..."
-            npx cap add android
-          else
-            echo "Directorio android encontrado, sincronizando assets..."
-            npx cap sync android
-          fi
-
-      - name: 7. Aplicar configuración AMOLED #000000 y correcciones Gradle
+      - name: 4. Aplicar configuración AMOLED #000000 y correcciones Gradle
         run: |
           node scripts/configure-android.cjs
 
-      - name: 8. Aceptar licencias y verificar Android SDK 34 (Android 14)
+      - name: 5. Aceptar licencias y verificar Android SDK 34 (Android 14)
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
@@ -59,18 +64,25 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
 
-      - name: 9. Compilar APK Nativa con Gradle
+      - name: 6. Compilar APK Nativa con Gradle
         run: |
-          cd android
+          if [ -d "cap-app/android" ]; then
+            cd cap-app/android
+          elif [ -d "android" ]; then
+            cd android
+          else
+            echo "ERROR: Directorio android no encontrado."
+            exit 1
+          fi
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 10. Preparar archivo APK final
+      - name: 7. Preparar archivo APK final
         run: |
           mkdir -p build-output
-          APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          APK_FOUND=$(find cap-app/android/app/build/outputs/apk android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | head -n 1)
           if [ -z "$APK_FOUND" ]; then
-            APK_FOUND=$(find android/ -name "*.apk" -type f | head -n 1)
+            APK_FOUND=$(find . -name "*.apk" -type f | head -n 1)
           fi
           if [ -z "$APK_FOUND" ]; then
             echo "ERROR: No se encontró ningún archivo APK generado por Gradle."
@@ -82,22 +94,21 @@ jobs:
           echo "Archivos preparados en build-output/:"
           ls -lh build-output/
 
-      - name: 11. Subir APK lista para instalar en cualquier Android
+      - name: 8. Subir APK lista para instalar en cualquier Android
         uses: actions/upload-artifact@v4
         with:
           name: Seis6-App-APK
           path: |
             build-output/*.apk
-            android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: 12. Resumen de compilación
+      - name: 9. Resumen de compilación
         run: |
           echo "### 🎉 ¡APK Compilada con Éxito desde Vite!" >> $GITHUB_STEP_SUMMARY
           echo "- **Motor:** Vite + React + Capacitor Nativo" >> $GITHUB_STEP_SUMMARY
           echo "- **Node.js:** v22" >> $GITHUB_STEP_SUMMARY
           echo "- **Java:** JDK 21" >> $GITHUB_STEP_SUMMARY
-          echo "- **Android:** Target Android 14 (API 34) / Compile SDK 36" >> $GITHUB_STEP_SUMMARY
+          echo "- **Android:** Target Android 14 (API 34)" >> $GITHUB_STEP_SUMMARY
           echo "- **Diseño:** 100% AMOLED Dark (#000000) Edge-to-Edge" >> $GITHUB_STEP_SUMMARY
           echo "- **Archivos:** \`Seis6_App_v1.0.apk\` y \`Seis6_Vault_v1.0.apk\` disponibles para descarga en Artifacts." >> $GITHUB_STEP_SUMMARY

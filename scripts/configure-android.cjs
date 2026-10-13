@@ -5,9 +5,9 @@ const path = require('path');
 // Locate android main directory
 function findAndroidMainDir() {
   const candidates = [
-    path.resolve(process.cwd(), 'android/app/src/main'),
     path.resolve(process.cwd(), 'cap-app/android/app/src/main'),
     path.resolve(__dirname, '../cap-app/android/app/src/main'),
+    path.resolve(process.cwd(), 'android/app/src/main'),
     path.resolve(__dirname, '../android/app/src/main'),
   ];
   for (const c of candidates) {
