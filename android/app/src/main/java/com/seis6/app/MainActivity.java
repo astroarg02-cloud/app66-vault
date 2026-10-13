@@ -90,13 +90,27 @@ public class MainActivity extends BridgeActivity {
             WebView webView = getBridge() != null ? getBridge().getWebView() : null;
             if (webView != null) {
                 webView.setBackgroundColor(Color.BLACK);
-                webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
+                webView.setOverScrollMode(WebView.OVER_SCROLL_IF_CONTENT_SCROLLS);
                 try {
                     android.webkit.WebSettings settings = webView.getSettings();
                     settings.setDomStorageEnabled(true);
                     settings.setDatabaseEnabled(true);
+                    settings.setJavaScriptEnabled(true);
+                    settings.setLoadsImagesAutomatically(true);
+                    // Use LOAD_DEFAULT to automatically fetch updated assets and code from the live server
+                    settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
                 } catch (Exception ignoredSettings) {}
             }
         } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void onBackPressed() {
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
     }
 }

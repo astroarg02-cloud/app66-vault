@@ -14,7 +14,6 @@ import { AdminListModal } from './components/MobileSimulator/AdminListModal';
 import { receiptService } from './services/receiptService';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { AdminMaintenanceModal } from './components/AdminMaintenanceModal';
-import { VerifiedBadge } from './components/VerifiedBadge';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { firebaseService, resolveApiUrl, safeFetchApi, safeFetchJson, isStandaloneApp, getRemoteServerBaseUrl } from './services/firebaseService';
 import { supabaseService, isSupabaseConfigured } from './services/supabaseClient';
@@ -32,9 +31,10 @@ import {
   Wrench,
   FileText,
   FileCheck,
-  Settings,
   Eye,
-  CheckCircle2
+  CheckCircle2,
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 
 // Helper to manage deleted list IDs in localStorage to prevent deleted lists from resurfacing
@@ -132,7 +132,48 @@ function AppContent() {
   });
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [isPreviewingAsVisitor, setIsPreviewingAsVisitor] = useState(false);
+  const [isLiveReloading, setIsLiveReloading] = useState(false);
   const { theme, toggleTheme, isDark } = useTheme();
+
+  // Instant Live Reload for OTA Updates without recompiling APK
+  const handleLiveReload = useCallback(() => {
+    setIsLiveReloading(true);
+    try {
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          names.forEach((name) => caches.delete(name));
+        });
+      }
+    } catch {}
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
+  }, []);
+
+  // Pull-to-refresh on mobile screen top
+  useEffect(() => {
+    let startY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      if (window.scrollY <= 5) {
+        startY = e.touches[0].clientY;
+      }
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (startY > 0 && window.scrollY <= 5) {
+        const delta = e.changedTouches[0].clientY - startY;
+        if (delta > 200) {
+          handleLiveReload();
+        }
+      }
+      startY = 0;
+    };
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [handleLiveReload]);
 
   // Helper to safely apply maintenance state based on timestamp priority
   // Prevents stale cloud data or quota errors from reverting newer local edits
@@ -1015,7 +1056,7 @@ function AppContent() {
             : 'border-slate-200/90 bg-white/95 shadow-[0_4px_24px_rgba(0,0,0,0.06)]'
         }`}
       >
-        <div className="w-full flex items-center justify-between gap-2 sm:gap-4 relative z-10">
+        <div className="w-full flex items-center justify-between gap-3 sm:gap-6 relative z-10">
           {/* Brand & Logo */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <motion.div 
@@ -1032,29 +1073,21 @@ function AppContent() {
               <ShieldCheck className="w-5 h-5 text-white" />
               <div className="absolute inset-0 rounded-2xl bg-white/15 opacity-0 hover:opacity-100 transition-opacity" />
             </motion.div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 sm:gap-2.5">
-                <h1 className="text-sm sm:text-base lg:text-lg font-black tracking-tight leading-none truncate bg-gradient-to-r from-white via-zinc-100 to-zinc-300 dark:from-white dark:to-zinc-300 bg-clip-text">
-                  Vault 66
-                </h1>
-                <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[8.5px] sm:text-[9.5px] font-black uppercase bg-[#0066FF]/15 text-blue-400 border border-[#0066FF]/30 shrink-0 shadow-xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
-                  <span>SERVIDOR EN LÍNEA</span>
-                </div>
-                {isSupabaseConfigured && (
-                  <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    <Database className="w-2.5 h-2.5" /> SUPABASE
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] text-zinc-400 font-mono tracking-tight hidden sm:block mt-0.5">
-                Nube Privada • Flutter & Firebase Hub
-              </p>
+
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 shrink-0 shadow-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
+              <span>En línea</span>
             </div>
+
+            {isSupabaseConfigured && (
+              <span className="hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8.5px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <Database className="w-2.5 h-2.5" /> SUPABASE
+              </span>
+            )}
           </div>
 
           {/* Right Controls: User info with Avatar, Theme & Logout */}
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 ml-auto">
             {/* Admin Maintenance Control Button */}
             {currentUser.role === 'admin' && (
               <motion.button
@@ -1076,42 +1109,24 @@ function AppContent() {
               </motion.button>
             )}
 
-            {/* User Profile Badge with Avatar and Name - Always visible, links to Profile */}
+
+            {/* Botón de Sincronización en Tiempo Real */}
             <motion.button
-              id="header-user-profile-btn"
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setCurrentTab('profile')}
-              title={`Ver Perfil: ${currentUser.displayName}`}
-              className={`flex items-center gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all shadow-sm ${
-                currentTab === 'profile'
-                  ? 'border-[#0066FF] bg-[#0066FF]/20 text-[#0066FF] ring-2 ring-[#0066FF]/20'
+              id="header-live-reload-btn"
+              onClick={handleLiveReload}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              title="Sincronizar cambios en tiempo real"
+              className={`p-2 rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                isLiveReloading
+                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
                   : isDark
-                  ? 'bg-zinc-900/90 border-white/[0.12] text-white hover:border-[#0066FF]/50 hover:bg-zinc-800'
-                  : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300'
+                  ? 'border-white/[0.08] bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 hover:text-white hover:border-emerald-500/40'
+                  : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700 hover:text-black hover:border-emerald-500'
               }`}
             >
-              {currentUser.avatarUrl ? (
-                <img
-                  src={currentUser.avatarUrl}
-                  alt={currentUser.displayName}
-                  className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full object-cover border border-[#0066FF]/60 shrink-0 shadow-xs"
-                />
-              ) : (
-                <div className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-[#0066FF] to-blue-700 text-[10px] sm:text-xs text-white flex items-center justify-center font-black shrink-0">
-                  {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
-                </div>
-              )}
-              <span className="max-w-[80px] sm:max-w-[150px] truncate leading-none">
-                {currentUser.displayName}
-              </span>
-              {currentUser.role === 'admin' ? (
-                <VerifiedBadge className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0066FF] shrink-0" />
-              ) : currentUser.membershipStatus === 'active' && currentUser.membershipPlan ? (
-                <span className="px-1.5 py-0.5 rounded-full text-[8.5px] sm:text-[9px] font-black bg-gradient-to-r from-amber-400 to-amber-500 text-black shadow-xs shrink-0">
-                  VIP
-                </span>
-              ) : null}
+              <RefreshCw className={`w-4 h-4 text-emerald-400 ${isLiveReloading ? 'animate-spin' : ''}`} />
+              <span className="hidden xl:inline text-[11px] font-bold text-emerald-400">Sincronizar</span>
             </motion.button>
 
             {/* Theme Toggle */}
@@ -1513,21 +1528,22 @@ function AppContent() {
           {/* Separador vertical sutil */}
           <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-[#1E1E24]' : 'bg-slate-300'}`} />
 
-          {/* Ajustes y Sistema (SOLO ICONO) */}
+          {/* Perfil del Usuario (FOTO DE PERFIL EN TIEMPO REAL) */}
           {(() => {
             const isActive = currentTab === 'profile';
             return (
               <motion.button
                 id="home-bar-tab-ajustes"
                 type="button"
-                title="Ajustes y Sistema"
-                aria-label="Ajustes y Sistema"
+                title={currentUser?.displayName ? `Perfil (${currentUser.displayName})` : 'Mi Perfil'}
+                aria-label={currentUser?.displayName ? `Perfil de ${currentUser.displayName}` : 'Mi Perfil'}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.88 }}
                 onClick={() => setCurrentTab('profile')}
-                className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none transition-colors ${
+                className={`relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer select-none outline-none focus:outline-none focus:ring-0 active:outline-none border-none ring-0 transition-colors ${
                   isActive ? 'text-white' : isDark ? 'text-zinc-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
                 }`}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
               >
                 {isActive && (
                   <motion.div
@@ -1536,7 +1552,27 @@ function AppContent() {
                     transition={{ type: "spring", stiffness: 450, damping: 32 }}
                   />
                 )}
-                <Settings className="relative z-10 w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
+                <div className="relative z-10 flex items-center justify-center">
+                  {currentUser?.avatarUrl ? (
+                    <img
+                      src={currentUser.avatarUrl}
+                      alt={currentUser.displayName || 'Foto de perfil'}
+                      className="w-6 h-6 sm:w-6.5 sm:h-6.5 rounded-full object-cover shrink-0 select-none pointer-events-none ring-0 border-0 outline-none"
+                    />
+                  ) : currentUser?.displayName ? (
+                    <div
+                      className={`w-6 h-6 sm:w-6.5 sm:h-6.5 rounded-full flex items-center justify-center font-black text-[10px] sm:text-xs text-white shrink-0 select-none ring-0 border-0 outline-none ${
+                        isActive
+                          ? 'bg-white/20'
+                          : 'bg-gradient-to-br from-[#0066FF] to-blue-700'
+                      }`}
+                    >
+                      {currentUser.displayName.charAt(0).toUpperCase()}
+                    </div>
+                  ) : (
+                    <User className="w-4.5 h-4.5 sm:w-5 sm:h-5 shrink-0" />
+                  )}
+                </div>
               </motion.button>
             );
           })()}

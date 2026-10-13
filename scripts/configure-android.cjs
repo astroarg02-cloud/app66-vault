@@ -253,14 +253,28 @@ public class MainActivity extends BridgeActivity {
             WebView webView = getBridge() != null ? getBridge().getWebView() : null;
             if (webView != null) {
                 webView.setBackgroundColor(Color.BLACK);
-                webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
+                webView.setOverScrollMode(WebView.OVER_SCROLL_IF_CONTENT_SCROLLS);
                 try {
                     android.webkit.WebSettings settings = webView.getSettings();
                     settings.setDomStorageEnabled(true);
                     settings.setDatabaseEnabled(true);
+                    settings.setJavaScriptEnabled(true);
+                    settings.setLoadsImagesAutomatically(true);
+                    // Use LOAD_DEFAULT to automatically fetch updated assets and code from the live server
+                    settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
                 } catch (Exception ignoredSettings) {}
             }
         } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void onBackPressed() {
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
     }
 }
 `;
@@ -277,6 +291,18 @@ public class MainActivity extends BridgeActivity {
       manifest = manifest.replace(
         '</application>',
         '    <meta-data android:name="android.max_aspect" android:value="3.0" />\n    </application>'
+      );
+    }
+    if (!manifest.includes('android:usesCleartextTraffic')) {
+      manifest = manifest.replace(
+        '<application',
+        '<application android:usesCleartextTraffic="true"'
+      );
+    }
+    if (!manifest.includes('android.permission.ACCESS_NETWORK_STATE')) {
+      manifest = manifest.replace(
+        '</manifest>',
+        '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n</manifest>'
       );
     }
     if (!manifest.includes('android:resizeableActivity')) {

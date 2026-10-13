@@ -26,7 +26,7 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 3. Compilar aplicación web e integrar en Capacitor (Sin depender de Vercel)
+      - name: 3. Compilar aplicación web e integrar en Capacitor (100% Nativo sin URLs externas)
         run: |
           npm install --legacy-peer-deps
           npm run build
@@ -37,14 +37,29 @@ jobs:
             npm init -y
           fi
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          cat << 'EOF' > capacitor.config.json
+
+          cat << EOF > capacitor.config.json
           {
             "appId": "com.seis6.app",
             "appName": "Seis6 App",
             "webDir": "dist",
+            "backgroundColor": "#000000",
+            "android": {
+              "backgroundColor": "#000000",
+              "allowMixedContent": true,
+              "captureInput": true,
+              "webContentsDebuggingEnabled": false
+            },
             "server": {
               "cleartext": true,
               "androidScheme": "https"
+            },
+            "plugins": {
+              "StatusBar": {
+                "overlaysWebView": true,
+                "style": "DARK",
+                "backgroundColor": "#000000"
+              }
             }
           }
           EOF
