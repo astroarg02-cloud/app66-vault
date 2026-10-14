@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, CheckCircle2, Database, Lock } from 'lucide-react';
-import defaultPackImage from '../assets/images/pack.png';
+import defaultPackImage from '../assets/images/pack_seis6_loading_1791943905362.jpg';
 
 interface CircularStartupLoaderProps {
   progress: number;
@@ -25,7 +25,9 @@ export const CircularStartupLoader: React.FC<CircularStartupLoaderProps> = ({
   const [isExiting, setIsExiting] = useState(false);
   const [imgError, setImgError] = useState(false);
 
-  const displayImage = imgError ? '/pack.png' : (imageUrl || defaultPackImage || '/pack.png');
+  const displayImage = imgError
+    ? '/pack_seis6.jpg'
+    : (imageUrl || defaultPackImage || '/pack_seis6.jpg');
 
   useEffect(() => {
     let animationFrameId: number;
@@ -50,9 +52,9 @@ export const CircularStartupLoader: React.FC<CircularStartupLoaderProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [progress, animatedProgress]);
 
-  // SVG circular dimensions
-  const size = 196;
-  const strokeWidth = 8;
+  // SVG circular dimensions tailored for the 1:1 artwork
+  const size = 236;
+  const strokeWidth = 7;
   const center = size / 2;
   const radius = center - strokeWidth - 6;
   const circumference = 2 * Math.PI * radius;
@@ -75,21 +77,21 @@ export const CircularStartupLoader: React.FC<CircularStartupLoaderProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-[999999] flex flex-col items-center justify-center bg-[#050608] text-white select-none overflow-hidden px-4 transition-all duration-500 ease-out ${
+      className={`fixed inset-0 z-[999999] flex flex-col items-center justify-center bg-[#040508] text-white select-none overflow-hidden px-4 transition-all duration-500 ease-out ${
         isExiting ? 'opacity-0 scale-105 pointer-events-none filter blur-sm' : 'opacity-100 scale-100'
       }`}
     >
-      {/* Ambient background glow created from the attached image */}
+      {/* Ambient background glow created from the attached artwork */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center">
         <img
           src={displayImage}
           alt=""
           referrerPolicy="no-referrer"
-          className="absolute w-[360px] h-[360px] object-cover rounded-full blur-[110px] opacity-25 scale-125"
+          className="absolute w-[420px] h-[420px] object-cover rounded-full blur-[110px] opacity-35 scale-125"
         />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#0066FF]/20 rounded-full blur-[100px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-emerald-500/10 rounded-full blur-[80px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_25%,#050608_85%)]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[460px] h-[460px] bg-[#0066FF]/25 rounded-full blur-[120px]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-blue-400/15 rounded-full blur-[90px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,#040508_85%)]" />
       </div>
 
       {/* Main Container */}
@@ -99,9 +101,9 @@ export const CircularStartupLoader: React.FC<CircularStartupLoaderProps> = ({
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex items-center gap-2 mb-7"
+          className="flex items-center gap-2 mb-6"
         >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0066FF] to-blue-700 flex items-center justify-center text-white shadow-lg shadow-[#0066FF]/30 ring-1 ring-white/20">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0066FF] to-blue-700 flex items-center justify-center text-white shadow-lg shadow-[#0066FF]/35 ring-1 ring-white/20">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div className="flex flex-col">
@@ -114,24 +116,24 @@ export const CircularStartupLoader: React.FC<CircularStartupLoaderProps> = ({
           </div>
         </motion.div>
 
-        {/* Circular Loading Ring Container with Central Image */}
-        <div className="relative flex items-center justify-center my-3">
+        {/* Circular Loading Ring Container with Central Artwork */}
+        <div className="relative flex items-center justify-center my-2">
           {/* Outer rotating decorative dashed ring */}
           <motion.div
             animate={{ rotate: 360 }}
-            transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-            className="absolute w-[228px] h-[228px] rounded-full border border-dashed border-[#0066FF]/30 pointer-events-none"
+            transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}
+            className="absolute w-[266px] h-[266px] rounded-full border border-dashed border-[#0066FF]/35 pointer-events-none"
           />
 
           {/* Outer subtle glowing halo */}
-          <div className="absolute w-[212px] h-[212px] rounded-full border border-white/[0.06] pointer-events-none shadow-[inset_0_0_25px_rgba(0,102,255,0.12)]" />
+          <div className="absolute w-[252px] h-[252px] rounded-full border border-white/[0.08] pointer-events-none shadow-[inset_0_0_35px_rgba(0,102,255,0.2)]" />
 
           {/* SVG Progress Circle */}
           <svg
             width={size}
             height={size}
             viewBox={`0 0 ${size} ${size}`}
-            className="transform -rotate-90 drop-shadow-[0_0_20px_rgba(0,102,255,0.55)] z-20 pointer-events-none"
+            className="transform -rotate-90 drop-shadow-[0_0_22px_rgba(0,102,255,0.6)] z-20 pointer-events-none"
           >
             <defs>
               <linearGradient id="vaultCircleGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -176,69 +178,68 @@ export const CircularStartupLoader: React.FC<CircularStartupLoaderProps> = ({
             />
           </svg>
 
-          {/* Center Content: Attached Image Framed in Circle */}
+          {/* Center Content: User's Attached Image Framed Crisp and Unobscured */}
           <div className="absolute inset-0 flex items-center justify-center z-10">
-            <div className="relative w-[152px] h-[152px] rounded-full overflow-hidden ring-2 ring-white/15 shadow-[0_0_25px_rgba(0,0,0,0.8)] bg-neutral-900 flex items-center justify-center">
+            <div className="relative w-[190px] h-[190px] rounded-full overflow-hidden ring-2 ring-white/20 shadow-[0_0_35px_rgba(0,102,255,0.4)] bg-[#050811] flex items-center justify-center">
               {/* Image with subtle breathing scale */}
               <motion.img
                 src={displayImage}
-                alt="Pack Loading"
+                alt="SEIS 6 Pack"
                 referrerPolicy="no-referrer"
                 onError={() => setImgError(true)}
-                animate={{ scale: [1, 1.04, 1] }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                animate={{ scale: [1, 1.03, 1] }}
+                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
                 className="w-full h-full object-cover"
               />
 
-              {/* High-tech vignette overlay for legibility */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/25 pointer-events-none" />
-
-              {/* Floating status / percentage badge over the image */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 px-2">
-                <AnimatePresence mode="wait">
-                  {isCompleted ? (
-                    <motion.div
-                      key="done"
-                      initial={{ scale: 0.6, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.8, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 22 }}
-                      className="flex flex-col items-center justify-center"
-                    >
-                      <div className="px-3 py-1.5 rounded-full bg-emerald-500/25 backdrop-blur-md border border-emerald-400/50 flex items-center gap-1.5 text-emerald-300 shadow-xl shadow-emerald-500/30">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        <span className="text-[11px] font-black font-mono tracking-wider uppercase">
-                          ¡Listo!
-                        </span>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="loading"
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="flex flex-col items-center justify-center"
-                    >
-                      {/* Frosted percentage badge */}
-                      <div className="backdrop-blur-md bg-black/60 px-3.5 py-1 rounded-full border border-white/20 shadow-2xl flex items-baseline justify-center gap-0.5">
-                        <span className="text-2xl font-black font-mono text-white tracking-tight drop-shadow-md">
-                          {Math.round(animatedProgress)}
-                        </span>
-                        <span className="text-[11px] font-bold font-mono text-[#38BDF8]">
-                          %
-                        </span>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              {/* Ultra-subtle vignette at very edges to blend with circle rim */}
+              <div className="absolute inset-0 rounded-full shadow-[inset_0_0_18px_rgba(0,0,0,0.7)] pointer-events-none" />
             </div>
+          </div>
+
+          {/* Floating status / percentage badge positioned gracefully at the bottom */}
+          <div className="absolute -bottom-3 z-30 pointer-events-none">
+            <AnimatePresence mode="wait">
+              {isCompleted ? (
+                <motion.div
+                  key="done"
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 22 }}
+                  className="flex items-center justify-center"
+                >
+                  <div className="px-3.5 py-1 rounded-full bg-emerald-500/90 backdrop-blur-md border border-emerald-300 text-white flex items-center gap-1.5 shadow-xl shadow-emerald-500/40">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                    <span className="text-[11px] font-black font-mono tracking-wider uppercase">
+                      ¡Listo!
+                    </span>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex items-center justify-center"
+                >
+                  <div className="backdrop-blur-md bg-[#050914]/90 px-3.5 py-1 rounded-full border border-blue-400/40 shadow-xl shadow-blue-900/50 flex items-baseline justify-center gap-0.5">
+                    <span className="text-sm font-black font-mono text-white tracking-tight drop-shadow-md">
+                      {Math.round(animatedProgress)}
+                    </span>
+                    <span className="text-[10px] font-bold font-mono text-[#38BDF8]">
+                      %
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
         {/* Dynamic Status Display */}
-        <div className="mt-7 flex flex-col items-center text-center px-4 w-full">
+        <div className="mt-8 flex flex-col items-center text-center px-4 w-full">
           <div className="flex items-center gap-2 mb-1.5">
             {!isCompleted ? (
               <span className="relative flex h-2 w-2">

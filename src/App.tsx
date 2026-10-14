@@ -1013,14 +1013,13 @@ function AppContent() {
   // Priority 0: Pantalla de carga circular funcional al iniciar la app
   // Carga y sincroniza de forma confiable todos los archivos, colecciones, base de datos y sesión
   if (isAppLoading) {
-    const packCover = items.find((i) => i.id === 'vault-res-1788729821011-8fj9' || i.title.toLowerCase().includes('pack'))?.coverImage;
     return (
       <CircularStartupLoader
         progress={loadingProgress}
         statusText={loadingStatusText}
         itemCount={items.length}
         isReady={isDataLoaded}
-        imageUrl={packCover || '/pack.png'}
+        imageUrl={'/pack.png'}
         onAnimationComplete={() => setIsAppLoading(false)}
       />
     );
