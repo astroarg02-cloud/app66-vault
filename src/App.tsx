@@ -14,6 +14,7 @@ import { AdminListModal } from './components/MobileSimulator/AdminListModal';
 import { receiptService } from './services/receiptService';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { AdminMaintenanceModal } from './components/AdminMaintenanceModal';
+import { CircularStartupLoader } from './components/CircularStartupLoader';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { firebaseService, resolveApiUrl, safeFetchApi, safeFetchJson, isStandaloneApp, getRemoteServerBaseUrl } from './services/firebaseService';
 import { supabaseService, isSupabaseConfigured } from './services/supabaseClient';
@@ -107,6 +108,13 @@ function AppContent() {
 
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => sanitizeUserRole(firebaseService.getLocalSession()));
   const [isCheckingSession, setIsCheckingSession] = useState(false);
+  
+  // Functional circular startup loading state
+  const [isAppLoading, setIsAppLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(15);
+  const [loadingStatusText, setLoadingStatusText] = useState('Iniciando bóveda segura...');
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+
   const [currentTab, setCurrentTab] = useState<'vault' | 'membership' | 'receipts' | 'approvals' | 'profile'>('vault');
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(() => receiptService.getPendingCount());
   const [vaultTabMode, setVaultTabMode] = useState<'items' | 'collections'>('items');
@@ -138,6 +146,9 @@ function AppContent() {
   // Instant Live Reload for OTA Updates without recompiling APK
   const handleLiveReload = useCallback(() => {
     setIsLiveReloading(true);
+    setIsAppLoading(true);
+    setLoadingProgress(40);
+    setLoadingStatusText('Sincronizando archivos en vivo...');
     try {
       if ('caches' in window) {
         caches.keys().then((names) => {
@@ -342,25 +353,50 @@ function AppContent() {
       console.warn('Notice: Firestore maintenance listener error:', err);
     }
 
-    // Safety fallback
-    const timer = setTimeout(() => {
+    const loadStartTime = Date.now();
+    const MIN_LOADER_DURATION_MS = 1400; // Garantiza una transición circular fluida y limpia
+
+    const finishStartup = () => {
+      setLoadingProgress(100);
+      setLoadingStatusText('¡Archivos cargados correctamente!');
+      setIsDataLoaded(true);
+      const elapsed = Date.now() - loadStartTime;
+      const remaining = Math.max(0, MIN_LOADER_DURATION_MS - elapsed);
+      setTimeout(() => {
+        setIsAppLoading(false);
+        setIsCheckingSession(false);
+      }, remaining + 500);
+    };
+
+    // Safety fallback: asegura que la app nunca se quede congelada en conexiones lentas u offline
+    const safetyTimer = setTimeout(() => {
       setIsCheckingSession(false);
-    }, 200);
+      finishStartup();
+    }, 4000);
 
     const loadData = async () => {
       try {
-        // Sync all registered accounts (existing and new) with Database (Server + Firestore)
+        // Fase 1: Verificación de sesión y cuentas
+        setLoadingProgress(28);
+        setLoadingStatusText('Verificando credenciales y acceso seguro...');
+
+        // Sincronizar cuentas registradas con base de datos
         firebaseService.syncAllRegisteredAccountsToDatabase().catch((err) => {
           console.warn('Error syncing registered accounts to database:', err);
         });
 
-        // Sync all uploaded payment receipts with Database (Server + Firestore)
+        // Fase 2: Comprobación de recibos y pasarela
+        setLoadingProgress(45);
+        setLoadingStatusText('Conectando a base de datos en la nube...');
         receiptService.syncFromServer().then((syncedReceipts) => {
           setPendingApprovalsCount(receiptService.getPendingCount());
           firebaseService.reconcileApprovedReceiptsWithUsers(syncedReceipts);
         }).catch(() => {});
 
-        // 1. Fetch Items and Lists from Cloud Firestore IMMEDIATELY (primary cloud source for standalone APK & web)
+        // Fase 3: Descarga y sincronización de archivos y listas desde Cloud Firestore
+        setLoadingProgress(65);
+        setLoadingStatusText('Descargando y sincronizando archivos...');
+
         const [firestoreItems, firestoreLists] = await Promise.all([
           firebaseService.fetchVaultItems().catch(() => null),
           firebaseService.fetchVaultLists().catch(() => null),
@@ -373,13 +409,16 @@ function AppContent() {
           mergeVaultLists(firestoreLists);
         }
 
-        // 2. Check items stored in user's browser localStorage
+        // Fase 4: Indexación de archivos locales y caché
+        setLoadingProgress(82);
+        setLoadingStatusText('Indexando contenido de la bóveda...');
+
         const localItems = supabaseService.getLocalVaultItems();
         if (localItems && localItems.length > 0) {
           mergeVaultItems(localItems);
         }
 
-        // 3. Optional: If a dedicated backend server is available, sync server-stored items and deleted list IDs
+        // Fase 5: Servidor dedicado (si está disponible) y listas eliminadas
         if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
           try {
             const resDeleted = await safeFetchApi('/api/vault/deleted-lists', {}, 1500);
@@ -390,7 +429,6 @@ function AppContent() {
                 jsonDel.deletedIds.forEach((id: string) => currentDeleted.add(id));
                 localStorage.setItem('vault_deleted_list_ids', JSON.stringify(Array.from(currentDeleted)));
                 
-                // Purge deleted lists from local cache and state
                 try {
                   const cached = localStorage.getItem('vault_lists_cache');
                   if (cached) {
@@ -430,7 +468,10 @@ function AppContent() {
           } catch {}
         }
 
-        // 4. Fetch and synchronize maintenance mode state from server and Firestore
+        // Fase 6: Estado de mantenimiento del servidor
+        setLoadingProgress(94);
+        setLoadingStatusText('Verificando estado del servidor y seguridad...');
+
         try {
           let syncedMaint = false;
           if (!isStandaloneApp() || getRemoteServerBaseUrl()) {
@@ -453,6 +494,8 @@ function AppContent() {
         }
       } catch (err) {
         console.warn('Error loading initial vault data:', err);
+      } finally {
+        finishStartup();
       }
     };
 
@@ -534,7 +577,7 @@ function AppContent() {
     }, 30000);
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(safetyTimer);
       unsub();
       window.removeEventListener('vault_profile_updated', handleProfileUpdated);
       window.removeEventListener('vault_receipts_changed', handleReceiptsChanged);
@@ -967,25 +1010,19 @@ function AppContent() {
     ? items.find((i) => i.id === selectedItem.id) || selectedItem
     : null;
 
-  // If checking initial session
-  if (isCheckingSession) {
+  // Priority 0: Pantalla de carga circular funcional al iniciar la app
+  // Carga y sincroniza de forma confiable todos los archivos, colecciones, base de datos y sesión
+  if (isAppLoading) {
+    const packCover = items.find((i) => i.id === 'vault-res-1788729821011-8fj9' || i.title.toLowerCase().includes('pack'))?.coverImage;
     return (
-      <div className={`h-[100dvh] w-full flex flex-col items-center justify-center gap-4 transition-colors duration-300 ${
-        isDark ? 'bg-black text-white' : 'bg-[#F1F4F9] text-[#0F172A]'
-      }`}>
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-          className="w-12 h-12 rounded-2xl bg-[#0066FF] flex items-center justify-center text-white shadow-xl shadow-[#0066FF]/40 animate-pulse"
-        >
-          <ShieldCheck className="w-6 h-6" />
-        </motion.div>
-        <div className="flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-[#0066FF]">
-          <div className="w-3.5 h-3.5 border-2 border-[#0066FF] border-t-transparent rounded-full animate-spin" />
-          <span>Verificando Acceso a la Bóveda...</span>
-        </div>
-      </div>
+      <CircularStartupLoader
+        progress={loadingProgress}
+        statusText={loadingStatusText}
+        itemCount={items.length}
+        isReady={isDataLoaded}
+        imageUrl={packCover || '/pack.png'}
+        onAnimationComplete={() => setIsAppLoading(false)}
+      />
     );
   }
 

@@ -2531,5 +2531,35 @@
       "membershipExpiresAt": "2026-11-11T15:57:33.004Z",
       "lastPaymentAmount": 1
     }
+  },
+  "lionelalvarado409@gmail.com": {
+    "email": "lionelalvarado409@gmail.com",
+    "password": "lio1234",
+    "registeredAt": "2026-10-13T16:41:00.396Z",
+    "profile": {
+      "uid": "usr_mv6wquknm5e4h0b5fb44c",
+      "email": "lionelalvarado409@gmail.com",
+      "displayName": "Lio",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv6wquknm5e4h0b5fb44c",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-13"
+    }
+  },
+  "babydonato39@gmail.com": {
+    "email": "babydonato39@gmail.com",
+    "password": "54321mcfz",
+    "registeredAt": "2026-10-13T23:17:13.852Z",
+    "profile": {
+      "uid": "usr_mv7awearo153n7c64cabf",
+      "email": "babydonato39@gmail.com",
+      "displayName": "Leandro",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv7awearo153n7c64cabf",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-13"
+    }
   }
 }
