@@ -64,7 +64,12 @@ jobs:
           }
           EOF
           if [ ! -d "android" ]; then
-            npx cap add android
+            if [ -d "../android" ]; then
+              echo "Preserving master android directory with custom SEIS 6 icons..."
+              cp -r ../android android
+            else
+              npx cap add android
+            fi
           fi
           npx cap sync android
 

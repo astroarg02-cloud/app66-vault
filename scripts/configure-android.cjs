@@ -23,10 +23,72 @@ function findAndroidMainDirs() {
 }
 
 const mainDirs = findAndroidMainDirs();
-console.log('Configuring Android styles and MainActivity in:', mainDirs);
+console.log('Configuring Android styles, icons, and MainActivity in:', mainDirs);
+
+// Master source of truth for custom icons
+const masterResDir = path.resolve(__dirname, '../android/app/src/main/res');
 
 for (const mainDir of mainDirs) {
   const resDir = path.join(mainDir, 'res');
+
+  // Remove default vector launcher icons that override PNG mipmap icons on API 24+
+  const obsoleteVectors = [
+    path.join(resDir, 'drawable-v24/ic_launcher_foreground.xml'),
+    path.join(resDir, 'drawable/ic_launcher_background.xml'),
+    path.join(resDir, 'drawable/ic_launcher_foreground.xml'),
+  ];
+  for (const obsolete of obsoleteVectors) {
+    if (fs.existsSync(obsolete)) {
+      try {
+        fs.unlinkSync(obsolete);
+        console.log('✓ Removed obsolete vector:', obsolete);
+      } catch (e) {}
+    }
+  }
+
+  // Ensure custom SEIS 6 mipmap and splash icons are copied to this res directory
+  if (masterResDir !== resDir && fs.existsSync(masterResDir)) {
+    const iconDirs = [
+      'mipmap-mdpi',
+      'mipmap-hdpi',
+      'mipmap-xhdpi',
+      'mipmap-xxhdpi',
+      'mipmap-xxxhdpi',
+      'mipmap-anydpi-v26',
+      'drawable',
+      'drawable-port-mdpi',
+      'drawable-port-hdpi',
+      'drawable-port-xhdpi',
+      'drawable-port-xxhdpi',
+      'drawable-port-xxxhdpi',
+      'drawable-land-mdpi',
+      'drawable-land-hdpi',
+      'drawable-land-xhdpi',
+      'drawable-land-xxhdpi',
+      'drawable-land-xxxhdpi',
+    ];
+    for (const sub of iconDirs) {
+      const srcSub = path.join(masterResDir, sub);
+      const dstSub = path.join(resDir, sub);
+      if (fs.existsSync(srcSub)) {
+        fs.mkdirSync(dstSub, { recursive: true });
+        const files = fs.readdirSync(srcSub);
+        for (const file of files) {
+          fs.copyFileSync(path.join(srcSub, file), path.join(dstSub, file));
+        }
+      }
+    }
+    console.log('✓ Synchronized all custom SEIS 6 icons into:', resDir);
+  }
+
+  // Ensure ic_launcher_background is #040508
+  const bgDir = path.join(resDir, 'values');
+  fs.mkdirSync(bgDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(bgDir, 'ic_launcher_background.xml'),
+    `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#040508</color>\n</resources>\n`,
+    'utf8'
+  );
 
   // 1. Write colors.xml (Pure black system colors)
   const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
