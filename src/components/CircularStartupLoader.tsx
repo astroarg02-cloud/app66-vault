@@ -25,9 +25,23 @@ export const CircularStartupLoader: React.FC<CircularStartupLoaderProps> = ({
   const [isExiting, setIsExiting] = useState(false);
   const [imgError, setImgError] = useState(false);
 
-  const displayImage = imgError
-    ? '/pack_seis6.jpg'
-    : (imageUrl || defaultPackImage || '/pack_seis6.jpg');
+  // Safely resolve image URL on GitHub Pages subpaths, Capacitor, and custom domains
+  const resolveAssetUrl = (url?: string): string => {
+    if (!url) return defaultPackImage;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    if (url.startsWith('/')) {
+      const base = import.meta.env.BASE_URL || './';
+      const cleanBase = base.endsWith('/') ? base : `${base}/`;
+      const cleanPath = url.replace(/^\/+/, '');
+      return `${cleanBase}${cleanPath}`;
+    }
+    return url;
+  };
+
+  const initialImage = imageUrl ? resolveAssetUrl(imageUrl) : defaultPackImage;
+  const displayImage = imgError ? defaultPackImage : initialImage;
 
   useEffect(() => {
     let animationFrameId: number;

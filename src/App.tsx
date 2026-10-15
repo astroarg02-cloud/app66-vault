@@ -1019,7 +1019,6 @@ function AppContent() {
         statusText={loadingStatusText}
         itemCount={items.length}
         isReady={isDataLoaded}
-        imageUrl={'/pack.png'}
         onAnimationComplete={() => setIsAppLoading(false)}
       />
     );
