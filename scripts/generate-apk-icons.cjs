@@ -70,34 +70,34 @@ console.log('Generated Web icons: app-logo.png, apple-touch-icon.png, favicon.pn
 // Update manifest.json
 const manifestPath = path.join(PUBLIC_DIR, 'manifest.json');
 const manifest = {
-  short_name: "Seis6 Vault",
-  name: "Seis6 Vault - Private Mobile Hub",
+  short_name: "Seis6 App",
+  name: "Seis6 App",
   description: "Bóveda de contenido exclusivo para Android e iOS con diseño AMOLED",
   icons: [
     {
-      src: "/favicon.png",
+      src: "./favicon.png",
       type: "image/png",
       sizes: "64x64"
     },
     {
-      src: "/icon-192.png",
+      src: "./icon-192.png",
       type: "image/png",
       sizes: "192x192",
       purpose: "any maskable"
     },
     {
-      src: "/icon-512.png",
+      src: "./icon-512.png",
       type: "image/png",
       sizes: "512x512",
       purpose: "any maskable"
     },
     {
-      src: "/app-logo.png",
+      src: "./app-logo.png",
       type: "image/png",
       sizes: "512x512"
     }
   ],
-  start_url: "/",
+  start_url: "./",
   background_color: "#040508",
   theme_color: "#040508",
   display: "standalone",
