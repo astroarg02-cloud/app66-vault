@@ -132,4 +132,23 @@ if (fs.existsSync(defaultDrawableDir)) {
 }
 
 console.log('Generated Android splash screens across densities.');
-console.log('All APK launcher and round icons generated successfully!');
+
+// Generate iOS AppIcon and Splash images if ios directory exists
+const IOS_APP_DIR = path.join(__dirname, '../ios/App/App');
+if (fs.existsSync(IOS_APP_DIR)) {
+  const iosIconDir = path.join(IOS_APP_DIR, 'Assets.xcassets/AppIcon.appiconset');
+  if (fs.existsSync(iosIconDir)) {
+    execSync(`convert "${SOURCE_IMAGE}" -filter Lanczos -resize 1024x1024 "${path.join(iosIconDir, 'AppIcon-512@2x.png')}"`);
+    console.log('✓ Generated iOS universal AppIcon-512@2x.png (1024x1024)');
+  }
+  const iosSplashDir = path.join(IOS_APP_DIR, 'Assets.xcassets/Splash.imageset');
+  if (fs.existsSync(iosSplashDir)) {
+    const splashOut = path.join(iosSplashDir, 'splash-2732x2732.png');
+    execSync(`convert -size 2732x2732 xc:"#040508" \\( "${SOURCE_IMAGE}" -resize 1200x1200 \\) -gravity center -composite "${splashOut}"`);
+    fs.copyFileSync(splashOut, path.join(iosSplashDir, 'splash-2732x2732-1.png'));
+    fs.copyFileSync(splashOut, path.join(iosSplashDir, 'splash-2732x2732-2.png'));
+    console.log('✓ Generated iOS splash images (2732x2732)');
+  }
+}
+
+console.log('All APK & iOS launcher and round icons generated successfully!');

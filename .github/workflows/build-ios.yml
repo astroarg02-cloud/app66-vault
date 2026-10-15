@@ -1,0 +1,95 @@
+name: Generar IPA de iOS para iPhone (Vite + Capacitor)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Compilar IPA iOS desde Vite
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: 1. Descargar código del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 3. Seleccionar versión de Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app || sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: 4. Compilar aplicación web y sincronizar Capacitor iOS
+        run: |
+          npm install --legacy-peer-deps
+          npm run build
+          npx cap sync ios
+
+      - name: 5. Asegurar iconos y splash oficiales de SEIS 6
+        run: |
+          if command -v convert &> /dev/null; then
+            node scripts/generate-apk-icons.cjs || true
+          fi
+
+      - name: 6. Compilar Archive con xcodebuild (Modo Universal Sideloading)
+        run: |
+          mkdir -p build
+          xcodebuild clean -project ios/App/App.xcodeproj -scheme App -configuration Release
+          xcodebuild archive \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: 7. Empaquetar archivo .ipa instalable
+        run: |
+          mkdir -p build-output/Payload
+          APP_PATH=$(find build/App.xcarchive/Products/Applications -name "*.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No se encontró el bundle .app generado por Xcode."
+            exit 1
+          fi
+          echo "Bundle .app encontrado en: $APP_PATH"
+          cp -R "$APP_PATH" build-output/Payload/
+          cd build-output
+          zip -r -y Seis6_App_v1.0.ipa Payload
+          cp Seis6_App_v1.0.ipa Seis6_Vault_v1.0.ipa
+          echo "Archivos IPA preparados:"
+          ls -lh *.ipa
+
+      - name: 8. Subir archivo IPA a GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Seis6-App-IPA
+          path: |
+            build-output/*.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 9. Resumen de compilación iOS
+        run: |
+          echo "### 🍏 ¡IPA de iOS Compilado con Éxito para iPhone!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Motor:** Vite + React + Capacitor iOS Nativo" >> $GITHUB_STEP_SUMMARY
+          echo "- **Xcode:** $(xcodebuild -version | head -n 1)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Destino:** Dispositivos iPhone / iPad (arm64)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Diseño:** AMOLED Dark (#000000) Edge-to-Edge con iconos de SEIS 6" >> $GITHUB_STEP_SUMMARY
+          echo "- **Archivos:** \`Seis6_App_v1.0.ipa\` y \`Seis6_Vault_v1.0.ipa\` listos para descargar en Artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📲 ¿Cómo instalar en iPhone?" >> $GITHUB_STEP_SUMMARY
+          echo "1. Descarga el archivo \`Seis6_App_v1.0.ipa\` de la sección Artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "2. Puedes instalarlo en tu iPhone usando cualquiera de estas herramientas gratuitas:" >> $GITHUB_STEP_SUMMARY
+          echo "   - **Sideloadly** (Windows / Mac) -> Arrastras el .ipa y pones tu Apple ID." >> $GITHUB_STEP_SUMMARY
+          echo "   - **AltStore** -> Instalas con un toque desde tu PC o Mac." >> $GITHUB_STEP_SUMMARY
+          echo "   - **Scarlet / Esign** -> Directo desde el móvil con certificado DNS." >> $GITHUB_STEP_SUMMARY
+          echo "   - **TrollStore** -> Instalación permanente sin revokes (iOS 14.0 - 16.6.1 / 17.0)." >> $GITHUB_STEP_SUMMARY

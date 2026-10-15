@@ -9,6 +9,12 @@
     "captureInput": true,
     "webContentsDebuggingEnabled": false
   },
+  "ios": {
+    "backgroundColor": "#000000",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true,
+    "contentInset": "always"
+  },
   "server": {
     "cleartext": true,
     "androidScheme": "https"
