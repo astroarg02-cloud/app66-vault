@@ -2561,5 +2561,35 @@
       "membershipStatus": "none",
       "joinedAt": "2026-10-13"
     }
+  },
+  "roswinsevilla@gmail.com": {
+    "email": "roswinsevilla@gmail.com",
+    "password": "yrurirj",
+    "registeredAt": "2026-10-14T01:34:56.765Z",
+    "profile": {
+      "uid": "usr_mv7fthtks1aticd5a8592",
+      "email": "roswinsevilla@gmail.com",
+      "displayName": "roswinsevilla",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv7fthtks1aticd5a8592",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-14"
+    }
+  },
+  "roswinsevilla@gmail": {
+    "email": "roswinsevilla@gmail",
+    "password": "jdjdbfb",
+    "registeredAt": "2026-10-14T01:35:53.681Z",
+    "profile": {
+      "uid": "usr_mv7fupzukm8rgdca50521",
+      "email": "roswinsevilla@gmail",
+      "displayName": "roswinsevilla",
+      "role": "vip_member",
+      "avatarUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=usr_mv7fupzukm8rgdca50521",
+      "tier": "Invitado",
+      "membershipStatus": "none",
+      "joinedAt": "2026-10-14"
+    }
   }
 }

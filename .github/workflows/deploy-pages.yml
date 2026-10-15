@@ -1,0 +1,78 @@
+name: Publicar Web en GitHub Pages
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy-pages:
+    name: Compilar y Desplegar Web (iPhone / Android / PC)
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 3. Instalar dependencias y compilar web Vite
+        run: |
+          npm install --legacy-peer-deps
+          npm run build
+          # Generar iconos web y comprobar assets
+          if [ -f "scripts/generate-apk-icons.cjs" ]; then
+            node scripts/generate-apk-icons.cjs || true
+          fi
+          # Clonar index.html como 404.html para navegación SPA limpia sin error 404 en GitHub Pages
+          cp dist/index.html dist/404.html
+          # Evitar que Jekyll procese o filtre archivos con guión bajo
+          touch dist/.nojekyll
+
+      - name: 4. Desplegar en rama gh-pages (Compatible con modo 'Deploy from a branch')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          keep_files: false
+          force_orphan: true
+
+      - name: 5. Configurar GitHub Pages (Compatible con modo 'GitHub Actions')
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+
+      - name: 6. Subir artefacto para GitHub Pages
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: 7. Desplegar en GitHub Pages nativo
+        id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: 8. Resumen de publicación
+        run: |
+          PAGE_URL="${{ steps.deployment.outputs.page_url }}"
+          if [ -z "$PAGE_URL" ]; then
+            PAGE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          fi
+          echo "### 🌐 ¡Web PWA de SEIS 6 Publicada con Éxito!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Enlace público oficial:** [$PAGE_URL]($PAGE_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compatible con iOS y Android:** Lista para 'Agregar a pantalla de inicio' en Safari o Chrome." >> $GITHUB_STEP_SUMMARY
+          echo "- **Sincronización:** Conectada a la misma base de datos Firebase que el APK." >> $GITHUB_STEP_SUMMARY
